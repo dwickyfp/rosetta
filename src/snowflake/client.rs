@@ -72,12 +72,12 @@ impl SnowpipeClient {
         Ok(())
     }
 
-    pub async fn open_channel(&mut self, channel_suffix: &str) -> Result<String> {
+    pub async fn open_channel(&mut self, table_name: &str, channel_suffix: &str) -> Result<String> {
         if self.scoped_token.is_none() {
             self.authenticate().await?;
         }
 
-        let pipe_name = format!("{}-STREAMING", self.config.table.to_uppercase());
+        let pipe_name = format!("{}-STREAMING", table_name.to_uppercase());
         let channel_name = format!("{}_{}", pipe_name, channel_suffix);
 
         let url = format!(
@@ -105,7 +105,7 @@ impl SnowpipeClient {
         if resp.status().as_u16() == 401 {
             warn!("Token expired, re-authenticating...");
             self.authenticate().await?;
-            return Box::pin(self.open_channel(channel_suffix)).await;
+            return Box::pin(self.open_channel(table_name, channel_suffix)).await;
         }
 
         if !resp.status().is_success() {
@@ -120,11 +120,12 @@ impl SnowpipeClient {
 
     pub async fn insert_rows(
         &self,
+        table_name: &str,
         channel_suffix: &str,
         rows: Vec<Value>,
         continuation_token: Option<String>,
     ) -> Result<String> {
-        let pipe_name = format!("{}-STREAMING", self.config.table.to_uppercase());
+        let pipe_name = format!("{}-STREAMING", table_name.to_uppercase());
         let channel_name = format!("{}_{}", pipe_name, channel_suffix);
 
         let url = format!(

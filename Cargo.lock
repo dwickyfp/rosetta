@@ -1828,6 +1828,7 @@ dependencies = [
  "pkcs8",
  "reqwest",
  "rsa",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2",
