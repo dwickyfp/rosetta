@@ -4,16 +4,20 @@ use etl::config::{
     BatchConfig, PgConnectionConfig, PipelineConfig, TableSyncCopyConfig, TlsConfig,
 };
 use etl::pipeline::Pipeline;
+use figlet_rs::FIGfont;
 use rosetta::snowflake::SnowflakeDestination;
 use rosetta::store::memory::CustomStore;
-use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    info!("Starting ETL Pipeline...");
+    if let Ok(font) = FIGfont::from_file("assets/fonts/Slant.flf") {
+        if let Some(figure) = font.convert("Rosetta") {
+            println!("{}", figure);
+        }
+    }
 
     let destination = SnowflakeDestination::new()?;
     let store = CustomStore::new();
