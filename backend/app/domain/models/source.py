@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.domain.models.pipeline import Pipeline
     from app.domain.models.wal_metric import WALMetric
     from app.domain.models.wal_monitor import WALMonitor
+    from app.domain.models.table_metadata import TableMetadata
 
 
 class Source(Base, TimestampMixin):
@@ -116,6 +117,13 @@ class Source(Base, TimestampMixin):
         cascade="all, delete-orphan",
         lazy="select",
         uselist=False,  # One-to-one relationship
+    )
+
+    tables: Mapped[list["TableMetadata"]] = relationship(
+        "TableMetadata",
+        back_populates="source",
+        cascade="all, delete-orphan",
+        lazy="select",
     )
 
     def __repr__(self) -> str:

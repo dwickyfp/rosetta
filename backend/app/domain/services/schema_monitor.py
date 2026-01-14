@@ -1,0 +1,285 @@
+"""
+Schema Monitoring Service.
+
+This service is responsible for:
+1. Monitoring tables in source publications.
+2. Checking schema changes (columns, types).
+3. Recording schema history.
+"""
+
+import json
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+import asyncio
+
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from sqlalchemy.orm import Session
+from deepdiff import DeepDiff
+
+from app.core.config import get_settings
+from app.core.database import get_session_context
+from app.core.logging import get_logger
+from app.domain.models.history_schema_evolution import HistorySchemaEvolution
+from app.domain.models.source import Source
+from app.domain.models.table_metadata import TableMetadata
+from app.domain.repositories.source import SourceRepository
+
+logger = get_logger(__name__)
+settings = get_settings()
+
+
+class SchemaMonitorService:
+    """
+    Service to monitor schema changes in source databases.
+    """
+
+    def __init__(self):
+        self.running = False
+        self._stop_event = asyncio.Event()
+
+    async def monitor_all_sources(self) -> None:
+        """
+        Iterate through all sources and check their schema status.
+        """
+        logger.info("Starting schema monitoring cycle")
+        
+        try:
+            with get_session_context() as db:
+                repository = SourceRepository(db)
+                sources = repository.get_all()
+                
+                # Process sources
+                for source in sources:
+                    if not source.is_publication_enabled:
+                        continue
+
+                    try:
+                       await self.check_source_schema(source, db)
+                    except Exception as e:
+                        logger.error(
+                            f"Error checking schema for source {source.name}",
+                            extra={"error": str(e), "source_id": source.id},
+                        )
+        except Exception as e:
+            logger.error("Error in schema monitoring cycle", extra={"error": str(e)})
+        finally:
+            logger.info("Completed schema monitoring cycle")
+
+    async def check_source_schema(self, source: Source, db: Session) -> None:
+        """
+        Check schema for a single source.
+        """
+        # Connect to source database
+        conn = None
+        try:
+            conn = psycopg2.connect(
+                host=source.pg_host,
+                port=source.pg_port,
+                dbname=source.pg_database,
+                user=source.pg_username,
+                password=source.pg_password,
+                connect_timeout=settings.wal_monitor_timeout_seconds,
+            )
+            
+            # 1. Sync table list from publication
+            await self.sync_table_list(source, conn, db)
+            
+            # 2. Check schema for each table in metadata list
+            # We refresh the source object or query tables directly to get the updated list
+            updated_tables = db.query(TableMetadata).filter(TableMetadata.source_id == source.id).all()
+            
+            for table in updated_tables:
+                await self.fetch_and_compare_schema(source, table, conn, db)
+
+        except Exception as e:
+            logger.error(
+                f"Failed to connect to source {source.name}",
+                extra={"error": str(e), "source_id": source.id}
+            )
+        finally:
+            if conn:
+                conn.close()
+
+    async def sync_table_list(self, source: Source, conn, db: Session) -> None:
+        """
+        Sync local TableMetadata list with source publication tables.
+        """
+        try:
+            with conn.cursor() as cur:
+                # Query to get tables in the publication
+                # Note: This query assumes standard PG publication-table mapping
+                query = """
+                    SELECT schemaname, tablename 
+                    FROM pg_publication_tables 
+                    WHERE pubname = %s;
+                """
+                cur.execute(query, (source.publication_name,))
+                pub_tables = {f"{row[0]}.{row[1]}" if row[0] != 'public' else row[1]: row for row in cur.fetchall()}
+                # Simplify: we assume just table name if public, or explicit schema.table
+                # For this logic, let's stick to the user request "table_name" which implies simple name or consistent format.
+                # The user query example used `c.table_name`. 
+                # Let's assume public schema for now as per user query "WHERE c.table_schema = 'public'"
+                
+                # Re-reading user query: "WHERE c.table_schema = 'public'"
+                # So we only care about public tables for now.
+                
+                pub_table_names = set(row[1] for row in pub_tables.values() if row[0] == 'public')
+
+                # Get existing tracked tables
+                existing_tables = db.query(TableMetadata).filter(TableMetadata.source_id == source.id).all()
+                existing_table_names = {t.table_name for t in existing_tables}
+
+                # Add new tables
+                for new_table in pub_table_names - existing_table_names:
+                    new_metadata = TableMetadata(
+                        source_id=source.id,
+                        table_name=new_table,
+                        is_exists_table_landing=False # Default
+                    )
+                    db.add(new_metadata)
+                    logger.info(f"Added new table tracking: {new_table}")
+
+                # Delete removed tables
+                for removed_table in existing_table_names - pub_table_names:
+                    # User said: "if table not exist in list publication but exist in table then delete"
+                    table_to_delete = next(t for t in existing_tables if t.table_name == removed_table)
+                    db.delete(table_to_delete)
+                    logger.info(f"Removed table tracking: {removed_table}")
+                
+                db.commit()
+
+        except Exception as e:
+            db.rollback()
+            raise e
+
+    async def fetch_and_compare_schema(self, source: Source, table: TableMetadata, conn, db: Session) -> None:
+        """
+        Fetch current schema and compare with stored schema.
+        """
+        new_schema_list = self.fetch_table_schema(conn, table.table_name)
+        logger.info(f"Fetched schema for {table.table_name}: {len(new_schema_list)} columns")
+        
+        # Convert list to a comparable dictionary/JSON structure
+        # Assuming list of dicts: [{'column_name': 'id', 'data_type': 'BIGINT', ...}]
+        # We can key by column name for easier comparison
+        new_schema_dict = {col['column_name']: col for col in new_schema_list}
+        
+        old_schema_dict = table.schema_table or {}
+        
+        # If first run (old is None/Empty), just update
+        if not old_schema_dict:
+            table.schema_table = new_schema_dict
+            table.is_changes_schema = False # Initial load is not a "change" per se, or maybe it is?
+            db.commit()
+            logger.info(f"Initial schema loaded for {table.table_name}")
+            return
+
+        # Compare
+        # 1. Detect Changes
+        ddiff = DeepDiff(old_schema_dict, new_schema_dict, ignore_order=True)
+        
+        if not ddiff:
+            logger.info(f"No schema changes for {table.table_name}")
+            return # No changes
+
+        # Identify change types
+        change_type = "UNKNOWN"
+        if 'dictionary_item_added' in ddiff:
+            change_type = "NEW COLUMN"
+        elif 'dictionary_item_removed' in ddiff:
+            change_type = "DROP COLUMN"
+        elif 'values_changed' in ddiff:
+            change_type = "CHANGES TYPE"
+        
+        # Create History Record
+        # Calculate version
+        version = (db.query(HistorySchemaEvolution)
+                   .filter(HistorySchemaEvolution.table_metadata_list_id == table.id)
+                   .count()) + 1
+
+        history = HistorySchemaEvolution(
+            table_metadata_list_id=table.id,
+            schema_table_old=old_schema_dict,
+            schema_table_new=new_schema_dict,
+            changes_type=change_type,
+            version_schema=version
+        )
+        db.add(history)
+        
+        # Update Table Metadata
+        table.schema_table = new_schema_dict
+        table.is_changes_schema = True
+        
+        db.commit()
+        logger.info(f"Schema change detected for {table.table_name}: {change_type}")
+
+
+    def fetch_table_schema(self, conn, table_name: str) -> List[Dict]:
+        """
+        Fetch schema using user-provided queries with fallback.
+        """
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Complex query with PostGIS support
+            complex_query = f"""
+                SELECT
+                   c.column_name,
+                   c.is_nullable,
+                   CASE
+                       WHEN c.udt_name = 'geometry' THEN 'GEOMETRY'
+                       WHEN c.udt_name = 'geography' THEN 'GEOGRAPHY'
+                       ELSE UPPER(c.data_type)
+                   END AS real_data_type
+                FROM
+                   information_schema.columns c
+                LEFT JOIN
+                   geometry_columns gc
+                   ON c.table_schema = gc.f_table_schema
+                   AND c.table_name = gc.f_table_name
+                   AND c.column_name = gc.f_geometry_column
+                LEFT JOIN
+                   geography_columns gg
+                   ON c.table_schema = gg.f_table_schema
+                   AND c.table_name = gg.f_table_name
+                   AND c.column_name = gg.f_geography_column
+                WHERE
+                   c.table_schema = 'public' 
+                   and c.table_name = '{table_name}'
+                ORDER BY
+                   c.ordinal_position;
+            """
+            
+            try:
+                # First check if geometry_columns exists to avoid throwing error inside the query execution if possible,
+                # or just try-catch the execution.
+                # User suggested: check "select * from geometry_columns;" first.
+                cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'geometry_columns'")
+                has_postgis = cur.fetchone() is not None
+                
+                if has_postgis:
+                     cur.execute(complex_query)
+                     return cur.fetchall()
+            except Exception:
+                # Fallback or if just check fails
+                 conn.rollback() # Reset transaction from error
+                 pass
+
+            # Fallback Query
+            fallback_query = f"""
+                SELECT
+                   c.column_name,
+                   c.is_nullable,
+                   UPPER(c.data_type) aS real_data_type
+                FROM
+                   information_schema.columns c
+                WHERE
+                   c.table_schema = 'public' 
+                   and c.table_name = '{table_name}'
+                ORDER BY
+                   c.ordinal_position;
+            """
+            cur.execute(fallback_query)
+            return cur.fetchall()
+
+    def stop(self):
+        self._stop_event.set()

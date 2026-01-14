@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.domain.services.wal_monitor import WALMonitorService
 from app.domain.services.replication_monitor import ReplicationMonitorService
+from app.domain.services.schema_monitor import SchemaMonitorService
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,7 @@ class BackgroundScheduler:
         self.scheduler: Optional[APSBackgroundScheduler] = None
         self.wal_monitor: Optional[WALMonitorService] = None
         self.replication_monitor: Optional[ReplicationMonitorService] = None
+        self.schema_monitor: Optional[SchemaMonitorService] = None
 
     def _run_wal_monitor(self) -> None:
         """
@@ -55,6 +57,16 @@ class BackgroundScheduler:
                 asyncio.run(self.replication_monitor.monitor_all_sources())
         except Exception as e:
             logger.error("Error running replication monitor task", extra={"error": str(e)})
+
+    def _run_schema_monitor(self) -> None:
+        """
+        Synchronous wrapper for schema monitor task.
+        """
+        try:
+            if self.schema_monitor:
+                asyncio.run(self.schema_monitor.monitor_all_sources())
+        except Exception as e:
+            logger.error("Error running schema monitor task", extra={"error": str(e)})
 
     def start(self) -> None:
         """
@@ -110,6 +122,22 @@ class BackgroundScheduler:
             max_instances=1,
             coalesce=True,
         )
+
+        # Initialize Schema monitor
+        self.schema_monitor = SchemaMonitorService()
+
+        # Schedule Schema monitoring task
+        self.scheduler.add_job(
+            self._run_schema_monitor,
+            trigger=IntervalTrigger(
+                seconds=60  # Default to 60s
+            ),
+            id="schema_monitor",
+            name="Schema Monitor",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
         
         logger.info("Replication monitoring scheduled")
 
@@ -136,6 +164,10 @@ class BackgroundScheduler:
         if self.replication_monitor:
             self.replication_monitor.stop()
             self.replication_monitor = None
+            
+        if self.schema_monitor:
+            self.schema_monitor.stop()
+            self.schema_monitor = None
 
         logger.info("Background task scheduler stopped")
 

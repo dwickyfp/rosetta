@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS destinations (
     snowflake_schema VARCHAR(255),
     snowflake_role VARCHAR(255),
     snowflake_private_key_path VARCHAR(255),
+    snowflake_private_key_content TEXT,
     snowflake_private_key_passphrase VARCHAR(255),
     snowflake_host VARCHAR(255),
     created_at TIMESTAMP DEFAULT NOW(),
@@ -100,14 +101,14 @@ CREATE TABLE IF NOT EXISTS table_metadata_list (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- track schema changes based on table in table_metadata_list
+-- track schema changes based on table in table_metadata_list (Append Only)
 CREATE TABLE IF NOT EXISTS history_schema_evolution (
     id SERIAL PRIMARY KEY,
     table_metadata_list_id INTEGER NOT NULL REFERENCES table_metadata_list(id) ON DELETE CASCADE,
     schema_table_old JSONB NULL,
     schema_table_new JSONB NULL,
     changes_type VARCHAR(20) NULL, -- 'NEW COLUMN', 'DROP COLUMN', 'CHANGES TYPE', 
-    version_schema VARCHAR(255) NULL,
+    version_schema INTEGER NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
