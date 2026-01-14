@@ -2,3 +2,8 @@
 .env
 /user
 /backup
+
+/backend/**/__pycache__/
+/backend/**/*.pyc
+/backend/venv/*
+
