@@ -163,7 +163,8 @@ class SchemaMonitorService:
         # Convert list to a comparable dictionary/JSON structure
         # Assuming list of dicts: [{'column_name': 'id', 'data_type': 'BIGINT', ...}]
         # We can key by column name for easier comparison
-        new_schema_dict = {col['column_name']: col for col in new_schema_list}
+        # Important: Convert RealDictRow to standard dict for DeepDiff
+        new_schema_dict = {col['column_name']: dict(col) for col in new_schema_list}
         
         old_schema_dict = table.schema_table or {}
         
