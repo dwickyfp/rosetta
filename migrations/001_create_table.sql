@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS table_metadata_list (
     is_exists_table_landing BOOLEAN DEFAULT FALSE, -- table landing in snowflake
     is_exists_task BOOLEAN DEFAULT FALSE, -- task in snowflake
     is_exists_table_destination BOOLEAN DEFAULT FALSE, -- table destination in snowflake
+    is_changes_schema BOOLEAN DEFAULT FALSE, -- track changes schema
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -106,9 +107,10 @@ CREATE TABLE IF NOT EXISTS history_schema_evolution (
     schema_table_old JSONB NULL,
     schema_table_new JSONB NULL,
     changes_type VARCHAR(20) NULL, -- 'NEW COLUMN', 'DROP COLUMN', 'CHANGES TYPE', 
+    version_schema VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
-)
+);
 
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_pipelines_status ON pipelines(status);
