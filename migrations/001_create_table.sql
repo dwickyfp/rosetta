@@ -86,6 +86,30 @@ CREATE TABLE IF NOT EXISTS wal_monitor (
     CONSTRAINT unique_source_wal UNIQUE (source_id) -- Ensures 1 source = 1 row
 );
 
+-- Save lisat table based on publication, schema table, check table name
+CREATE TABLE IF NOT EXISTS table_metadata_list (
+    id SERIAL PRIMARY KEY,
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    table_name VARCHAR(255),
+    schema_table JSONB NULL,
+    is_exists_table_landing BOOLEAN DEFAULT FALSE, -- table landing in snowflake
+    is_exists_task BOOLEAN DEFAULT FALSE, -- task in snowflake
+    is_exists_table_destination BOOLEAN DEFAULT FALSE, -- table destination in snowflake
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- track schema changes based on table in table_metadata_list
+CREATE TABLE IF NOT EXISTS history_schema_evolution (
+    id SERIAL PRIMARY KEY,
+    table_metadata_list_id INTEGER NOT NULL REFERENCES table_metadata_list(id) ON DELETE CASCADE,
+    schema_table_old JSONB NULL,
+    schema_table_new JSONB NULL,
+    changes_type VARCHAR(20) NULL, -- 'NEW COLUMN', 'DROP COLUMN', 'CHANGES TYPE', 
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+)
+
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_pipelines_status ON pipelines(status);
 CREATE INDEX IF NOT EXISTS idx_pipelines_source_id ON pipelines(source_id);
