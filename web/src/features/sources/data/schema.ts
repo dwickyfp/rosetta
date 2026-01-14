@@ -1,0 +1,29 @@
+import { z } from 'zod'
+
+export const sourceSchema = z.object({
+    id: z.number(),
+    name: z.string(),
+    pg_host: z.string(),
+    pg_port: z.number(),
+    pg_database: z.string(),
+    pg_username: z.string(),
+    publication_name: z.string(),
+    replication_id: z.number(),
+    created_at: z.string(),
+    updated_at: z.string(),
+})
+
+export type Source = z.infer<typeof sourceSchema>
+
+export const sourceFormSchema = z.object({
+    name: z.string().min(1, 'Name is required'),
+    pg_host: z.string().min(1, 'Host is required'),
+    pg_port: z.coerce.number().min(1, 'Port is required'),
+    pg_database: z.string().min(1, 'Database is required'),
+    pg_username: z.string().min(1, 'Username is required'),
+    pg_password: z.string().optional(),
+    publication_name: z.string().min(1, 'Publication name is required'),
+    replication_id: z.coerce.number().min(0, 'Replication ID is required'),
+})
+
+export type SourceForm = z.infer<typeof sourceFormSchema>

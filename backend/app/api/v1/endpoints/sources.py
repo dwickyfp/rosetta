@@ -13,6 +13,7 @@ from app.domain.schemas.source import (
     SourceCreate,
     SourceResponse,
     SourceUpdate,
+    SourceConnectionTest,
 )
 from app.domain.services.source import SourceService
 
@@ -137,3 +138,26 @@ async def delete_source(
         service: Source service instance
     """
     service.delete_source(source_id)
+
+
+@router.post(
+    "/test_connection",
+    response_model=bool,
+    summary="Test connection",
+    description="Test connection with provided configuration",
+)
+async def test_connection(
+    config: SourceConnectionTest,
+    service: SourceService = Depends(get_source_service),
+) -> bool:
+    """
+    Test connection with provided configuration.
+
+    Args:
+        config: Connection configuration
+        service: Source service instance
+
+    Returns:
+        True if connection is successful, False otherwise
+    """
+    return service.test_connection_config(config)

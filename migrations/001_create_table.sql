@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS sources (
     pg_password VARCHAR(255),
     publication_name VARCHAR(255) NOT NULL,
     replication_id INTEGER NOT NULL,
+    is_publication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    is_replication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    last_check_replication_publication TIMESTAMP NULL,
+    total_tables INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

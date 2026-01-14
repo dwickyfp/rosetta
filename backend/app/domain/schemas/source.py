@@ -111,6 +111,42 @@ class SourceCreate(SourceBase):
         }
 
 
+class SourceConnectionTest(BaseSchema):
+    """
+    Schema for testing database connection.
+    """
+    pg_host: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="PostgreSQL host address",
+    )
+    pg_port: int = Field(
+        default=5432,
+        ge=1,
+        le=65535,
+        description="PostgreSQL port number",
+    )
+    pg_database: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="PostgreSQL database name",
+    )
+    pg_username: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="PostgreSQL username",
+    )
+    pg_password: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="PostgreSQL password",
+    )
+
+
 class SourceUpdate(BaseSchema):
     """
     Schema for updating an existing source.

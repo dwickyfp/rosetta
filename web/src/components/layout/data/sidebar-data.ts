@@ -21,6 +21,7 @@ import {
   AudioWaveform,
   Command,
   GalleryVerticalEnd,
+  Database,
 } from 'lucide-react'
 import { ClerkLogo } from '@/assets/clerk-logo'
 import { type SidebarData } from '../types'
@@ -95,6 +96,16 @@ export const sidebarData: SidebarData = {
               url: '/clerk/user-management',
             },
           ],
+        },
+      ],
+    },
+    {
+      title: 'Connections',
+      items: [
+        {
+          title: 'Sources',
+          icon: Database,
+          url: '/sources',
         },
       ],
     },
