@@ -158,7 +158,7 @@ async def list_wal_monitors(
     """
     try:
         service = WALMonitorService(db)
-        monitors = service.get_all_monitors()
+        monitors = service.list_monitors()
 
         return WALMonitorListResponse(
             monitors=monitors,

@@ -35,7 +35,10 @@ backend/
 
 ```bash
 python -m venv venv
-venv\Scripts\activate.bat
+
+venv\Scripts\activate.bat => for windows
+source venv/bin/activate => mac os
+
 pip install -r requirements.txt
 ```
 

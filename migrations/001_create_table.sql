@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS wal_monitor (
     last_transaction_time TIMESTAMP, -- Last transaction timestamp
     replication_slot_name VARCHAR(255), -- Name of the replication slot
     replication_lag_bytes BIGINT,   -- Replication lag in bytes
+    total_wal_size VARCHAR(255),    -- Total size of WAL files (e.g., '640 MB')
     status VARCHAR(20) DEFAULT 'ACTIVE', -- 'ACTIVE', 'IDLE', 'ERROR'
     error_message TEXT,             -- Error details if any
     created_at TIMESTAMP DEFAULT NOW(),

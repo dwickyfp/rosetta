@@ -31,11 +31,20 @@ class WALMonitorService:
     persists current status to the wal_monitor table (upsert pattern).
     """
 
-    # SQL query to get current WAL LSN and position
+    # SQL query to get current WAL LSN, position, replication lag, and total WAL size
     WAL_STATUS_QUERY = """
         SELECT 
             pg_current_wal_lsn()::text AS wal_lsn,
-            pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::bigint AS wal_position;
+            pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::bigint AS wal_position,
+            (
+                SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)::bigint
+                FROM pg_replication_slots
+                WHERE slot_name = %(slot_name)s
+            ) AS replication_lag,
+            (
+                SELECT pg_size_pretty(sum(size)) 
+                FROM pg_ls_waldir()
+            ) AS total_wal_size;
     """
 
     def __init__(self):
@@ -54,7 +63,7 @@ class WALMonitorService:
             source: Source to check
 
         Returns:
-            Dictionary with wal_lsn and wal_position
+            Dictionary with wal_lsn, wal_position, replication_lag, and total_wal_size
 
         Raises:
             WALMonitorError: If WAL check fails
@@ -70,6 +79,7 @@ class WALMonitorService:
                         "source_id": source.id,
                         "host": source.pg_host,
                         "database": source.pg_database,
+                        "slot_name": source.publication_name,
                     },
                 )
 
@@ -87,10 +97,15 @@ class WALMonitorService:
                 with connection.cursor(
                     cursor_factory=psycopg2.extras.RealDictCursor
                 ) as cursor:
-                    cursor.execute(self.WAL_STATUS_QUERY)
+                    # Pass the publication name as the slot name
+                    cursor.execute(
+                        self.WAL_STATUS_QUERY, {"slot_name": source.publication_name}
+                    )
                     result = cursor.fetchone()
                     wal_lsn = result["wal_lsn"]
                     wal_position = result["wal_position"]
+                    replication_lag = result["replication_lag"]
+                    total_wal_size = result["total_wal_size"]
 
                 logger.info(
                     "WAL status checked successfully",
@@ -98,11 +113,18 @@ class WALMonitorService:
                         "source_id": source.id,
                         "wal_lsn": wal_lsn,
                         "wal_position": wal_position,
+                        "replication_lag": replication_lag,
+                        "total_wal_size": total_wal_size,
                         "wal_position_mb": wal_position / (1024 * 1024),
                     },
                 )
 
-                return {"wal_lsn": wal_lsn, "wal_position": wal_position}
+                return {
+                    "wal_lsn": wal_lsn,
+                    "wal_position": wal_position,
+                    "replication_lag": replication_lag,
+                    "total_wal_size": total_wal_size,
+                }
 
             except psycopg2.Error as e:
                 logger.error(
@@ -153,7 +175,8 @@ class WALMonitorService:
                     last_wal_received=now,
                     last_transaction_time=now,
                     replication_slot_name=source.publication_name,  # Using publication name as identifier
-                    replication_lag_bytes=0,  # Could be calculated if needed
+                    replication_lag_bytes=wal_status["replication_lag"],
+                    total_wal_size=wal_status["total_wal_size"],
                     status="ACTIVE",
                     error_message=None,
                 )
@@ -164,6 +187,8 @@ class WALMonitorService:
                     extra={
                         "source_id": source.id,
                         "wal_lsn": wal_status["wal_lsn"],
+                        "lag_bytes": wal_status["replication_lag"],
+                        "total_size": wal_status["total_wal_size"],
                         "wal_position_mb": wal_status["wal_position"] / (1024 * 1024),
                     },
                 )

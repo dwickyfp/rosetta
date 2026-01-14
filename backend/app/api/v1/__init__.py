@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     sources,
     wal_metrics,
     wal_monitor,
+    system_metrics,
 )
 
 # Create v1 router
@@ -32,3 +33,7 @@ api_router.include_router(pipelines.router, prefix="/pipelines", tags=["pipeline
 api_router.include_router(wal_metrics.router, prefix="/metrics", tags=["metrics"])
 
 api_router.include_router(wal_monitor.router, tags=["wal-monitor"])
+
+api_router.include_router(
+    system_metrics.router, tags=["system-metrics"]
+)

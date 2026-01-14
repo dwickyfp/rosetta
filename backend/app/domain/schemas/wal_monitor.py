@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+from app.domain.schemas.source import SourceResponse
 
 
 class WALMonitorBase(BaseModel):
@@ -29,6 +30,7 @@ class WALMonitorBase(BaseModel):
     replication_lag_bytes: Optional[int] = Field(
         None, description="Replication lag in bytes"
     )
+    total_wal_size: Optional[str] = Field(None, description="Total WAL size")
     status: str = Field(default="ACTIVE", description="Status: ACTIVE, IDLE, ERROR")
     error_message: Optional[str] = Field(None, description="Error details if any")
 
@@ -59,6 +61,7 @@ class WALMonitorResponse(WALMonitorBase):
 
     id: int = Field(..., description="Monitor record ID")
     source_id: int = Field(..., description="Source identifier")
+    source: Optional[SourceResponse] = Field(None, description="Source details")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 

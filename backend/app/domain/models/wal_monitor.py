@@ -94,6 +94,12 @@ class WALMonitor(Base):
         comment="Replication lag in bytes",
     )
 
+    total_wal_size: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Total size of WAL files",
+    )
+
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

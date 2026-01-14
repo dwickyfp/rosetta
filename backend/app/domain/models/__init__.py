@@ -11,6 +11,8 @@ from app.domain.models.source import Source
 from app.domain.models.wal_metric import WALMetric
 from app.domain.models.wal_monitor import WALMonitor
 
+from app.domain.models.system_metric import SystemMetric
+
 __all__ = [
     "Base",
     "Source",
@@ -19,4 +21,5 @@ __all__ = [
     "PipelineMetadata",
     "WALMetric",
     "WALMonitor",
+    "SystemMetric",
 ]

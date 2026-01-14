@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.domain.models.wal_monitor import WALMonitor
 from app.domain.repositories.base import BaseRepository
@@ -29,7 +29,6 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
     def __init__(self, db: Session):
         """Initialize WAL monitor repository."""
         super().__init__(WALMonitor, db)
-
     def get_by_source(self, source_id: int) -> Optional[WALMonitor]:
         """
         Get WAL monitor record for a specific source.
@@ -41,7 +40,9 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
             WAL monitor record or None if not exists
         """
         result = self.db.execute(
-            select(WALMonitor).where(WALMonitor.source_id == source_id)
+            select(WALMonitor)
+            .options(joinedload(WALMonitor.source))
+            .where(WALMonitor.source_id == source_id)
         )
         return result.scalar_one_or_none()
 
@@ -52,7 +53,9 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
         Returns:
             List of all WAL monitor records
         """
-        result = self.db.execute(select(WALMonitor))
+        result = self.db.execute(
+            select(WALMonitor).options(joinedload(WALMonitor.source))
+        )
         return list(result.scalars().all())
 
     def upsert_monitor(
@@ -64,6 +67,7 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
         last_transaction_time: Optional[datetime] = None,
         replication_slot_name: Optional[str] = None,
         replication_lag_bytes: Optional[int] = None,
+        total_wal_size: Optional[str] = None,
         status: str = "ACTIVE",
         error_message: Optional[str] = None,
     ) -> WALMonitor:
@@ -81,6 +85,7 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
             last_transaction_time: Last transaction timestamp
             replication_slot_name: Replication slot name
             replication_lag_bytes: Replication lag in bytes
+            total_wal_size: Total WAL size
             status: Monitor status (ACTIVE, IDLE, ERROR)
             error_message: Error details if any
 
@@ -98,6 +103,7 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
             last_transaction_time=last_transaction_time,
             replication_slot_name=replication_slot_name,
             replication_lag_bytes=replication_lag_bytes,
+            total_wal_size=total_wal_size,
             status=status,
             error_message=error_message,
             created_at=now,
@@ -114,6 +120,7 @@ class WALMonitorRepository(BaseRepository[WALMonitor]):
                 "last_transaction_time": stmt.excluded.last_transaction_time,
                 "replication_slot_name": stmt.excluded.replication_slot_name,
                 "replication_lag_bytes": stmt.excluded.replication_lag_bytes,
+                "total_wal_size": stmt.excluded.total_wal_size,
                 "status": stmt.excluded.status,
                 "error_message": stmt.excluded.error_message,
                 "updated_at": now,
