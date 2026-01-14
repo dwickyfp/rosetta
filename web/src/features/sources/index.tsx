@@ -15,6 +15,7 @@ export function Sources() {
     const { data } = useQuery({
         queryKey: ['sources'], // Consistent query key
         queryFn: sourcesRepo.getAll,
+        refetchInterval: 5000,
     })
 
     const sources = data?.sources || []

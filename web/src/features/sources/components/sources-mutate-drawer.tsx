@@ -44,6 +44,7 @@ export function SourcesMutateDrawer({
 
     const form = useForm<SourceForm>({
         resolver: zodResolver(sourceFormSchema) as any,
+        mode: 'onChange',
         defaultValues: (currentRow
             ? {
                 name: currentRow.name,

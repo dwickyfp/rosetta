@@ -34,4 +34,4 @@ dist-ssr
 *.sln
 *.sw?
 
-/backend/logs/*
+/backend/logs/app.log

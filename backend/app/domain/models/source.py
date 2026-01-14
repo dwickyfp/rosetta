@@ -4,6 +4,7 @@ Source model - PostgreSQL data source configurations.
 Represents PostgreSQL database connection configurations for CDC replication.
 """
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Integer, String, UniqueConstraint
@@ -76,6 +77,22 @@ class Source(Base, TimestampMixin):
 
     replication_id: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="Replication slot identifier"
+    )
+
+    is_publication_enabled: Mapped[bool] = mapped_column(
+        default=False, nullable=False, comment="Whether publication is enabled"
+    )
+
+    is_replication_enabled: Mapped[bool] = mapped_column(
+        default=False, nullable=False, comment="Whether replication is enabled"
+    )
+
+    last_check_replication_publication: Mapped[datetime | None] = mapped_column(
+        nullable=True, comment="Last timestamp of replication/publication check"
+    )
+
+    total_tables: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="Total tables in publication"
     )
 
     # Relationships

@@ -9,6 +9,10 @@ export const sourceSchema = z.object({
     pg_username: z.string(),
     publication_name: z.string(),
     replication_id: z.number(),
+    is_publication_enabled: z.boolean(),
+    is_replication_enabled: z.boolean(),
+    last_check_replication_publication: z.string().nullable(),
+    total_tables: z.number(),
     created_at: z.string(),
     updated_at: z.string(),
 })
@@ -16,7 +20,7 @@ export const sourceSchema = z.object({
 export type Source = z.infer<typeof sourceSchema>
 
 export const sourceFormSchema = z.object({
-    name: z.string().min(1, 'Name is required'),
+    name: z.string().min(1, 'Name is required').regex(/^\S*$/, 'Name must not contain whitespace'),
     pg_host: z.string().min(1, 'Host is required'),
     pg_port: z.coerce.number().min(1, 'Port is required'),
     pg_database: z.string().min(1, 'Database is required'),

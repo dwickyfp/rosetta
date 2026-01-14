@@ -9,6 +9,10 @@ export interface Source {
     pg_username: string
     publication_name: string
     replication_id: number
+    is_publication_enabled: boolean
+    is_replication_enabled: boolean
+    last_check_replication_publication: string | null
+    total_tables: number
     created_at: string
     updated_at: string
 }
