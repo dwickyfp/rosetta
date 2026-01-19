@@ -221,7 +221,7 @@ class SourceResponse(SourceBase, TimestampSchema):
     is_replication_enabled: bool = Field(default=False, description="Whether replication is enabled")
     last_check_replication_publication: Optional[datetime] = Field(default=None, description="Last timestamp of replication/publication check")
     total_tables: int = Field(default=0, description="Total tables in publication")
-    list_tables: List[str] = Field(default=[], description="List of all tables in public schema")
+
 
     class Config:
         orm_mode = True

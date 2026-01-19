@@ -61,3 +61,8 @@ def get_pipeline_service(db: Session = Depends(get_db)) -> PipelineService:
         Pipeline service instance
     """
     return PipelineService(db)
+
+
+def get_preset_service(db: Session = Depends(get_db)) -> Generator:
+    from app.domain.services.preset import PresetService
+    return PresetService(db)

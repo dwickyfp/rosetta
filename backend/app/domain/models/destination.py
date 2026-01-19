@@ -67,6 +67,14 @@ class Destination(Base, TimestampMixin):
         String(255), nullable=True, comment="Snowflake role name"
     )
 
+    snowflake_landing_database: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Snowflake landing database name"
+    )
+
+    snowflake_landing_schema: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Snowflake landing schema name"
+    )
+
     # Authentication
     snowflake_private_key: Mapped[str | None] = mapped_column(
         "snowflake_private_key", String, nullable=True, comment="Snowflake private key (PEM content)"
@@ -112,6 +120,12 @@ class Destination(Base, TimestampMixin):
 
         if self.snowflake_warehouse:
             config["warehouse"] = self.snowflake_warehouse
+
+        if self.snowflake_landing_database:
+            config["landing_database"] = self.snowflake_landing_database
+
+        if self.snowflake_landing_schema:
+            config["landing_schema"] = self.snowflake_landing_schema
 
         if self.snowflake_private_key:
             config["private_key"] = self.snowflake_private_key

@@ -36,7 +36,12 @@ impl PipelineManager {
 
     pub async fn run_migrations(&self) -> Result<()> {
         info!("Running database migrations...");
-        let migrations = include_str!("../migrations/001_create_table.sql");
+        let migrations = format!(
+            "{};{};{}",
+            include_str!("../migrations/001_create_table.sql"),
+            include_str!("../migrations/004_update_schema.sql"),
+            include_str!("../migrations/005_create_presets.sql")
+        );
         // Split by semicolon to execute separate statements
         for query in migrations.split(';') {
             let query = query.trim();
@@ -44,6 +49,7 @@ impl PipelineManager {
                 sqlx::query(query).execute(&self.db_pool).await?;
             }
         }
+
         info!("Migrations completed successfully.");
         Ok(())
     }
@@ -194,6 +200,14 @@ impl PipelineManager {
             private_key: dest_row.try_get("snowflake_private_key")?,
             private_key_passphrase: dest_row
                 .try_get("snowflake_private_key_passphrase")
+                .ok()
+                .filter(|s: &String| !s.is_empty()),
+            landing_database: dest_row
+                .try_get("snowflake_landing_database")
+                .ok()
+                .filter(|s: &String| !s.is_empty()),
+            landing_schema: dest_row
+                .try_get("snowflake_landing_schema")
                 .ok()
                 .filter(|s: &String| !s.is_empty()),
         };

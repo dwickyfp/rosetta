@@ -19,6 +19,9 @@ from app.domain.schemas.source import (
 )
 from app.domain.schemas.source_detail import SourceDetailResponse
 from app.domain.services.source import SourceService
+from app.domain.services.preset import PresetService
+from app.domain.schemas.preset import PresetCreate, PresetResponse
+from app.api.deps import get_source_service, get_preset_service
 
 router = APIRouter()
 
@@ -308,3 +311,75 @@ async def drop_replication_slot(
     service: SourceService = Depends(get_source_service),
 ) -> None:
     service.drop_replication_slot(source_id)
+
+
+@router.get(
+    "/{source_id}/available_tables",
+    response_model=List[str],
+    summary="Fetch all available tables from source",
+)
+async def fetch_available_tables(
+    source_id: int,
+    service: SourceService = Depends(get_source_service),
+) -> List[str]:
+    """
+    Fetch all available tables from source database in real-time.
+    """
+    return service.fetch_available_tables(source_id)
+
+# --- Presets ---
+
+@router.post(
+    "/{source_id}/presets",
+    response_model=PresetResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new preset",
+)
+async def create_preset(
+    source_id: int,
+    preset_data: PresetCreate,
+    service: PresetService = Depends(get_preset_service),
+) -> PresetResponse:
+    """Create a new preset."""
+    preset = service.create_preset(source_id, preset_data)
+    return PresetResponse.from_orm(preset)
+
+@router.get(
+    "/{source_id}/presets",
+    response_model=List[PresetResponse],
+    summary="Get all presets for a source",
+)
+async def get_presets(
+    source_id: int,
+    service: PresetService = Depends(get_preset_service),
+) -> List[PresetResponse]:
+    """Get all presets for a source."""
+    presets = service.get_presets(source_id)
+    return [PresetResponse.from_orm(p) for p in presets]
+
+@router.delete(
+    "/presets/{preset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a preset",
+)
+async def delete_preset(
+    preset_id: int,
+    service: PresetService = Depends(get_preset_service),
+) -> None:
+    """Delete a preset."""
+    service.delete_preset(preset_id)
+
+
+@router.put(
+    "/presets/{preset_id}",
+    response_model=PresetResponse,
+    summary="Update a preset",
+)
+async def update_preset(
+    preset_id: int,
+    preset_data: PresetCreate,
+    service: PresetService = Depends(get_preset_service),
+) -> PresetResponse:
+    """Update a preset."""
+    preset = service.update_preset(preset_id, preset_data)
+    return PresetResponse.from_orm(preset)

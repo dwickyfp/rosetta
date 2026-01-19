@@ -48,6 +48,8 @@ export function DestinationsMutateDrawer({
                 snowflake_user: currentRow.snowflake_user || '',
                 snowflake_database: currentRow.snowflake_database || '',
                 snowflake_schema: currentRow.snowflake_schema || '',
+                snowflake_landing_database: currentRow.snowflake_landing_database || '',
+                snowflake_landing_schema: currentRow.snowflake_landing_schema || '',
                 snowflake_role: currentRow.snowflake_role || '',
                 snowflake_private_key: currentRow.snowflake_private_key || '',
                 snowflake_private_key_passphrase: '',
@@ -59,6 +61,8 @@ export function DestinationsMutateDrawer({
                 snowflake_user: '',
                 snowflake_database: '',
                 snowflake_schema: '',
+                snowflake_landing_database: '',
+                snowflake_landing_schema: '',
                 snowflake_role: '',
                 snowflake_private_key: '',
                 snowflake_private_key_passphrase: '',
@@ -170,6 +174,34 @@ export function DestinationsMutateDrawer({
                         <div className='grid grid-cols-2 gap-4'>
                             <FormField
                                 control={form.control}
+                                name='snowflake_landing_database'
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Landing Database <span className="text-xs text-muted-foreground">(Optional)</span></FormLabel>
+                                        <FormControl>
+                                            <Input {...field} placeholder='LANDING (Default: Database)' />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name='snowflake_landing_schema'
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Landing Schema <span className="text-xs text-muted-foreground">(Optional)</span></FormLabel>
+                                        <FormControl>
+                                            <Input {...field} placeholder='PUBLIC (Default: Schema)' />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+                        <div className='grid grid-cols-2 gap-4'>
+                            <FormField
+                                control={form.control}
                                 name='snowflake_database'
                                 render={({ field }) => (
                                     <FormItem>
@@ -208,7 +240,7 @@ export function DestinationsMutateDrawer({
                                 </FormItem>
                             )}
                         />
-                         <FormField
+                        <FormField
                             control={form.control}
                             name='snowflake_warehouse'
                             render={({ field }) => (
@@ -247,7 +279,7 @@ export function DestinationsMutateDrawer({
                                             />
                                             {value && (
                                                 <div className="text-xs text-muted-foreground break-all">
-                                                   Key loaded ({value.length} chars)
+                                                    Key loaded ({value.length} chars)
                                                 </div>
                                             )}
                                         </div>
@@ -256,7 +288,7 @@ export function DestinationsMutateDrawer({
                                 </FormItem>
                             )}
                         />
-                         <FormField
+                        <FormField
                             control={form.control}
                             name='snowflake_private_key_passphrase'
                             render={({ field }) => (

@@ -28,7 +28,7 @@ services:
       - etl-network
 
   pg_postgis_cdc:
-    image: postgis/postgis:16-3.4-alpine
+    image: postgis/postgis:16-3.4
     container_name: postgis_container
     restart: always
     environment:

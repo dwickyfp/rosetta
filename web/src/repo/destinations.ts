@@ -7,6 +7,8 @@ export interface Destination {
     snowflake_user: string | null
     snowflake_database: string | null
     snowflake_schema: string | null
+    snowflake_landing_database: string | null
+    snowflake_landing_schema: string | null
     snowflake_role: string | null
     snowflake_private_key: string | null
     snowflake_private_key_passphrase?: string | null // Optional in response, handled securely
@@ -21,13 +23,15 @@ export interface DestinationCreate {
     snowflake_user?: string
     snowflake_database?: string
     snowflake_schema?: string
+    snowflake_landing_database?: string
+    snowflake_landing_schema?: string
     snowflake_role?: string
     snowflake_private_key?: string
     snowflake_private_key_passphrase?: string
     snowflake_warehouse?: string
 }
 
-export interface DestinationUpdate extends Partial<DestinationCreate> {}
+export interface DestinationUpdate extends Partial<DestinationCreate> { }
 
 export interface DestinationListResponse {
     destinations: Destination[]

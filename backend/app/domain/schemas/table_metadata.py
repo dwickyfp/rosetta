@@ -35,6 +35,7 @@ class TableMetadataBase(BaseModel):
     is_exists_table_landing: bool = False
     is_exists_task: bool = False
     is_exists_table_destination: bool = False
+    is_exists_stream_table: bool = False
     is_changes_schema: bool = False
 
 

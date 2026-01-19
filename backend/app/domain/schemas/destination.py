@@ -54,6 +54,18 @@ class DestinationCreate(DestinationBase):
         description="Snowflake schema name",
         examples=["PUBLIC", "RAW_DATA"],
     )
+    snowflake_landing_database: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Snowflake landing database name",
+        examples=["LANDING", "RAW_LANDING"],
+    )
+    snowflake_landing_schema: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Snowflake landing schema name",
+        examples=["PUBLIC", "RAW"],
+    )
     snowflake_role: str | None = Field(
         default=None,
         max_length=255,
@@ -140,6 +152,12 @@ class DestinationUpdate(BaseSchema):
     snowflake_schema: str | None = Field(
         default=None, max_length=255, description="Snowflake schema name"
     )
+    snowflake_landing_database: str | None = Field(
+        default=None, max_length=255, description="Snowflake landing database name"
+    )
+    snowflake_landing_schema: str | None = Field(
+        default=None, max_length=255, description="Snowflake landing schema name"
+    )
     snowflake_role: str | None = Field(
         default=None, max_length=255, description="Snowflake role name"
     )
@@ -185,6 +203,12 @@ class DestinationResponse(DestinationBase, TimestampSchema):
     )
     snowflake_schema: str | None = Field(
         default=None, description="Snowflake schema name"
+    )
+    snowflake_landing_database: str | None = Field(
+        default=None, description="Snowflake landing database name"
+    )
+    snowflake_landing_schema: str | None = Field(
+        default=None, description="Snowflake landing schema name"
     )
     snowflake_role: str | None = Field(default=None, description="Snowflake role name")
     snowflake_private_key: str | None = Field(

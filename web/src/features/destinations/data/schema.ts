@@ -7,6 +7,8 @@ export const destinationSchema = z.object({
     snowflake_user: z.string().nullable(),
     snowflake_database: z.string().nullable(),
     snowflake_schema: z.string().nullable(),
+    snowflake_landing_database: z.string().nullable(),
+    snowflake_landing_schema: z.string().nullable(),
     snowflake_role: z.string().nullable(),
     snowflake_private_key: z.string().nullable(),
     // snowflake_private_key_passphrase: z.string().nullable(), // Usually we don't return this or show it
@@ -23,6 +25,8 @@ export const destinationFormSchema = z.object({
     snowflake_user: z.string().optional(),
     snowflake_database: z.string().optional(),
     snowflake_schema: z.string().optional(),
+    snowflake_landing_database: z.string().optional(),
+    snowflake_landing_schema: z.string().optional(),
     snowflake_role: z.string().optional(),
     // Using string for the key content which will be read from file
     snowflake_private_key: z.string().optional(),

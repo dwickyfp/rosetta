@@ -1,4 +1,4 @@
-import { showSubmittedData } from '@/lib/show-submitted-data'
+
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SourcesMutateDrawer } from './sources-mutate-drawer'
 import { useSources } from './sources-provider'

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useParams } from '@tanstack/react-router'
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { sourcesRepo } from '@/repo/sources'
 import { Header } from '@/components/layout/header'
@@ -10,27 +10,31 @@ import { ConfigDrawer } from '@/components/config-drawer'
 import { SourceDetailsMetrics } from '../components/source-details-metrics'
 import { SourceDetailsTablesList } from '../components/source-details-tables-list'
 import { SourceDetailsCreatePublicationDialog } from '../components/source-details-create-publication-dialog'
+import { SourceDetailsListTable } from '../components/source-details-list-table'
+import { SourceDetailsPresets } from '../components/source-details-presets'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { RefreshCcw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
 export default function SourceDetailsPage() {
     // Use TansStack Router useParams
     const { sourceId } = useParams({ from: '/_authenticated/sources/$sourceId/details' })
     const id = parseInt(sourceId)
+    const navigate = useNavigate()
     const queryClient = useQueryClient()
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [isPublicationLoading, setIsPublicationLoading] = useState(false)
@@ -39,11 +43,19 @@ export default function SourceDetailsPage() {
     const [dropPublicationDialogOpen, setDropPublicationDialogOpen] = useState(false)
     const [dropReplicationDialogOpen, setDropReplicationDialogOpen] = useState(false)
 
-    const { data, isLoading, error } = useQuery({
+    const { data, isLoading, error, isError } = useQuery({
         queryKey: ['source-details', id],
         queryFn: () => sourcesRepo.getDetails(id!),
         enabled: !!id,
+        retry: false, // Don't retry if it fails (e.g. 404)
     })
+
+    useEffect(() => {
+        if (isError) {
+            toast.error("Source not found or access denied")
+            navigate({ to: '/sources' })
+        }
+    }, [isError, navigate])
 
     const handleRefresh = async () => {
         setIsRefreshing(true)
@@ -89,8 +101,8 @@ export default function SourceDetailsPage() {
             // Open Drop Replication Dialog
             setDropReplicationDialogOpen(true)
         } else {
-             // Create Replication
-             await handleCreateReplication()
+            // Create Replication
+            await handleCreateReplication()
         }
     }
 
@@ -102,7 +114,7 @@ export default function SourceDetailsPage() {
             queryClient.invalidateQueries({ queryKey: ['source-details', id] })
         } catch (err) {
             console.error(err)
-             toast.error("Failed to create replication slot")
+            toast.error("Failed to create replication slot")
         } finally {
             setIsReplicationLoading(false)
         }
@@ -145,11 +157,11 @@ export default function SourceDetailsPage() {
                             <div className="flex items-center gap-2">
                                 <span>Publication:</span>
                                 <span className="font-medium text-foreground">{data?.source.publication_name}</span>
-                                <Badge 
+                                <Badge
                                     variant="secondary"
                                     className={cn(
-                                        data?.source.is_publication_enabled 
-                                            ? "bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400" 
+                                        data?.source.is_publication_enabled
+                                            ? "bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400"
                                             : ""
                                     )}
                                 >
@@ -159,11 +171,11 @@ export default function SourceDetailsPage() {
                             <div className="flex items-center gap-2">
                                 <span>Replication Slot:</span>
                                 <span className="font-medium text-foreground">supabase_etl_apply_{data?.source.replication_id}</span>
-                                <Badge 
+                                <Badge
                                     variant="secondary"
                                     className={cn(
-                                        data?.source.is_replication_enabled 
-                                            ? "bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400" 
+                                        data?.source.is_replication_enabled
+                                            ? "bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400"
                                             : ""
                                     )}
                                 >
@@ -174,10 +186,10 @@ export default function SourceDetailsPage() {
                     </div>
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2">
-                        <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={handleRefresh} 
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRefresh}
                             disabled={isRefreshing || isLoading}
                         >
                             <RefreshCcw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
@@ -192,7 +204,7 @@ export default function SourceDetailsPage() {
                             {isPublicationLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {data?.source.is_publication_enabled ? "Drop Publication" : "Create Publication"}
                         </Button>
-                         <Button
+                        <Button
                             variant={data?.source.is_replication_enabled ? "destructive" : "default"}
                             size="sm"
                             onClick={handleReplicationAction}
@@ -214,18 +226,35 @@ export default function SourceDetailsPage() {
                 ) : (
                     <>
                         <SourceDetailsMetrics data={data?.wal_monitor || null} dataDestinations={data?.destinations || []} />
-                        <SourceDetailsTablesList 
-                            sourceId={id} 
-                            tables={data?.tables || []} 
-                            listTables={data?.source.list_tables || []}
-                        />
-                         <SourceDetailsCreatePublicationDialog 
+                        <Tabs defaultValue="replication" className="w-full">
+                            <TabsList>
+                                <TabsTrigger value="replication">Table Replication</TabsTrigger>
+                                <TabsTrigger value="list-table">List Table</TabsTrigger>
+                                <TabsTrigger value="presets">Presets</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="replication" className="space-y-4">
+                                <SourceDetailsTablesList
+                                    sourceId={id}
+                                    tables={data?.tables || []}
+                                />
+                            </TabsContent>
+                            <TabsContent value="list-table">
+                                <SourceDetailsListTable
+                                    sourceId={id}
+                                    isPublicationEnabled={data?.source.is_publication_enabled || false}
+                                    publishedTableNames={data?.tables.map(t => t.table_name) || []}
+                                />
+                            </TabsContent>
+                            <TabsContent value="presets">
+                                <SourceDetailsPresets />
+                            </TabsContent>
+                        </Tabs>
+                        <SourceDetailsCreatePublicationDialog
                             open={createPubDialogOpen}
                             onOpenChange={setCreatePubDialogOpen}
                             sourceId={id}
-                            listTables={data?.source.list_tables || []}
                         />
-                        
+
                         <AlertDialog open={dropPublicationDialogOpen} onOpenChange={setDropPublicationDialogOpen}>
                             <AlertDialogContent>
                                 <AlertDialogHeader>

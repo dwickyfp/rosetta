@@ -80,11 +80,22 @@ impl SnowpipeClient {
         let pipe_name = format!("{}-STREAMING", table_name.to_uppercase());
         let channel_name = format!("{}_{}", pipe_name, channel_suffix);
 
+        let target_db = self
+            .config
+            .landing_database
+            .as_deref()
+            .unwrap_or(&self.config.database);
+        let target_schema = self
+            .config
+            .landing_schema
+            .as_deref()
+            .unwrap_or(&self.config.schema);
+
         let url = format!(
             "{}/v2/streaming/databases/{}/schemas/{}/pipes/{}/channels/{}",
             self.ingest_host.as_ref().unwrap(),
-            self.config.database,
-            self.config.schema,
+            target_db,
+            target_schema,
             pipe_name,
             channel_name
         );
@@ -128,11 +139,22 @@ impl SnowpipeClient {
         let pipe_name = format!("{}-STREAMING", table_name.to_uppercase());
         let channel_name = format!("{}_{}", pipe_name, channel_suffix);
 
+        let target_db = self
+            .config
+            .landing_database
+            .as_deref()
+            .unwrap_or(&self.config.database);
+        let target_schema = self
+            .config
+            .landing_schema
+            .as_deref()
+            .unwrap_or(&self.config.schema);
+
         let url = format!(
             "{}/v2/streaming/data/databases/{}/schemas/{}/pipes/{}/channels/{}/rows",
             self.ingest_host.as_ref().unwrap(),
-            self.config.database,
-            self.config.schema,
+            target_db,
+            target_schema,
             pipe_name,
             channel_name
         );

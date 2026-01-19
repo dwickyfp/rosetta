@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS sources (
     is_replication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     last_check_replication_publication TIMESTAMP NULL,
     total_tables INTEGER NOT NULL DEFAULT 0,
-    list_tables TEXT[] NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -28,6 +27,8 @@ CREATE TABLE IF NOT EXISTS destinations (
     snowflake_user VARCHAR(255),
     snowflake_database VARCHAR(255),
     snowflake_schema VARCHAR(255),
+    snowflake_landing_database VARCHAR(255),
+    snowflake_landing_schema VARCHAR(255),
     snowflake_role VARCHAR(255),
     snowflake_private_key TEXT,
     snowflake_private_key_passphrase VARCHAR(255),
@@ -112,6 +113,16 @@ CREATE TABLE IF NOT EXISTS history_schema_evolution (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS presets (
+    id SERIAL PRIMARY KEY,
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    table_names TEXT[] NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_pipelines_status ON pipelines(status);

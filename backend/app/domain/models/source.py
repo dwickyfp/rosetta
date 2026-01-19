@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from app.domain.models.pipeline import Pipeline
     from app.domain.models.wal_metric import WALMetric
     from app.domain.models.wal_monitor import WALMonitor
+    from app.domain.models.wal_monitor import WALMonitor
     from app.domain.models.table_metadata import TableMetadata
+    from app.domain.models.preset import Preset
 
 
 class Source(Base, TimestampMixin):
@@ -97,9 +99,7 @@ class Source(Base, TimestampMixin):
         Integer, default=0, nullable=False, comment="Total tables in publication"
     )
 
-    list_tables: Mapped[list[str]] = mapped_column(
-        ARRAY(String), nullable=True, comment="List of all tables in public schema"
-    )
+
 
     # Relationships
     pipelines: Mapped[list["Pipeline"]] = relationship(
@@ -127,6 +127,13 @@ class Source(Base, TimestampMixin):
     tables: Mapped[list["TableMetadata"]] = relationship(
         "TableMetadata",
         back_populates="source",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+    presets: Mapped[list["Preset"]] = relationship(
+        "Preset",
+        # back_populates="source", # Enable if added to Preset
         cascade="all, delete-orphan",
         lazy="select",
     )

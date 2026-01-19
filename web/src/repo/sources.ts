@@ -15,7 +15,6 @@ export interface Source {
     total_tables: number
     created_at: string
     updated_at: string
-    list_tables: string[]
 }
 
 export interface SourceCreate {
@@ -42,6 +41,7 @@ export interface SourceTableInfo {
     is_exists_table_landing: boolean
     is_exists_task: boolean
     is_exists_table_destination: boolean
+    is_exists_stream_table: boolean
     version: number
     schema_table?: {
         column_name: string
@@ -76,7 +76,24 @@ export interface SourceDetailResponse {
 }
 
 // Ensure SourceResponse is compatible or defined if not already perfect
-export interface SourceResponse extends Source {}
+// Ensure SourceResponse is compatible or defined if not already perfect
+export interface SourceResponse extends Source { }
+
+export interface Preset {
+    id: number
+    source_id: number
+    name: string
+    table_names: string[]
+    created_at: string
+    updated_at: string
+}
+
+export interface PresetCreate {
+    name: string
+    table_names: string[]
+}
+
+export interface PresetResponse extends Preset { }
 
 export const sourcesRepo = {
     getAll: async () => {
@@ -133,5 +150,24 @@ export const sourcesRepo = {
     },
     dropReplication: async (sourceId: number) => {
         await api.delete(`/sources/${sourceId}/replication`)
+    },
+    getAvailableTables: async (sourceId: number) => {
+        const { data } = await api.get<string[]>(`/sources/${sourceId}/available_tables`)
+        return data
+    },
+    createPreset: async (sourceId: number, preset: PresetCreate) => {
+        const { data } = await api.post<PresetResponse>(`/sources/${sourceId}/presets`, preset)
+        return data
+    },
+    getPresets: async (sourceId: number) => {
+        const { data } = await api.get<PresetResponse[]>(`/sources/${sourceId}/presets`)
+        return data
+    },
+    deletePreset: async (presetId: number) => {
+        await api.delete(`/sources/presets/${presetId}`)
+    },
+    updatePreset: async (presetId: number, preset: PresetCreate) => {
+        const { data } = await api.put<PresetResponse>(`/sources/presets/${presetId}`, preset)
+        return data
     }
 }

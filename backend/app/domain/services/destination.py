@@ -40,6 +40,13 @@ class DestinationService:
         """
         logger.info("Creating new destination", extra={"name": destination_data.name})
 
+        # Default landing configuration to standard configuration if not provided
+        if not destination_data.snowflake_landing_database and destination_data.snowflake_database:
+            destination_data.snowflake_landing_database = destination_data.snowflake_database
+
+        if not destination_data.snowflake_landing_schema and destination_data.snowflake_schema:
+            destination_data.snowflake_landing_schema = destination_data.snowflake_schema
+
         # TODO: In production, encrypt passphrase before storing
         destination = self.repository.create(**destination_data.dict())
 

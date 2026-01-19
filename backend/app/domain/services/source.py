@@ -369,16 +369,16 @@ class SourceService:
         try:
             conn = self._get_connection(source)
             with conn.cursor() as cur:
-                # 1. Fetch tables
-                query = """
-                    SELECT table_name
-                    FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_type = 'BASE TABLE';
-                """
-                cur.execute(query)
-                tables = [row[0] for row in cur.fetchall()]
-                source.list_tables = tables
+                # 1. (Removed) Fetch tables
+                # query = """
+                #     SELECT table_name
+                #     FROM information_schema.tables
+                #     WHERE table_schema = 'public'
+                #     AND table_type = 'BASE TABLE';
+                # """
+                # cur.execute(query)
+                # tables = [row[0] for row in cur.fetchall()]
+                # source.list_tables = tables
 
                 # 2. Check Publication Status
                 cur.execute("SELECT 1 FROM pg_publication WHERE pubname = %s", (source.publication_name,))
@@ -577,3 +577,29 @@ class SourceService:
         except Exception as e:
             logger.error(f"Failed to unregister table {table_name}: {e}")
             raise ValueError(f"Failed to unregister table: {str(e)}")
+
+    def fetch_available_tables(self, source_id: int) -> List[str]:
+        """
+        Fetch all available public tables from the source database.
+        
+        Returns:
+            List of table names
+        """
+        source = self.get_source(source_id)
+        try:
+            conn = self._get_connection(source)
+            with conn.cursor() as cur:
+                query = """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_type = 'BASE TABLE'
+                    ORDER BY table_name;
+                """
+                cur.execute(query)
+                tables = [row[0] for row in cur.fetchall()]
+            conn.close()
+            return tables
+        except Exception as e:
+            logger.error(f"Failed to fetch available tables for source {source.name}: {e}")
+            raise ValueError(f"Failed to fetch tables: {str(e)}")
