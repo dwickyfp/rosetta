@@ -103,4 +103,14 @@ class TableMetadataRepository(BaseRepository[TableMetadata]):
         ).delete()
         self.db.flush()
 
-
+    def update_status(self, table_id: int, **kwargs) -> TableMetadata:
+        """
+        Update status flags for a table metadata.
+        """
+        table = self.get_by_id(table_id)
+        for key, value in kwargs.items():
+            if hasattr(table, key):
+                setattr(table, key, value)
+        self.db.commit()
+        self.db.refresh(table)
+        return table

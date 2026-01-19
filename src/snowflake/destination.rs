@@ -91,7 +91,7 @@ fn row_to_json_object(row: &TableRow, column_names: &[String], operation: &str) 
 
     // Add sync timestamp (uppercase for Snowflake)
     obj.insert(
-        "SYNC_TIMESTAMP".to_string(),
+        "SYNC_TIMESTAMP_ROSETTA".to_string(),
         json!(chrono::Utc::now().to_rfc3339()),
     );
 

@@ -13,6 +13,10 @@ from app.core.logging import get_logger
 from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus
 from app.domain.repositories.pipeline import PipelineRepository
 from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate
+from app.domain.services.source import SourceService
+import snowflake.connector
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 
 logger = get_logger(__name__)
 
@@ -51,6 +55,9 @@ class PipelineService:
                 details={"message": "Source is already connected to a pipeline"},
             )
 
+        # Force status to PAUSE for initialization
+        pipeline_data.status = PipelineStatus.PAUSE
+        
         # Create pipeline with metadata using repository method
         pipeline = self.repository.create_with_metadata(**pipeline_data.dict())
 
@@ -299,3 +306,297 @@ class PipelineService:
         logger.info("Pipeline error cleared", extra={"pipeline_id": pipeline_id})
 
         return pipeline
+
+    def initialize_pipeline(self, pipeline_id: int) -> None:
+        """
+        Background task to initialize pipeline resources in Snowflake.
+        """
+        logger.info("Starting pipeline initialization", extra={"pipeline_id": pipeline_id})
+        
+        try:
+            # 1. Get Pipeline and Progress
+            pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+            progress = pipeline.pipeline_progress
+            
+            self._update_progress(progress, 0, "Starting initialization", "IN_PROGRESS")
+            
+            # 2. Get Source Tables
+            self._update_progress(progress, 10, "Fetching source tables", "IN_PROGRESS")
+            source_service = SourceService(self.db)
+            source_details = source_service.get_source_details(pipeline.source_id)
+            
+            # Use source_details.tables (list of source_detail.SourceTableInfo)
+            # SourceTableInfo has: id, table_name, schema_table (List[dict])
+            tables = source_details.tables
+            
+            if not tables:
+                self._update_progress(progress, 100, "No tables to process", "COMPLETED")
+                pipeline.status = PipelineStatus.START.value
+                self.db.commit()
+                return
+
+            # 3. Connect to Snowflake
+            self._update_progress(progress, 20, "Connecting to Snowflake", "IN_PROGRESS")
+            conn = self._get_snowflake_connection(pipeline.destination)
+            cursor = conn.cursor()
+            
+            try:
+                # Set context
+                landing_db = pipeline.destination.snowflake_landing_database
+                landing_schema = pipeline.destination.snowflake_landing_schema
+                target_db = pipeline.destination.snowflake_database
+                target_schema = pipeline.destination.snowflake_schema
+                
+                # Check Databases/Schemas existence? usually assumed or created.
+                # Just use them.
+                
+                # Need TableMetadataRepository to update flags
+                from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+                tm_repo = TableMetadataRepository(self.db)
+                
+                total_tables = len(tables)
+                for index, table in enumerate(tables):
+                    current_percent = 20 + int((index / total_tables) * 70) 
+                    self._update_progress(progress, current_percent, f"Processing table: {table.table_name}", "IN_PROGRESS")
+                    
+                    table_name = table.table_name
+                    columns = table.schema_definition # List of column dicts
+                    table_id = table.id # This is table_metadata_list.id from SourceTableInfo
+                    
+                    # 4. Generate & Execute DDLs
+                    
+                    # A. Landing Table
+                    landing_table = f"LANDING_{table_name}"
+                    landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
+                    cursor.execute(landing_ddl)
+                    tm_repo.update_status(table_id, is_exists_table_landing=True)
+                    
+                    # B. Stream
+                    stream_name = f"STREAM_{landing_table}"
+                    stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
+                    cursor.execute(stream_ddl)
+                    tm_repo.update_status(table_id, is_exists_stream=True)
+                    
+                    # C. Destination Table
+                    target_table = table_name
+                    target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
+                    cursor.execute(target_ddl)
+                    tm_repo.update_status(table_id, is_exists_table_destination=True)
+                    
+                    # D. Merge Task
+                    task_name = f"TASK_MERGE_{table_name}"
+                    task_ddl = self._generate_merge_task_ddl(
+                        pipeline,
+                        landing_db, landing_schema, landing_table,
+                        stream_name,
+                        target_db, target_schema, target_table,
+                        columns
+                    )
+                    cursor.execute(task_ddl)
+                    cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
+                    tm_repo.update_status(table_id, is_exists_task=True)
+
+                
+                # 5. Finalize
+                self._update_progress(progress, 100, "Initialization completed", "COMPLETED")
+                pipeline.status = PipelineStatus.START.value
+                self.db.commit()
+                
+            finally:
+                cursor.close()
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Pipeline initialization failed: {e}", exc_info=True)
+            # Re-fetch progress attached to session if needed, but it should be attached
+            try:
+                 if progress:
+                    self._update_progress(progress, progress.progress, "Initialization failed", "FAILED", str(e))
+            except:
+                 pass
+
+    def _update_progress(self, progress, percent, step, status, details=None):
+        progress.progress = percent
+        progress.step = step
+        progress.status = status
+        if details:
+            progress.details = details
+        self.db.commit()
+
+    def _get_snowflake_connection(self, destination):
+        private_key_str = destination.snowflake_private_key.strip()
+        passphrase = None
+        if destination.snowflake_private_key_passphrase:
+            passphrase = destination.snowflake_private_key_passphrase.encode()
+
+        p_key = serialization.load_pem_private_key(
+            private_key_str.encode(),
+            password=passphrase,
+            backend=default_backend(),
+        )
+        pkb = p_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+
+        return snowflake.connector.connect(
+            user=destination.snowflake_user,
+            account=destination.snowflake_account,
+            private_key=pkb,
+            role=destination.snowflake_role,
+            warehouse=destination.snowflake_warehouse,
+            database=destination.snowflake_database,
+            schema=destination.snowflake_schema,
+            client_session_keep_alive=False,
+            application="Rosetta_ETL"
+        )
+
+    def _map_postgres_to_snowflake(self, col: dict) -> str:
+        # col contains: column_name, real_data_type, numeric_precision, numeric_scale, ...
+        # Note: input might be from SchemaMonitor ('real_data_type') or just 'data_type' if from old metadata
+        
+        pg_type = str(col.get('real_data_type') or col.get('data_type')).upper()
+        precision = col.get('numeric_precision')
+        scale = col.get('numeric_scale')
+
+        if "INT" in pg_type or "SERIAL" in pg_type:
+            return "NUMBER(38,0)"
+        elif "NUMERIC" in pg_type or "DECIMAL" in pg_type:
+            if precision is not None and scale is not None:
+                return f"NUMBER({precision}, {scale})"
+            return "NUMBER(38,4)" 
+        elif "FLOAT" in pg_type or "DOUBLE" in pg_type:
+            return "FLOAT"
+        elif "REAL" in pg_type:
+            return "FLOAT"
+        elif "BOOL" in pg_type:
+            return "BOOLEAN"
+        elif "DATE" in pg_type:
+            return "DATE"
+        elif "TIMESTAMP" in pg_type:
+            return "TIMESTAMP_TZ"
+        elif "JSON" in pg_type:
+            return "VARIANT"
+        elif "ARRAY" in pg_type:
+            return "ARRAY"
+        elif "UUID" in pg_type:
+            return "VARCHAR(36)"
+        else:
+            return "VARCHAR"
+
+    def _generate_landing_ddl(self, db, schema, table_name, columns):
+        cols_ddl = []
+        for col in columns:
+            col_name = col['column_name']
+            # Pass entire col dict to mapper
+            sf_type = self._map_postgres_to_snowflake(col)
+            cols_ddl.append(f"{col_name} {sf_type}")
+            
+        cols_ddl.append("operation VARCHAR(1)")
+        cols_ddl.append("sync_timestamp_rosetta TIMESTAMP_TZ")
+        
+        ddl = f"CREATE TABLE IF NOT EXISTS {db}.{schema}.{table_name} ({', '.join(cols_ddl)}) ENABLE_SCHEMA_EVOLUTION = TRUE"
+        return ddl
+
+    def _generate_target_ddl(self, db, schema, table_name, columns):
+        # Precise type (mapped), no default value, primary key
+        
+        cols_ddl = []
+        pks = []
+        
+        for col in columns:
+            col_name = col['column_name']
+            sf_type = self._map_postgres_to_snowflake(col)
+            
+            # Basic column definition
+            definition = f"{col_name} {sf_type}"
+            cols_ddl.append(definition)
+            
+            # Check PK
+            if col.get('is_primary_key') is True:
+                 pks.append(col_name)
+                 
+        # Add PK constraint if exists
+        if pks:
+            pk_cols = ", ".join(pks)
+            # Snowflake supports inline or out-of-line. Out-of-line is cleaner for composites or naming.
+            cols_ddl.append(f"CONSTRAINT pk_{table_name} PRIMARY KEY ({pk_cols})")
+            
+        ddl = f"""
+        CREATE TABLE IF NOT EXISTS {db}.{schema}.{table_name} (
+            {",\n            ".join(cols_ddl)}
+        ) ENABLE_SCHEMA_EVOLUTION = TRUE;
+        """
+        return ddl
+
+    def _generate_merge_task_ddl(self, pipeline, l_db, l_schema, l_table, stream, t_db, t_schema, t_table, columns):
+        # 1. Try to find explicit PK
+        pk_cols = []
+        for col in columns:
+             if col.get('is_primary_key') is True:
+                 pk_cols.append(col['column_name'])
+        
+        # 2. Fallback to 'id' or first column if no PK found
+        if not pk_cols:
+            for col in columns:
+                if 'id' in col['column_name'].lower():
+                    pk_cols.append(col['column_name'])
+                    break
+        if not pk_cols:
+            pk_cols.append(columns[0]['column_name'])
+        
+        # Prepare JOIN condition for MERGE
+        # T.id = S.id AND T.key2 = S.key2
+        join_condition = " AND ".join([f"T.{pk} = S.{pk}" for pk in pk_cols])
+        
+        # Prepare Partition By columns for De-duplication
+        partition_by = ", ".join(pk_cols)
+        
+        col_names = [c['column_name'] for c in columns]
+        
+        # Indent utility
+        indent = "            "
+        
+        # UPDATE SET clause
+        # exclude PKs from update usually? MERGE allows updating everything except join keys usually.
+        # But safest to update all non-PKs.
+        update_cols = [c for c in col_names if c not in pk_cols]
+        if not update_cols:
+             # Edge case: table only has PK columns? Then update is no-op usually or not possible.
+             # Or maybe just update one col to itself? Dummy update?
+             # Let's assume there's always data columns. If not, we might not need update clause, just insert.
+             # But for safety, let's keep all columns if no distinct non-PKs (shouldn't happen in real ETL).
+             set_clause = ", ".join([f"{c} = S.{c}" for c in col_names])
+        else:
+             set_clause = f",\n{indent}            ".join([f"{c} = S.{c}" for c in update_cols])
+        
+        val_clause = ", ".join([f"S.{c}" for c in col_names])
+        col_list = ", ".join(col_names)
+        
+        task_ddl = f"""
+        CREATE OR REPLACE TASK {l_db}.{l_schema}.TASK_MERGE_{t_table}
+        WAREHOUSE = {pipeline.destination.snowflake_warehouse}
+        SCHEDULE = '60 MINUTE'
+        WHEN SYSTEM$STREAM_HAS_DATA('{l_db}.{l_schema}.{stream}')
+        AS
+        MERGE INTO {t_db}.{t_schema}.{t_table} AS T
+        USING (
+            SELECT * FROM (
+                SELECT 
+                    *, 
+                    ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY sync_timestamp_rosetta DESC) as rn
+                FROM {l_db}.{l_schema}.{stream}
+            ) WHERE rn = 1
+        ) AS S
+        ON {join_condition}
+        WHEN MATCHED AND S.operation = 'D' THEN
+            DELETE
+        WHEN MATCHED AND S.operation != 'D' THEN
+            UPDATE SET 
+            {set_clause}
+        WHEN NOT MATCHED AND S.operation != 'D' THEN
+            INSERT ({col_list})
+            VALUES ({val_clause});
+        """
+        return task_ddl

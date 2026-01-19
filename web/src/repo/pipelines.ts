@@ -12,6 +12,12 @@ export interface Pipeline {
     last_error?: string
     last_start_at?: string
   }
+  pipeline_progress?: {
+    progress: number
+    step?: string
+    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
+    details?: string
+  }
   source?: {
     name: string
   }

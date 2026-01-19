@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS LANDING_TBL_SALES (
     
     -- CDC Columns (Change Data Capture)
     operation           VARCHAR(1),         -- C (Create/Insert), U (Update), D (Delete)
-    sync_timestamp      TIMESTAMP_TZ        -- When data was synced to Snowflake
+    sync_timestamp_rosetta      TIMESTAMP_TZ        -- When data was synced to Snowflake
 )
 COMMENT = 'Landing table for tbl_sales with CDC support'
 ENABLE_SCHEMA_EVOLUTION = TRUE;

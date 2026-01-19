@@ -148,7 +148,27 @@ class PipelineMetadataResponse(BaseSchema):
         }
 
 
+
+class PipelineProgressResponse(BaseSchema):
+    """
+    Schema for pipeline progress.
+    """
+
+    id: int = Field(..., description="Unique progress identifier")
+    pipeline_id: int = Field(..., description="Associated pipeline ID")
+    progress: int = Field(..., description="Progress percentage")
+    step: str | None = Field(default=None, description="Current step")
+    status: str = Field(..., description="Progress status")
+    details: str | None = Field(default=None, description="Additional details")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        orm_mode = True
+
+
 class PipelineResponse(PipelineBase, TimestampSchema):
+
     """
     Schema for pipeline API responses.
 
@@ -169,6 +189,9 @@ class PipelineResponse(PipelineBase, TimestampSchema):
     )
     pipeline_metadata: PipelineMetadataResponse | None = Field(
         default=None, description="Pipeline runtime metadata"
+    )
+    pipeline_progress: PipelineProgressResponse | None = Field(
+        default=None, description="Pipeline initialization progress"
     )
 
     class Config:
@@ -214,6 +237,16 @@ class PipelineResponse(PipelineBase, TimestampSchema):
                     "last_error": None,
                     "last_error_at": None,
                     "last_start_at": "2024-01-01T00:00:00Z",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                },
+                "pipeline_progress": {
+                    "id": 1,
+                    "pipeline_id": 1,
+                    "progress": 50,
+                    "step": "Creating Landing Table",
+                    "status": "IN_PROGRESS",
+                    "details": None,
                     "created_at": "2024-01-01T00:00:00Z",
                     "updated_at": "2024-01-01T00:00:00Z",
                 },

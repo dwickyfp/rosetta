@@ -36,12 +36,7 @@ impl PipelineManager {
 
     pub async fn run_migrations(&self) -> Result<()> {
         info!("Running database migrations...");
-        let migrations = format!(
-            "{};{};{}",
-            include_str!("../migrations/001_create_table.sql"),
-            include_str!("../migrations/004_update_schema.sql"),
-            include_str!("../migrations/005_create_presets.sql")
-        );
+        let migrations = format!("{}", include_str!("../migrations/001_create_table.sql"));
         // Split by semicolon to execute separate statements
         for query in migrations.split(';') {
             let query = query.trim();

@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS table_metadata_list (
     table_name VARCHAR(255),
     schema_table JSONB NULL,
     is_exists_table_landing BOOLEAN DEFAULT FALSE, -- table landing in snowflake
+    is_exists_stream BOOLEAN DEFAULT FALSE, -- stream in snowflake
     is_exists_task BOOLEAN DEFAULT FALSE, -- task in snowflake
     is_exists_table_destination BOOLEAN DEFAULT FALSE, -- table destination in snowflake
     is_changes_schema BOOLEAN DEFAULT FALSE, -- track changes schema
@@ -137,4 +138,18 @@ CREATE INDEX IF NOT EXISTS idx_table_metadata_list_source_id ON table_metadata_l
 CREATE INDEX IF NOT EXISTS idx_table_metadata_list_table_name ON table_metadata_list(table_name);
 CREATE INDEX IF NOT EXISTS idx_history_schema_evolution_table_metadata_list_id ON history_schema_evolution(table_metadata_list_id);
 CREATE INDEX IF NOT EXISTS idx_history_schema_evolution_version_schema ON history_schema_evolution(version_schema);
+
+-- Table 6: Pipeline Progress (tracks initialization progress)
+CREATE TABLE IF NOT EXISTS pipelines_progress (
+    id SERIAL PRIMARY KEY,
+    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    progress INTEGER NOT NULL DEFAULT 0, -- 0 to 100
+    step VARCHAR(255), -- current step description e.g. "Creating Landing Table"
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED'
+    details TEXT, -- JSON or text details about the progress
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pipelines_progress_pipeline_id ON pipelines_progress(pipeline_id);
 

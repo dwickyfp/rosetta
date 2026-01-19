@@ -66,12 +66,12 @@ export const getSourceDetailsTablesColumns = (
             },
         },
         {
-            accessorKey: 'is_exists_stream_table',
+            accessorKey: 'is_exists_stream',
             header: ({ column }) => (
                 <DataTableColumnHeader column={column} title='Stream' className='w-full justify-center' />
             ),
             cell: ({ row }) => {
-                const exists = row.getValue('is_exists_stream_table') as boolean
+                const exists = row.getValue('is_exists_stream') as boolean
                 return (
                     <div className='flex justify-center'>
                         <Checkbox

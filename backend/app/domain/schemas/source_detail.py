@@ -19,6 +19,7 @@ class SourceTableInfo(BaseModel):
     id: int
     table_name: str
     is_exists_table_landing: bool
+    is_exists_stream: bool
     is_exists_task: bool
     is_exists_table_destination: bool
     version: int = Field(default=1, description="Table schema version")

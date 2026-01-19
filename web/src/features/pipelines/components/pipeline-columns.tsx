@@ -50,13 +50,39 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
     },
   },
   {
+    accessorKey: 'progress',
+    header: 'Initialization',
+    cell: ({ row }) => {
+      const progress = row.original.pipeline_progress
+      if (!progress || progress.status === 'COMPLETED') return <span className='text-muted-foreground'>-</span>
+
+      return (
+        <div className='flex flex-col space-y-1 w-[140px]'>
+          <div className='flex justify-between text-xs'>
+            <span>{progress.status === 'FAILED' ? 'Failed' : `${progress.progress}%`}</span>
+          </div>
+          {progress.status !== 'FAILED' && (
+            <div className='h-2 w-full bg-secondary rounded-full overflow-hidden'>
+              <div
+                className='h-full bg-primary transition-all duration-500 ease-in-out'
+                style={{ width: `${progress.progress}%` }}
+              />
+            </div>
+          )}
+          {progress.step && <span className='text-[10px] text-muted-foreground truncate' title={progress.step}>{progress.step}</span>}
+          {progress.status === 'FAILED' && <span className='text-[10px] text-destructive truncate' title={progress.details}>{progress.details}</span>}
+        </div>
+      )
+    }
+  },
+  {
     accessorKey: 'status',
     header: 'Status',
     cell: ({ row }) => {
       const status = row.getValue('status') as string
       return (
         <Badge variant={status === 'START' ? 'default' : 'secondary'}>
-            {status}
+          {status}
         </Badge>
       )
     },

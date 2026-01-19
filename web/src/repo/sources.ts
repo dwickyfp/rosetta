@@ -41,7 +41,7 @@ export interface SourceTableInfo {
     is_exists_table_landing: boolean
     is_exists_task: boolean
     is_exists_table_destination: boolean
-    is_exists_stream_table: boolean
+    is_exists_stream: boolean
     version: number
     schema_table?: {
         column_name: string

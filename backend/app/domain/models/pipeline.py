@@ -107,6 +107,14 @@ class Pipeline(Base, TimestampMixin):
         lazy="selectin",
     )
 
+    pipeline_progress: Mapped["PipelineProgress"] = relationship(
+        "PipelineProgress",
+        back_populates="pipeline",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     def __repr__(self) -> str:
         """String representation."""
         return f"Pipeline(id={self.id}, name={self.name!r}, " f"status={self.status!r})"
@@ -224,3 +232,61 @@ class PipelineMetadata(Base, TimestampMixin):
         self.status = PipelineMetadataStatus.RUNNING.value
         self.last_error = None
         self.last_error_at = None
+
+
+class PipelineProgress(Base, TimestampMixin):
+    """
+    Pipeline initialization progress tracking.
+    """
+
+    __tablename__ = "pipelines_progress"
+    __table_args__ = {"comment": "Pipeline initialization progress tracking"}
+
+    # Primary Key
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique progress identifier",
+    )
+
+    # Pipeline Reference
+    pipeline_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("pipelines.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Reference to pipeline",
+    )
+
+    # Progress Details
+    progress: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="Progress percentage (0-100)",
+    )
+
+    step: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Current step description",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="PENDING",
+        nullable=False,
+        comment="Status: PENDING, IN_PROGRESS, COMPLETED, FAILED",
+    )
+
+    details: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Additional details about progress",
+    )
+
+    # Relationships
+    pipeline: Mapped["Pipeline"] = relationship(
+        "Pipeline", back_populates="pipeline_progress"
+    )

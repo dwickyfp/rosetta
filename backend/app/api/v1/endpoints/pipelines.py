@@ -6,7 +6,7 @@ Provides REST API for managing ETL pipelines.
 
 from typing import List
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, BackgroundTasks
 
 from app.api.deps import get_pipeline_service
 from app.domain.schemas.pipeline import (
@@ -29,6 +29,7 @@ router = APIRouter()
 )
 async def create_pipeline(
     pipeline_data: PipelineCreate,
+    background_tasks: BackgroundTasks,
     service: PipelineService = Depends(get_pipeline_service),
 ) -> PipelineResponse:
     """
@@ -42,6 +43,7 @@ async def create_pipeline(
         Created pipeline with source and destination details
     """
     pipeline = service.create_pipeline(pipeline_data)
+    background_tasks.add_task(service.initialize_pipeline, pipeline.id)
     return PipelineResponse.from_orm(pipeline)
 
 

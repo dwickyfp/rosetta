@@ -226,6 +226,8 @@ class SchemaMonitorService:
                 SELECT 
                     c.column_name,
                     c.is_nullable,
+                    c.numeric_precision,
+                    c.numeric_scale,
                     CASE 
                         WHEN c.udt_name = 'geometry' THEN 'GEOMETRY'
                         WHEN c.udt_name = 'geography' THEN 'GEOGRAPHY'
@@ -298,6 +300,8 @@ class SchemaMonitorService:
                 SELECT
                     c.column_name,
                     c.is_nullable,
+                    c.numeric_precision,
+                    c.numeric_scale,
                     UPPER(c.data_type) aS real_data_type,
                     CASE 
                             WHEN pk.column_name IS NOT NULL THEN TRUE 

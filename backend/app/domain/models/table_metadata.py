@@ -31,6 +31,9 @@ class TableMetadata(Base):
     is_exists_table_landing: Mapped[bool] = mapped_column(
         Boolean, default=False, comment="Table exists in landing (Snowflake)"
     )
+    is_exists_stream: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Stream exists in Snowflake"
+    )
     is_exists_task: Mapped[bool] = mapped_column(
         Boolean, default=False, comment="Task exists in Snowflake"
     )
