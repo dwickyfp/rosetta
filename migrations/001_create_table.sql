@@ -153,3 +153,12 @@ CREATE TABLE IF NOT EXISTS pipelines_progress (
 
 CREATE INDEX IF NOT EXISTS idx_pipelines_progress_pipeline_id ON pipelines_progress(pipeline_id);
 
+CREATE TABLE IF NOT EXISTS credit_snowflake_monitoring(
+    id SERIAL PRIMARY KEY,
+    destination_id INTEGER NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+    total_credit INTEGER NOT NULL,
+    usage_date TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+

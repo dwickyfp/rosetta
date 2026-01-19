@@ -42,9 +42,10 @@ import {
 interface SourceDetailsTablesListProps {
     sourceId: number
     tables: SourceTableInfo[]
+    readOnly?: boolean
 }
 
-export function SourceDetailsTablesList({ sourceId, tables }: SourceDetailsTablesListProps) {
+export function SourceDetailsTablesList({ sourceId, tables, readOnly = false }: SourceDetailsTablesListProps) {
     const [rowSelection, setRowSelection] = useState({})
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -105,7 +106,7 @@ export function SourceDetailsTablesList({ sourceId, tables }: SourceDetailsTable
         }
     }
 
-    const columns = useMemo(() => getSourceDetailsTablesColumns(handleCheckSchema, selectedVersions, handleVersionChange, handleUnregisterTable), [selectedVersions])
+    const columns = useMemo(() => getSourceDetailsTablesColumns(handleCheckSchema, selectedVersions, handleVersionChange, readOnly ? undefined : handleUnregisterTable), [selectedVersions, readOnly])
 
     const table = useReactTable({
         data: tables,

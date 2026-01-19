@@ -60,5 +60,13 @@ export const pipelinesRepo = {
   pause: async (id: number): Promise<Pipeline> => {
     const response: AxiosResponse<Pipeline> = await api.post(`/pipelines/${id}/pause`)
     return response.data
+  },
+  get: async (id: number): Promise<Pipeline> => {
+    const response: AxiosResponse<Pipeline> = await api.get(`/pipelines/${id}`)
+    return response.data
+  },
+  refresh: async (id: number): Promise<Pipeline> => {
+    const response: AxiosResponse<Pipeline> = await api.post(`/pipelines/${id}/refresh`)
+    return response.data
   }
 }

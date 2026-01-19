@@ -15,8 +15,10 @@ export const getSourceDetailsTablesColumns = (
     onCheckSchema: (table: SourceTableInfo) => void,
     selectedVersions: Record<number, number>,
     onVersionChange: (tableId: number, version: number) => void,
-    onUnregister: (tableName: string) => void
-): ColumnDef<SourceTableInfo>[] => [
+    onUnregister?: (tableName: string) => void
+): ColumnDef<SourceTableInfo>[] => {
+
+    const columns: ColumnDef<SourceTableInfo>[] = [
 
         {
             accessorKey: 'table_name',
@@ -149,7 +151,10 @@ export const getSourceDetailsTablesColumns = (
                 </div>
             ),
         },
-        {
+    ]
+
+    if (onUnregister) {
+        columns.push({
             id: 'actions',
             header: ({ column }) => (
                 <DataTableColumnHeader column={column} title='Action' className='w-full justify-center' />
@@ -165,5 +170,8 @@ export const getSourceDetailsTablesColumns = (
                     </Button>
                 </div>
             )
-        }
-    ]
+        })
+    }
+
+    return columns
+}

@@ -2,8 +2,11 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Pipeline } from '@/repo/pipelines'
+import { useNavigate } from '@tanstack/react-router'
+import { Button } from '@/components/ui/button'
 import { PipelineAnimatedArrow } from './pipeline-animated-arrow.tsx'
 import { PipelineRowActions } from './pipeline-row-actions.tsx'
+
 
 export const pipelineColumns: ColumnDef<Pipeline>[] = [
   {
@@ -95,7 +98,33 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
     },
   },
   {
+    id: 'details',
+    header: 'Details',
+    cell: ({ row }) => {
+      // We can't use hooks here directly if it's not a component definition, 
+      // but Tanstack Table cell is rendered as a component.
+      // However, to be safe and cleaner, let's extract a component or use a simple Link if available,
+      // or just use `window.location`? No, SPA.
+      // Best to use a small component.
+      return <PipelineDetailsButton pipelineId={row.original.id} />
+    }
+  },
+  {
     id: 'actions',
     cell: ({ row }) => <PipelineRowActions row={row} />,
   },
 ]
+
+function PipelineDetailsButton({ pipelineId }: { pipelineId: number }) {
+  const navigate = useNavigate()
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => navigate({ to: '/pipelines/$pipelineId', params: { pipelineId: String(pipelineId) } })}
+    >
+      Details
+    </Button>
+  )
+}
+

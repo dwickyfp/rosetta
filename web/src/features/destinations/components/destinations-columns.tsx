@@ -2,6 +2,8 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { type Destination } from '../data/schema'
 import { DestinationsRowActions } from './destinations-row-actions'
+import { useNavigate } from '@tanstack/react-router'
+import { Button } from '@/components/ui/button'
 
 export const destinationsColumns: ColumnDef<Destination>[] = [
     {
@@ -71,7 +73,28 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
         ),
     },
     {
+        id: 'details',
+        cell: ({ row }) => (
+            <div className='flex items-center justify-center'>
+                <DestinationDetailsButton destinationId={row.original.id} />
+            </div>
+        ),
+    },
+    {
         id: 'actions',
         cell: ({ row }) => <DestinationsRowActions row={row} />,
     },
 ]
+
+function DestinationDetailsButton({ destinationId }: { destinationId: number }) {
+    const navigate = useNavigate()
+    return (
+        <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate({ to: '/destinations/$destinationId', params: { destinationId: destinationId } })}
+        >
+            Details
+        </Button>
+    )
+}

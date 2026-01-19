@@ -17,6 +17,7 @@ from app.core.logging import get_logger
 from app.domain.services.wal_monitor import WALMonitorService
 from app.domain.services.replication_monitor import ReplicationMonitorService
 from app.domain.services.schema_monitor import SchemaMonitorService
+from app.domain.services.credit_monitor import CreditMonitorService
 
 logger = get_logger(__name__)
 
@@ -35,6 +36,7 @@ class BackgroundScheduler:
         self.wal_monitor: Optional[WALMonitorService] = None
         self.replication_monitor: Optional[ReplicationMonitorService] = None
         self.schema_monitor: Optional[SchemaMonitorService] = None
+        self.credit_monitor: Optional[CreditMonitorService] = None
 
     def _run_wal_monitor(self) -> None:
         """
@@ -67,6 +69,16 @@ class BackgroundScheduler:
                 asyncio.run(self.schema_monitor.monitor_all_sources())
         except Exception as e:
             logger.error("Error running schema monitor task", extra={"error": str(e)})
+
+    def _run_credit_monitor(self) -> None:
+        """
+        Synchronous wrapper for credit monitor task.
+        """
+        try:
+            if self.credit_monitor:
+                asyncio.run(self.credit_monitor.monitor_all_destinations())
+        except Exception as e:
+            logger.error("Error running credit monitor task", extra={"error": str(e)})
 
     def start(self) -> None:
         """
@@ -139,7 +151,23 @@ class BackgroundScheduler:
             coalesce=True,
         )
         
-        logger.info("Replication monitoring scheduled")
+        # Initialize Credit monitor
+        self.credit_monitor = CreditMonitorService()
+        
+        # Schedule Credit monitoring task (every 6 hours)
+        self.scheduler.add_job(
+            self._run_credit_monitor,
+            trigger=IntervalTrigger(
+                hours=6
+            ),
+            id="credit_monitor",
+            name="Credit Monitor",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+
+        logger.info("Replication and Credit monitoring scheduled")
 
         # Start scheduler
         self.scheduler.start()
@@ -168,6 +196,9 @@ class BackgroundScheduler:
         if self.schema_monitor:
             self.schema_monitor.stop()
             self.schema_monitor = None
+
+        if self.credit_monitor:
+            self.credit_monitor = None  # No stop method needed strictly but consistent cleanup
 
         logger.info("Background task scheduler stopped")
 
