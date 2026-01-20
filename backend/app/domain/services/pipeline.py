@@ -463,7 +463,18 @@ class PipelineService:
             application="Rosetta_ETL"
         )
 
-    def _map_postgres_to_snowflake(self, col: dict) -> str:
+    def _map_postgres_to_snowflake(self, col: dict, for_landing: bool = False) -> str:
+        """
+        Map PostgreSQL data type to Snowflake data type.
+        
+        Args:
+            col: Column metadata dict containing real_data_type, numeric_precision, etc.
+            for_landing: If True, spatial types (GEOGRAPHY/GEOMETRY) will be mapped to VARCHAR
+                         since data arrives as text from PostgreSQL WAL.
+        
+        Returns:
+            Snowflake data type string
+        """
         # col contains: column_name, real_data_type, numeric_precision, numeric_scale, ...
         # Note: input might be from SchemaMonitor ('real_data_type') or just 'data_type' if from old metadata
         
@@ -493,6 +504,12 @@ class PipelineService:
             return "ARRAY"
         elif "UUID" in pg_type:
             return "VARCHAR(36)"
+        elif "GEOGRAPHY" in pg_type:
+            # Landing table receives text from WAL, target table uses native type
+            return "VARCHAR" if for_landing else "GEOGRAPHY"
+        elif "GEOMETRY" in pg_type:
+            # Landing table receives text from WAL, target table uses native type
+            return "VARCHAR" if for_landing else "GEOMETRY"
         else:
             return "VARCHAR"
 
@@ -500,8 +517,8 @@ class PipelineService:
         cols_ddl = []
         for col in columns:
             col_name = col['column_name']
-            # Pass entire col dict to mapper
-            sf_type = self._map_postgres_to_snowflake(col)
+            # Pass entire col dict to mapper, with for_landing=True to use VARCHAR for spatial types
+            sf_type = self._map_postgres_to_snowflake(col, for_landing=True)
             cols_ddl.append(f"{col_name} {sf_type}")
             
         cols_ddl.append("operation VARCHAR(1)")
@@ -570,6 +587,21 @@ class PipelineService:
         # Indent utility
         indent = "            "
         
+        # Build a mapping of column names to their PostgreSQL types for spatial conversion
+        col_type_map = {}
+        for col in columns:
+            pg_type = str(col.get('real_data_type') or col.get('data_type')).upper()
+            col_type_map[col['column_name']] = pg_type
+        
+        def get_source_value(col_name: str) -> str:
+            """Get the source value expression, applying spatial conversion if needed."""
+            pg_type = col_type_map.get(col_name, '')
+            if 'GEOGRAPHY' in pg_type:
+                return f"TRY_TO_GEOGRAPHY(S.{col_name})"
+            elif 'GEOMETRY' in pg_type:
+                return f"TRY_TO_GEOMETRY(S.{col_name})"
+            return f"S.{col_name}"
+        
         # UPDATE SET clause
         # exclude PKs from update usually? MERGE allows updating everything except join keys usually.
         # But safest to update all non-PKs.
@@ -579,11 +611,11 @@ class PipelineService:
              # Or maybe just update one col to itself? Dummy update?
              # Let's assume there's always data columns. If not, we might not need update clause, just insert.
              # But for safety, let's keep all columns if no distinct non-PKs (shouldn't happen in real ETL).
-             set_clause = ", ".join([f"{c} = S.{c}" for c in col_names])
+             set_clause = ", ".join([f"{c} = {get_source_value(c)}" for c in col_names])
         else:
-             set_clause = f",\n{indent}            ".join([f"{c} = S.{c}" for c in update_cols])
+             set_clause = f",\n{indent}            ".join([f"{c} = {get_source_value(c)}" for c in update_cols])
         
-        val_clause = ", ".join([f"S.{c}" for c in col_names])
+        val_clause = ", ".join([get_source_value(c) for c in col_names])
         col_list = ", ".join(col_names)
         
         # Use Snowflake scripting block to run MERGE then DELETE from landing table
