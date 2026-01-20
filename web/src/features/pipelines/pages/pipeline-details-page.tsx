@@ -1,4 +1,4 @@
-import { useParams, useNavigate, Link } from '@tanstack/react-router'
+import { useParams, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { sourcesRepo } from '@/repo/sources'
@@ -10,7 +10,7 @@ import { ConfigDrawer } from '@/components/config-drawer'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PipelineDetailsTable } from '@/features/pipelines/components/pipeline-details-table'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, RefreshCcw } from 'lucide-react'
+import { RefreshCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -27,7 +27,6 @@ export default function PipelineDetailsPage() {
     // Correctly accessing params using the route ID from routeTree.gen.ts
     const { pipelineId } = useParams({ from: '/_authenticated/pipelines/$pipelineId' })
     const id = parseInt(pipelineId)
-    const navigate = useNavigate()
     const [isRefreshing, setIsRefreshing] = useState(false)
 
     // 1. Fetch Pipeline to get source_id
