@@ -215,6 +215,11 @@ class SchemaMonitorService:
         db.commit()
         logger.info(f"Schema change detected for {table.table_name}: {change_type}")
 
+        # Handle schema evolution for connected pipelines
+        await self._apply_schema_evolution(
+            source, table, old_schema_dict, new_schema_dict, change_type, db
+        )
+
 
     def fetch_table_schema(self, conn, table_name: str) -> List[Dict]:
         """
@@ -340,6 +345,72 @@ class SchemaMonitorService:
             """
             cur.execute(fallback_query)
             return cur.fetchall()
+
+    async def _apply_schema_evolution(
+        self,
+        source: Source,
+        table: TableMetadata,
+        old_schema: dict,
+        new_schema: dict,
+        change_type: str,
+        db: Session
+    ) -> None:
+        """
+        Apply schema evolution to connected pipelines.
+        
+        When a schema change is detected, this method:
+        1. Finds pipelines connected to the source
+        2. For each pipeline, applies the schema evolution to Snowflake
+        3. Updates pipeline status to REFRESH
+        """
+        from app.domain.repositories.pipeline import PipelineRepository
+        from app.domain.services.schema_evolution import SchemaEvolutionService
+        
+        pipeline_repo = PipelineRepository(db)
+        pipelines = pipeline_repo.get_by_source_id(source.id)
+        
+        if not pipelines:
+            logger.info(
+                f"No pipelines connected to source {source.name}, skipping schema evolution",
+                extra={"source_id": source.id, "table_name": table.table_name}
+            )
+            return
+        
+        logger.info(
+            f"Found {len(pipelines)} pipeline(s) connected to source {source.name}",
+            extra={"source_id": source.id, "table_name": table.table_name}
+        )
+        
+        evolution_service = SchemaEvolutionService(db)
+        
+        for pipeline in pipelines:
+            try:
+                logger.info(
+                    f"Applying schema evolution to pipeline {pipeline.name}",
+                    extra={
+                        "pipeline_id": pipeline.id,
+                        "table_name": table.table_name,
+                        "change_type": change_type
+                    }
+                )
+                await evolution_service.handle_schema_evolution(
+                    pipeline, table, old_schema, new_schema, change_type
+                )
+                logger.info(
+                    f"Schema evolution completed for pipeline {pipeline.name}",
+                    extra={"pipeline_id": pipeline.id}
+                )
+            except Exception as e:
+                logger.error(
+                    f"Schema evolution failed for pipeline {pipeline.name}: {e}",
+                    extra={
+                        "pipeline_id": pipeline.id,
+                        "table_name": table.table_name,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                # Continue with other pipelines even if one fails
 
     def stop(self):
         self._stop_event.set()

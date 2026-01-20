@@ -575,29 +575,37 @@ class PipelineService:
         val_clause = ", ".join([f"S.{c}" for c in col_names])
         col_list = ", ".join(col_names)
         
+        # Use Snowflake scripting block to run MERGE then DELETE from landing table
         task_ddl = f"""
         CREATE OR REPLACE TASK {l_db}.{l_schema}.TASK_MERGE_{t_table}
         WAREHOUSE = {pipeline.destination.snowflake_warehouse}
         SCHEDULE = '60 MINUTE'
         WHEN SYSTEM$STREAM_HAS_DATA('{l_db}.{l_schema}.{stream}')
         AS
-        MERGE INTO {t_db}.{t_schema}.{t_table} AS T
-        USING (
-            SELECT * FROM (
-                SELECT 
-                    *, 
-                    ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY sync_timestamp_rosetta DESC) as rn
-                FROM {l_db}.{l_schema}.{stream}
-            ) WHERE rn = 1
-        ) AS S
-        ON {join_condition}
-        WHEN MATCHED AND S.operation = 'D' THEN
-            DELETE
-        WHEN MATCHED AND S.operation != 'D' THEN
-            UPDATE SET 
-            {set_clause}
-        WHEN NOT MATCHED AND S.operation != 'D' THEN
-            INSERT ({col_list})
-            VALUES ({val_clause});
+        BEGIN
+            -- Step 1: Merge data from stream to target table
+            MERGE INTO {t_db}.{t_schema}.{t_table} AS T
+            USING (
+                SELECT * FROM (
+                    SELECT 
+                        *, 
+                        ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY sync_timestamp_rosetta DESC) as rn
+                    FROM {l_db}.{l_schema}.{stream}
+                ) WHERE rn = 1
+            ) AS S
+            ON {join_condition}
+            WHEN MATCHED AND S.operation = 'D' THEN
+                DELETE
+            WHEN MATCHED AND S.operation != 'D' THEN
+                UPDATE SET 
+                {set_clause}
+            WHEN NOT MATCHED AND S.operation != 'D' THEN
+                INSERT ({col_list})
+                VALUES ({val_clause});
+            
+            -- Step 2: Clean up landing table after merge
+            DELETE FROM {l_db}.{l_schema}.{l_table};
+        END;
         """
         return task_ddl
+
