@@ -9,7 +9,11 @@ from app.api.v1.endpoints import (
     wal_monitor,
     system_metrics,
     credits,
+    wal_monitor,
+    system_metrics,
+    credits,
     configuration,
+    dashboard,
 )
 
 # Create v1 router
@@ -40,4 +44,8 @@ api_router.include_router(
 
 api_router.include_router(
     configuration.router, tags=["configuration"]
+)
+
+api_router.include_router(
+    dashboard.router, prefix="/dashboard", tags=["dashboard"]
 )
