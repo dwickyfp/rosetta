@@ -5,6 +5,7 @@ A production-ready FastAPI application for managing ETL pipeline configurations
 with PostgreSQL WAL monitoring capabilities.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -53,10 +54,19 @@ async def lifespan(app: FastAPI):
         background_scheduler.start()
         logger.info("Background scheduler started successfully")
 
-        # Check database health
-        db_healthy = check_database_health()
-        if not db_healthy:
-            logger.warning("Database health check failed during startup")
+        # Check database health in background to not block startup
+        async def _startup_health_check():
+            try:
+                logger.info("Performing startup database health check...")
+                db_healthy = await asyncio.to_thread(check_database_health)
+                if not db_healthy:
+                    logger.warning("Database health check failed during startup")
+                else:
+                    logger.info("Database health check passed")
+            except Exception as e:
+                logger.error("Error during startup health check", extra={"error": str(e)})
+
+        asyncio.create_task(_startup_health_check())
 
         logger.info("Application startup completed successfully")
 

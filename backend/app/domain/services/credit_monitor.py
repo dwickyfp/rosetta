@@ -18,10 +18,8 @@ from app.domain.models.credit_snowflake_monitoring import CreditSnowflakeMonitor
 from app.domain.schemas.credit import CreditUsageResponse, WeeklyMonthlyUsage, DailyUsage
 
 # Import Snowflake connector
-try:
-    import snowflake.connector
-except ImportError:
-    snowflake = None
+# Moved to method level for lazy loading
+
 
 logger = get_logger(__name__)
 
@@ -139,6 +137,14 @@ class CreditMonitorService:
         Connect to Snowflake and execute usage query.
         """
         config = destination.connection_config
+
+        # Lazy load snowflake connector
+        try:
+            import snowflake.connector
+        except ImportError:
+            logger.error("Snowflake connector not installed")
+            return []
+
         
         # Construct connection params
         conn_params = {

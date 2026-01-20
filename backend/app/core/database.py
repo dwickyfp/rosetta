@@ -89,10 +89,6 @@ class DatabaseManager:
                     autoflush=False,
                 )
 
-                # Test connection
-                with self._engine.connect() as conn:
-                    conn.execute(text("SELECT 1"))
-
                 logger.info("Database connection pool initialized successfully")
 
             except SQLAlchemyError as e:
