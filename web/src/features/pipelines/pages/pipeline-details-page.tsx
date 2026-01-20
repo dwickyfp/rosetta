@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { SourceDetailsTablesList } from '@/features/sources/components/source-details-tables-list'
+import { PipelineDetailsTable } from '@/features/pipelines/components/pipeline-details-table'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, RefreshCcw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -161,11 +161,9 @@ export default function PipelineDetailsPage() {
                             <Skeleton className="h-10 w-full" />
                         </div>
                     ) : sourceDetails ? (
-                        <SourceDetailsTablesList
-                            sourceId={pipeline!.source_id}
+                        <PipelineDetailsTable
                             pipelineId={pipeline!.id}
                             tables={sourceDetails.tables}
-                            readOnly={true}
                         />
                     ) : (
                         <div className="p-4 text-muted-foreground">No source details available.</div>

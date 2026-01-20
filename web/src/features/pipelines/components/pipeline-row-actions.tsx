@@ -25,13 +25,29 @@ export function PipelineRowActions<TData>({ row }: DataTableRowActionsProps<TDat
 
   const { mutate: deleteMutate } = useMutation({
     mutationFn: pipelinesRepo.delete,
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['pipelines'] })
+      const previousPipelines = queryClient.getQueryData(['pipelines'])
+      queryClient.setQueryData(['pipelines'], (old: any) => {
+        if (!old) return old
+        return {
+          ...old,
+          pipelines: old.pipelines.filter((p: Pipeline) => p.id !== id),
+          total: old.total - 1
+        }
+      })
+      return { previousPipelines }
+    },
+    onError: (_err, _id, context) => {
+      queryClient.setQueryData(['pipelines'], context?.previousPipelines)
+      toast.error('Failed to delete pipeline')
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['pipelines'] })
+    },
+    onSuccess: () => {
       toast.success('Pipeline deleted')
     },
-    onError: () => {
-      toast.error('Failed to delete pipeline')
-    }
   })
 
   const { mutate: startMutate } = useMutation({

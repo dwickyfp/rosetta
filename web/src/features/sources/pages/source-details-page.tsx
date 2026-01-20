@@ -8,7 +8,7 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { SourceDetailsMetrics } from '../components/source-details-metrics'
-import { SourceDetailsTablesList } from '../components/source-details-tables-list'
+import { SourceReplicationTable } from '../components/source-replication-table'
 import { SourceDetailsCreatePublicationDialog } from '../components/source-details-create-publication-dialog'
 import { SourceDetailsListTable } from '../components/source-details-list-table'
 import { SourceDetailsPresets } from '../components/source-details-presets'
@@ -233,7 +233,7 @@ export default function SourceDetailsPage() {
                                 <TabsTrigger value="presets">Presets</TabsTrigger>
                             </TabsList>
                             <TabsContent value="replication" className="space-y-4">
-                                <SourceDetailsTablesList
+                                <SourceReplicationTable
                                     sourceId={id}
                                     tables={data?.tables || []}
                                 />

@@ -70,8 +70,8 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
             source_id: parseInt(values.source_id),
             destination_id: parseInt(values.destination_id),
         }),
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['pipelines'] })
+    onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: ['pipelines'] })
         setOpen(false)
         form.reset()
         toast.success('Pipeline created successfully')
