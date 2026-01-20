@@ -4,8 +4,18 @@ import { type Destination } from '../data/schema'
 import { DestinationsRowActions } from './destinations-row-actions'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
+import { Info } from 'lucide-react'
 
 export const destinationsColumns: ColumnDef<Destination>[] = [
+    {
+        id: 'details',
+        header: 'Action',
+        cell: ({ row }) => (
+            <div className='flex items-center justify-center'>
+                <DestinationDetailsButton destinationId={row.original.id} />
+            </div>
+        ),
+    },
     {
         accessorKey: 'name',
         header: ({ column }) => (
@@ -73,14 +83,6 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
         ),
     },
     {
-        id: 'details',
-        cell: ({ row }) => (
-            <div className='flex items-center justify-center'>
-                <DestinationDetailsButton destinationId={row.original.id} />
-            </div>
-        ),
-    },
-    {
         id: 'actions',
         cell: ({ row }) => <DestinationsRowActions row={row} />,
     },
@@ -90,11 +92,12 @@ function DestinationDetailsButton({ destinationId }: { destinationId: number }) 
     const navigate = useNavigate()
     return (
         <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon"
+            className='h-8 w-8 p-0'
             onClick={() => navigate({ to: '/destinations/$destinationId', params: { destinationId: destinationId } })}
         >
-            Details
+            <Info className="h-4 w-4" />
         </Button>
     )
 }

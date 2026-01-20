@@ -6,7 +6,7 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recha
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
+import { format, subDays, isSameDay } from 'date-fns'
 import { Header } from '@/components/layout/header'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -40,10 +40,14 @@ export function DestinationDetailsPage() {
     }
 
     const summary = data?.summary
-    const chartData = data?.daily_usage.map(d => ({
-        date: format(new Date(d.date), 'MM/dd'),
-        credits: d.credits
-    })).reverse() || []
+    const chartData = Array.from({ length: 7 }, (_, i) => {
+        const date = subDays(new Date(), 6 - i)
+        const dayData = data?.daily_usage?.find(d => isSameDay(new Date(d.date), date))
+        return {
+            date: format(date, 'MM/dd'),
+            credits: dayData?.credits ?? 0
+        }
+    })
 
     return (
         <div className="flex min-h-screen flex-col">
@@ -108,7 +112,7 @@ export function DestinationDetailsPage() {
 
                 <Card className="col-span-4">
                     <CardHeader>
-                        <CardTitle>Daily Usage (Last 30 Days)</CardTitle>
+                        <CardTitle>Daily Usage (Last 7 Days)</CardTitle>
                     </CardHeader>
                     <CardContent className="pl-2">
                         <div className="h-[300px] w-full">

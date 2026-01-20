@@ -56,6 +56,17 @@ export function PipelineRowActions<TData>({ row }: DataTableRowActionsProps<TDat
     }
   })
 
+  const { mutate: refreshMutate } = useMutation({
+    mutationFn: pipelinesRepo.refresh,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipelines'] })
+      toast.success('Pipeline refreshed')
+    },
+    onError: () => {
+      toast.error('Failed to refresh pipeline')
+    }
+  })
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -74,6 +85,9 @@ export function PipelineRowActions<TData>({ row }: DataTableRowActionsProps<TDat
             Start
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onClick={() => refreshMutate(pipeline.id)}>
+          Refresh
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => deleteMutate(pipeline.id)}>
           Delete
