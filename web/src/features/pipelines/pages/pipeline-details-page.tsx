@@ -8,9 +8,6 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { PipelineDetailsTable } from '@/features/pipelines/components/pipeline-details-table'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, RefreshCcw } from 'lucide-react'
@@ -119,39 +116,6 @@ export default function PipelineDetailsPage() {
                         </Button>
                     </div>
                 </div>
-
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Status</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">
-                                {isLoading ? <Skeleton className="h-8 w-20" /> : (
-                                    <Badge variant={pipeline?.status === 'START' ? 'default' : 'secondary'}>
-                                        {pipeline?.status === 'START' ? 'RUNNING' : pipeline?.status}
-                                    </Badge>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Progress</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {isLoading ? <Skeleton className="h-8 w-full" /> : (
-                                <div className="space-y-1">
-                                    <div className="text-2xl font-bold">{pipeline?.pipeline_progress?.progress || 0}%</div>
-                                    <p className="text-xs text-muted-foreground">{pipeline?.pipeline_progress?.status}</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-
-                <Separator />
-
                 <div className="space-y-4">
                     <h3 className="text-lg font-medium">Table Replication Status</h3>
                     {isLoading ? (
