@@ -25,6 +25,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
         ),
         enableSorting: false,
         enableHiding: false,
+        meta: { title: 'Detail' },
     },
     {
         accessorKey: 'id',
@@ -34,6 +35,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
         cell: ({ row }) => <div className='w-full text-center'>{row.getValue('id')}</div>,
         enableSorting: false,
         enableHiding: false,
+        meta: { title: 'ID' },
     },
     {
         accessorKey: 'name',
@@ -45,6 +47,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 <span className='truncate font-medium'>{row.getValue('name')}</span>
             </div>
         ),
+        meta: { title: 'Name' },
     },
     {
         accessorKey: 'pg_host',
@@ -56,6 +59,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 <span className='truncate'>{row.getValue('pg_host')}</span>
             </div>
         ),
+        meta: { title: 'Host' },
     },
     {
         accessorKey: 'pg_database',
@@ -67,6 +71,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 <span>{row.getValue('pg_database')}</span>
             </div>
         ),
+        meta: { title: 'Database' },
     },
     {
         accessorKey: 'pg_username',
@@ -78,6 +83,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 <span>{row.getValue('pg_username')}</span>
             </div>
         ),
+        meta: { title: 'User' },
     },
     {
         accessorKey: 'is_replication_enabled',
@@ -97,6 +103,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 </div>
             )
         },
+        meta: { title: 'Replication' },
     },
     {
         accessorKey: 'is_publication_enabled',
@@ -116,6 +123,7 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 </div>
             )
         },
+        meta: { title: 'Publication' },
     },
     {
         accessorKey: 'total_tables',
@@ -127,9 +135,11 @@ export const sourcesColumns: ColumnDef<Source>[] = [
                 <span className='font-medium'>{row.getValue('total_tables')}</span>
             </div>
         ),
+        meta: { title: 'Total Tables' },
     },
     {
         id: 'actions',
         cell: ({ row }) => <SourcesRowActions row={row} />,
+        meta: { title: 'Actions' },
     },
 ]

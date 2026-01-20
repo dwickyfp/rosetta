@@ -24,6 +24,7 @@ export const getSourceDetailsTablesColumns = (
             ),
             enableSorting: true,
             enableHiding: false,
+            meta: { title: 'Table Name' },
         },
         {
             id: 'status',
@@ -68,7 +69,8 @@ export const getSourceDetailsTablesColumns = (
                         </div>
                     </div>
                 )
-            }
+            },
+            meta: { title: 'Status' },
         },
         {
             id: 'schema_version',
@@ -104,7 +106,8 @@ export const getSourceDetailsTablesColumns = (
                         </SelectContent>
                     </Select>
                 )
-            }
+            },
+            meta: { title: 'Schema Version' },
         },
         {
             id: 'view_schema',
@@ -123,7 +126,8 @@ export const getSourceDetailsTablesColumns = (
                         View Schema
                     </Button>
                 )
-            }
+            },
+            meta: { title: 'Schema Details' },
         }
     ]
 
@@ -143,7 +147,8 @@ export const getSourceDetailsTablesColumns = (
                         Drop
                     </Button>
                 </div>
-            )
+            ),
+            meta: { title: 'Action' },
         })
     }
 

@@ -130,6 +130,7 @@ export const getPipelineDetailsTableColumns = (
             },
             enableSorting: true,
             enableHiding: false,
+            meta: { title: 'Table Name' },
         },
         {
             id: 'message_per_day',
@@ -151,7 +152,8 @@ export const getPipelineDetailsTableColumns = (
                        </span>
                    </div>
                 )
-            }
+            },
+            meta: { title: 'Message Per Day' },
         },
         {
             id: 'monitoring',
@@ -163,7 +165,8 @@ export const getPipelineDetailsTableColumns = (
                 const stats = statsMap[tableName]
                 
                 return <MonitoringSparkline stats={stats} />
-            }
+            },
+            meta: { title: 'Monitoring' },
         }
     ]
 

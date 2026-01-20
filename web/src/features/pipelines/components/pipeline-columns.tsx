@@ -18,11 +18,13 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
         <PipelineDetailsButton pipelineId={row.original.id} />
       </div>
     ),
+    meta: { title: 'Action' },
   },
   {
     accessorKey: 'name',
     header: 'Name',
     cell: ({ row }) => <div className='w-[150px] font-medium'>{row.getValue('name')}</div>,
+    meta: { title: 'Name' },
   },
   {
     id: 'pipelines',
@@ -38,6 +40,7 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
         </div>
       )
     },
+    meta: { title: 'Pipelines' },
   },
   {
     accessorKey: 'progress',
@@ -64,7 +67,8 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
           {progress.status === 'FAILED' && <span className='text-[10px] text-destructive truncate' title={progress.details}>{progress.details}</span>}
         </div>
       )
-    }
+    },
+    meta: { title: 'Initialization' },
   },
   {
     accessorKey: 'status',
@@ -88,11 +92,13 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
     filterFn: (row, id, value) => {
       return value.includes(row.getValue(id))
     },
+    meta: { title: 'Status' },
   },
 
   {
     id: 'actions',
     cell: ({ row }) => <PipelineRowActions row={row} />,
+    meta: { title: 'Actions' },
   },
 ]
 

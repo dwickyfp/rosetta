@@ -15,6 +15,7 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <DestinationDetailsButton destinationId={row.original.id} />
             </div>
         ),
+        meta: { title: 'Detail' },
     },
     {
         accessorKey: 'name',
@@ -26,6 +27,7 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <span className='truncate font-medium'>{row.getValue('name')}</span>
             </div>
         ),
+        meta: { title: 'Name' },
     },
     {
         accessorKey: 'snowflake_account',
@@ -37,6 +39,7 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <span className='truncate'>{row.getValue('snowflake_account')}</span>
             </div>
         ),
+        meta: { title: 'Account' },
     },
     {
         accessorKey: 'snowflake_user',
@@ -48,6 +51,7 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <span>{row.getValue('snowflake_user')}</span>
             </div>
         ),
+        meta: { title: 'User' },
     },
     {
         accessorKey: 'snowflake_database',
@@ -59,6 +63,7 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <span>{row.getValue('snowflake_database')}</span>
             </div>
         ),
+        meta: { title: 'Database' },
     },
     {
         accessorKey: 'snowflake_role',
@@ -70,6 +75,7 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <span>{row.getValue('snowflake_role')}</span>
             </div>
         ),
+        meta: { title: 'Role' },
     },
     {
         accessorKey: 'snowflake_warehouse',
@@ -81,10 +87,12 @@ export const destinationsColumns: ColumnDef<Destination>[] = [
                 <span>{row.getValue('snowflake_warehouse')}</span>
             </div>
         ),
+        meta: { title: 'Warehouse' },
     },
     {
         id: 'actions',
         cell: ({ row }) => <DestinationsRowActions row={row} />,
+        meta: { title: 'Actions' },
     },
 ]
 

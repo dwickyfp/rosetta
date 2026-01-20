@@ -36,7 +36,9 @@ export function DataTableViewOptions<TData>({
           .getAllColumns()
           .filter(
             (column) =>
-              typeof column.accessorFn !== 'undefined' && column.getCanHide()
+              (typeof column.accessorFn !== 'undefined' ||
+                typeof column.columnDef.meta?.title !== 'undefined') &&
+              column.getCanHide()
           )
           .map((column) => {
             return (
@@ -46,7 +48,7 @@ export function DataTableViewOptions<TData>({
                 checked={column.getIsVisible()}
                 onCheckedChange={(value) => column.toggleVisibility(!!value)}
               >
-                {column.id}
+                {column.columnDef.meta?.title || column.id}
               </DropdownMenuCheckboxItem>
             )
           })}
