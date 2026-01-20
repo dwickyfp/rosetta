@@ -22,10 +22,10 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
-import { type SourceTableInfo, type TableSchemaResponse, sourcesRepo } from '@/repo/sources'
+import { type SourceTableInfo, sourcesRepo } from '@/repo/sources'
+import { pipelinesRepo } from '@/repo/pipelines'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSourceDetailsTablesColumns } from './source-details-tables-columns'
-import { SourceDetailsSchemaDrawer } from './source-details-schema-drawer'
-import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import {
@@ -41,47 +41,22 @@ import {
 
 interface SourceDetailsTablesListProps {
     sourceId: number
+    pipelineId?: number
     tables: SourceTableInfo[]
     readOnly?: boolean
 }
 
-export function SourceDetailsTablesList({ sourceId, tables, readOnly = false }: SourceDetailsTablesListProps) {
+export function SourceDetailsTablesList({ sourceId, pipelineId, tables, readOnly = false }: SourceDetailsTablesListProps) {
     const [rowSelection, setRowSelection] = useState({})
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
     const [globalFilter, setGlobalFilter] = useState('')
-
-    const [drawerOpen, setDrawerOpen] = useState(false)
-    const [selectedTable, setSelectedTable] = useState<SourceTableInfo | null>(null)
-    const [selectedVersions, setSelectedVersions] = useState<Record<number, number>>({})
-    const [fetchedSchema, setFetchedSchema] = useState<TableSchemaResponse | null>(null)
-    const [isLoadingSchema, setIsLoadingSchema] = useState(false)
 
     // New state for drop confirmation
     const [tableToDrop, setTableToDrop] = useState<string | null>(null)
     const [isProcessingDrop, setIsProcessingDrop] = useState(false)
 
     const queryClient = useQueryClient()
-
-    const handleVersionChange = (tableId: number, version: number) => {
-        setSelectedVersions(prev => ({ ...prev, [tableId]: version }))
-    }
-
-    const handleCheckSchema = async (table: SourceTableInfo) => {
-        setSelectedTable(table)
-        setDrawerOpen(true)
-        setIsLoadingSchema(true)
-        try {
-            const version = selectedVersions[table.id] || table.version
-            const schema = await sourcesRepo.getTableSchema(table.id, version)
-            setFetchedSchema(schema)
-        } catch (error) {
-            console.error("Failed to fetch schema", error)
-            setFetchedSchema(null)
-        } finally {
-            setIsLoadingSchema(false)
-        }
-    }
 
 
 
@@ -106,7 +81,25 @@ export function SourceDetailsTablesList({ sourceId, tables, readOnly = false }: 
         }
     }
 
-    const columns = useMemo(() => getSourceDetailsTablesColumns(handleCheckSchema, selectedVersions, handleVersionChange, readOnly ? undefined : handleUnregisterTable), [selectedVersions, readOnly])
+    const { data: pipelineStats } = useQuery({
+        queryKey: ['pipeline-stats', pipelineId],
+        queryFn: () => pipelinesRepo.getStats(pipelineId!),
+        enabled: !!pipelineId,
+        refetchInterval: 5000, // Refetch every 5 seconds
+    })
+
+    const statsMap = useMemo(() => {
+        if (!pipelineStats) return {}
+        return pipelineStats.reduce((acc, stat) => {
+            acc[stat.table_name] = stat
+            return acc
+        }, {} as Record<string, typeof pipelineStats[0]>)
+    }, [pipelineStats])
+
+    const columns = useMemo(() => getSourceDetailsTablesColumns(
+        readOnly ? undefined : handleUnregisterTable,
+        statsMap
+    ), [readOnly, statsMap, handleUnregisterTable])
 
     const table = useReactTable({
         data: tables,
@@ -212,18 +205,6 @@ export function SourceDetailsTablesList({ sourceId, tables, readOnly = false }: 
                     <DataTablePagination table={table} />
                 </div>
             </CardContent>
-
-            {selectedTable && (
-                <SourceDetailsSchemaDrawer
-                    open={drawerOpen}
-                    onOpenChange={setDrawerOpen}
-                    tableName={selectedTable.table_name}
-                    schema={fetchedSchema?.columns || []}
-                    diff={fetchedSchema?.diff}
-                    isLoading={isLoadingSchema}
-                    version={selectedVersions[selectedTable.id] || selectedTable.version}
-                />
-            )}
 
             <AlertDialog open={!!tableToDrop} onOpenChange={(open) => !open && setTableToDrop(null)}>
                 <AlertDialogContent>

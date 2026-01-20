@@ -20,6 +20,7 @@ pub struct SnowflakeDestination {
     pipeline_id: i32,
     source_id: i32,
     table_cache: Arc<Mutex<HashMap<TableId, String>>>,
+    real_table_cache: Arc<Mutex<HashMap<TableId, String>>>,
     column_cache: Arc<Mutex<HashMap<TableId, Vec<String>>>>,
 }
 
@@ -121,6 +122,7 @@ impl SnowflakeDestination {
             pipeline_id,
             source_id,
             table_cache: Arc::new(Mutex::new(HashMap::new())),
+            real_table_cache: Arc::new(Mutex::new(HashMap::new())),
             column_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -153,6 +155,29 @@ impl SnowflakeDestination {
         } else {
             format!("LANDING_UNKNOWN_{}", table_id)
         };
+
+        cache.insert(table_id, table_name.clone());
+        table_name
+    }
+
+    async fn resolve_real_table_name(&self, table_id: TableId) -> String {
+        let mut cache = self.real_table_cache.lock().await;
+        if let Some(name) = cache.get(&table_id) {
+            return name.clone();
+        }
+
+        // Query Postgres for table name
+        let query = "SELECT relname FROM pg_class WHERE oid = $1";
+        let row: Option<String> = sqlx::query_scalar(query)
+            .bind(table_id.0 as i32)
+            .fetch_optional(&self.pg_pool)
+            .await
+            .unwrap_or_else(|e| {
+                error!("Failed to query table name for TableId {}: {}", table_id, e);
+                None
+            });
+
+        let table_name = row.unwrap_or_else(|| format!("UNKNOWN_{}", table_id));
 
         cache.insert(table_id, table_name.clone());
         table_name
@@ -242,17 +267,19 @@ impl Destination for SnowflakeDestination {
 
         // Monitor data flow
         let record_count = rows.len() as i64;
+        let real_table_name = self.resolve_real_table_name(table_id).await;
+
         if let Err(e) = sqlx::query(
             "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count) VALUES ($1, $2, $3, $4)",
         )
         .bind(self.pipeline_id)
         .bind(self.source_id)
-        .bind(&table_name)
+        .bind(&real_table_name)
         .bind(record_count)
         .execute(&self.metadata_pool)
         .await
         {
-            error!("Failed to insert monitoring record for {}: {}", table_name, e);
+            error!("Failed to insert monitoring record for {}: {}", real_table_name, e);
         }
 
         Ok(())
@@ -331,17 +358,19 @@ impl Destination for SnowflakeDestination {
                 *token = next_token;
 
                 // Monitor data flow
+                let real_table_name = self.resolve_real_table_name(table_id).await;
+
                 if let Err(e) = sqlx::query(
                     "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count) VALUES ($1, $2, $3, $4)",
                 )
                 .bind(self.pipeline_id)
                 .bind(self.source_id)
-                .bind(&table_name)
+                .bind(&real_table_name)
                 .bind(record_count)
                 .execute(&self.metadata_pool)
                 .await
                 {
-                    error!("Failed to insert monitoring record for {}: {}", table_name, e);
+                    error!("Failed to insert monitoring record for {}: {}", real_table_name, e);
                 }
             }
         }

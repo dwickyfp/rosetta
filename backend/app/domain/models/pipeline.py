@@ -115,6 +115,12 @@ class Pipeline(Base, TimestampMixin):
         lazy="selectin",
     )
 
+    data_flow_records: Mapped[list["DataFlowRecordMonitoring"]] = relationship(
+        "DataFlowRecordMonitoring",
+        back_populates="pipeline",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         """String representation."""
         return f"Pipeline(id={self.id}, name={self.name!r}, " f"status={self.status!r})"

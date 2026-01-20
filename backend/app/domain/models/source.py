@@ -131,6 +131,12 @@ class Source(Base, TimestampMixin):
         lazy="select",
     )
 
+    data_flow_records: Mapped[list["DataFlowRecordMonitoring"]] = relationship(
+        "DataFlowRecordMonitoring",
+        back_populates="source",
+        cascade="all, delete-orphan",
+    )
+
     presets: Mapped[list["Preset"]] = relationship(
         "Preset",
         # back_populates="source", # Enable if added to Preset

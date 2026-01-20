@@ -2,20 +2,13 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { type SourceTableInfo } from '@/repo/sources'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select'
+import { type PipelineStats } from '@/repo/pipelines'
+import { LineChart, Line, ResponsiveContainer } from 'recharts'
+import { useMemo } from 'react'
 
 export const getSourceDetailsTablesColumns = (
-    onCheckSchema: (table: SourceTableInfo) => void,
-    selectedVersions: Record<number, number>,
-    onVersionChange: (tableId: number, version: number) => void,
-    onUnregister?: (tableName: string) => void
+    onUnregister: ((tableName: string) => void) | undefined,
+    statsMap: Record<string, PipelineStats> = {}
 ): ColumnDef<SourceTableInfo>[] => {
 
     const columns: ColumnDef<SourceTableInfo>[] = [
@@ -32,125 +25,65 @@ export const getSourceDetailsTablesColumns = (
             enableHiding: false,
         },
         {
-            accessorKey: 'is_exists_table_landing',
+            id: 'message_per_day',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Landing' className='w-full justify-center' />
+                <DataTableColumnHeader column={column} title='Message Per Day' className='justify-end' />
             ),
             cell: ({ row }) => {
-                const exists = row.getValue('is_exists_table_landing') as boolean
+                const tableName = row.getValue('table_name') as string
+                const stats = statsMap[tableName]
+                // Get today's count (last entry in daily_stats usually, or check date)
+                const today = new Date().toISOString().split('T')[0]
+                const todayStat = stats?.daily_stats.find(d => d.date.startsWith(today))
+                const count = todayStat ? todayStat.count : 0
+                
                 return (
-                    <div className='flex justify-center'>
-                        <Checkbox
-                            checked={exists}
-                            disabled
-                            className="border-2 cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                        />
-                    </div>
+                   <div className="text-right font-medium">
+                       {count.toLocaleString()}
+                   </div>
                 )
-            },
+            }
         },
         {
-            accessorKey: 'is_exists_task',
+            id: 'monitoring',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Task' className='w-full justify-center' />
+                <DataTableColumnHeader column={column} title='Monitoring (5m)' className='w-[150px]' />
             ),
             cell: ({ row }) => {
-                const exists = row.getValue('is_exists_task') as boolean
-                return (
-                    <div className='flex justify-center'>
-                        <Checkbox
-                            checked={exists}
-                            disabled
-                            className="border-2 cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                        />
-                    </div>
-                )
-            },
-        },
-        {
-            accessorKey: 'is_exists_stream',
-            header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Stream' className='w-full justify-center' />
-            ),
-            cell: ({ row }) => {
-                const exists = row.getValue('is_exists_stream') as boolean
-                return (
-                    <div className='flex justify-center'>
-                        <Checkbox
-                            checked={exists}
-                            disabled
-                            className="border-2 cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                        />
-                    </div>
-                )
-            },
-        },
-        {
-            accessorKey: 'is_exists_table_destination',
-            header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Destination' className='w-full justify-center' />
-            ),
-            cell: ({ row }) => {
-                const exists = row.getValue('is_exists_table_destination') as boolean
-                return (
-                    <div className='flex justify-center'>
-                        <Checkbox
-                            checked={exists}
-                            disabled
-                            className="cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                        />
-                    </div>
-                )
-            },
-        },
-        {
-            accessorKey: 'version',
-            header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Version' className='w-full justify-center' />
-            ),
-            cell: ({ row }) => {
-                const maxVersion = row.original.version
-                const currentSelected = selectedVersions[row.original.id] || maxVersion
-                const versions = Array.from({ length: maxVersion }, (_, i) => maxVersion - i)
+                const tableName = row.getValue('table_name') as string
+                const stats = statsMap[tableName]
+                
+                // Prepare data for sparkline
+                // recent_stats has timestamp and count. 
+                // We want to show a flow. 
+                // If data is empty, it should look flat or empty.
+                const data = useMemo(() => {
+                    if (!stats || !stats.recent_stats || stats.recent_stats.length === 0) {
+                        return Array(10).fill(0).map((_, i) => ({ count: 0, i }))
+                    }
+                    return stats.recent_stats.map(s => ({ count: s.count, timestamp: s.timestamp }))
+                }, [stats])
 
                 return (
-                    <div className='flex justify-center'>
-                        <Select
-                            value={String(currentSelected)}
-                            onValueChange={(value) => onVersionChange(row.original.id, Number(value))}
-                        >
-                            <SelectTrigger className="h-8 w-[140px]">
-                                <SelectValue placeholder="Ver" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {versions.map((v) => (
-                                    <SelectItem key={v} value={String(v)}>
-                                        v{v} {v === maxVersion ? '(Active)' : ''}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    <div className="h-[40px] w-[150px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={data}>
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="count" 
+                                    stroke="#8884d8" 
+                                    strokeWidth={2} 
+                                    dot={false} 
+                                    isAnimationActive={false} // Disable animation for smoother updates
+                                />
+                                {/* Optional: Add YAxis to scale properly if counts vary widely, or keep min/max auto */}
+                                {/* <YAxis domain={['auto', 'auto']} hide /> */}
+                            </LineChart>
+                        </ResponsiveContainer>
                     </div>
                 )
-            },
-        },
-        {
-            accessorKey: 'schema_table',
-            header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Schema' className='w-full justify-center' />
-            ),
-            cell: ({ row }) => (
-                <div className='flex justify-center'>
-                    <Button
-                        variant='outline'
-                        size='sm'
-                        onClick={() => onCheckSchema(row.original)}
-                    >
-                        Check Schema
-                    </Button>
-                </div>
-            ),
-        },
+            }
+        }
     ]
 
     if (onUnregister) {

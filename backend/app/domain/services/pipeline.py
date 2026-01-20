@@ -14,6 +14,9 @@ from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatu
 from app.domain.repositories.pipeline import PipelineRepository
 from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate
 from app.domain.services.source import SourceService
+from app.domain.models.data_flow_monitoring import DataFlowRecordMonitoring
+from sqlalchemy import func, desc, and_
+from datetime import datetime, timedelta
 import snowflake.connector
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -608,4 +611,97 @@ class PipelineService:
         END;
         """
         return task_ddl
+
+    def get_pipeline_data_flow_stats(self, pipeline_id: int, days: int = 7) -> List[dict]:
+        """
+        Get data flow statistics for a pipeline, grouped by table and day.
+        
+        Args:
+            pipeline_id: Pipeline identifier
+            days: Number of days to look back
+            
+        Returns:
+            List of stats per table
+        """
+        # 1. Get Source ID for pipeline
+        pipeline = self.repository.get_by_id(pipeline_id)
+        source_id = pipeline.source_id
+        
+        # 2. Daily Stats Query
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        daily_query = (
+            self.db.query(
+                DataFlowRecordMonitoring.table_name,
+                func.date_trunc('day', DataFlowRecordMonitoring.created_at).label('day'),
+                func.sum(DataFlowRecordMonitoring.record_count).label('total_count')
+            )
+            .filter(
+                DataFlowRecordMonitoring.pipeline_id == pipeline_id,
+                DataFlowRecordMonitoring.created_at >= start_date
+            )
+            .group_by(
+                DataFlowRecordMonitoring.table_name,
+                func.date_trunc('day', DataFlowRecordMonitoring.created_at)
+            )
+            .order_by(
+                DataFlowRecordMonitoring.table_name,
+                desc('day')
+            )
+        )
+        
+        daily_results = daily_query.all()
+        
+        # 3. Recent 5 Minutes Stats Query (for Monitoring chart)
+        five_min_ago = datetime.utcnow() - timedelta(minutes=5)
+        
+        recent_query = (
+            self.db.query(
+                DataFlowRecordMonitoring.table_name,
+                DataFlowRecordMonitoring.created_at,
+                DataFlowRecordMonitoring.record_count
+            )
+            .filter(
+                DataFlowRecordMonitoring.pipeline_id == pipeline_id,
+                DataFlowRecordMonitoring.created_at >= five_min_ago
+            )
+            .order_by(DataFlowRecordMonitoring.created_at.asc())
+        )
+        
+        recent_results = recent_query.all()
+        
+        # 4. Aggregating results by table
+        stats_by_table = {}
+        
+        # Process Daily Stats
+        for row in daily_results:
+            table_name = row.table_name
+            if table_name not in stats_by_table:
+                stats_by_table[table_name] = {
+                    "table_name": table_name,
+                    "daily_stats": [],
+                    "recent_stats": []
+                }
+            
+            stats_by_table[table_name]["daily_stats"].append({
+                "date": row.day.isoformat(),
+                "count": row.total_count
+            })
+
+        # Process Recent Stats
+        for row in recent_results:
+            table_name = row.table_name
+            if table_name not in stats_by_table:
+                 stats_by_table[table_name] = {
+                    "table_name": table_name,
+                    "daily_stats": [],
+                    "recent_stats": []
+                }
+            
+            stats_by_table[table_name]["recent_stats"].append({
+                "timestamp": row.created_at.isoformat(),
+                "count": row.record_count
+            })
+            
+        return list(stats_by_table.values())
 

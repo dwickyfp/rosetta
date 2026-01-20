@@ -68,5 +68,21 @@ export const pipelinesRepo = {
   refresh: async (id: number): Promise<Pipeline> => {
     const response: AxiosResponse<Pipeline> = await api.post(`/pipelines/${id}/refresh`)
     return response.data
+  },
+  getStats: async (id: number, days: number = 7): Promise<PipelineStats[]> => {
+    const response: AxiosResponse<PipelineStats[]> = await api.get(`/pipelines/${id}/stats`, { params: { days } })
+    return response.data
   }
+}
+
+export interface PipelineStats {
+  table_name: string
+  daily_stats: {
+    date: string
+    count: number
+  }[]
+  recent_stats: {
+    timestamp: string
+    count: number
+  }[]
 }

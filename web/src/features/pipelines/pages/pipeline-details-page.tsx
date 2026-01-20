@@ -163,6 +163,7 @@ export default function PipelineDetailsPage() {
                     ) : sourceDetails ? (
                         <SourceDetailsTablesList
                             sourceId={pipeline!.source_id}
+                            pipelineId={pipeline!.id}
                             tables={sourceDetails.tables}
                             readOnly={true}
                         />
