@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from '@tanstack/react-router'
+import { useParams, useNavigate, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { sourcesRepo } from '@/repo/sources'
@@ -14,6 +14,14 @@ import { ArrowLeft, RefreshCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 
 export default function PipelineDetailsPage() {
     // Correctly accessing params using the route ID from routeTree.gen.ts
@@ -86,10 +94,20 @@ export default function PipelineDetailsPage() {
             </Header>
 
             <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    <BreadcrumbItem>
+                      <BreadcrumbLink asChild>
+                        <Link to="/pipelines">Pipelines</Link>
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{pipeline?.name || 'Loading...'}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/pipelines' })}>
-                        <ArrowLeft className="h-4 w-4" />
-                    </Button>
                     <div className="space-y-1">
                         <h2 className='text-2xl font-bold tracking-tight'>
                             {isPipelineLoading ? <Skeleton className="h-8 w-48" /> : pipeline?.name}

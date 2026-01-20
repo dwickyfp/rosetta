@@ -1,4 +1,4 @@
-import { useParams } from '@tanstack/react-router'
+import { useParams, Link } from '@tanstack/react-router'
 import { useCreditUsage, useRefreshCredits } from '@/repo/credits'
 import { Main } from '@/components/layout/main'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,10 +12,26 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ConfigDrawer } from '@/components/config-drawer'
 
+import { useQuery } from '@tanstack/react-query'
+import { destinationsRepo } from '@/repo/destinations'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
+
 export function DestinationDetailsPage() {
     const { destinationId } = useParams({ from: '/_authenticated/destinations/$destinationId' })
     const { data, isLoading, refetch } = useCreditUsage(destinationId)
     const { mutate: refreshCredits, isPending: isRefreshing } = useRefreshCredits()
+
+    const { data: destination } = useQuery({
+        queryKey: ['destination', destinationId],
+        queryFn: () => destinationsRepo.get(Number(destinationId)),
+    })
 
     const handleRefresh = () => {
         refreshCredits(destinationId, {
@@ -60,6 +76,19 @@ export function DestinationDetailsPage() {
             </Header>
 
             <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    <BreadcrumbItem>
+                      <BreadcrumbLink asChild>
+                        <Link to="/destinations">Destinations</Link>
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{destination?.name || 'Loading...'}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
                 <div className="flex items-center justify-between">
                     <div>
                         <h2 className="text-2xl font-bold tracking-tight">Destination Details</h2>

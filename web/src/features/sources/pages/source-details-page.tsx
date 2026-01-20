@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from '@tanstack/react-router'
+import { useParams, useNavigate, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { sourcesRepo } from '@/repo/sources'
 import { Header } from '@/components/layout/header'
@@ -29,6 +29,14 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 
 export default function SourceDetailsPage() {
     // Use TansStack Router useParams
@@ -148,6 +156,19 @@ export default function SourceDetailsPage() {
             </Header>
 
             <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    <BreadcrumbItem>
+                      <BreadcrumbLink asChild>
+                        <Link to="/sources">Sources</Link>
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{data?.source.name || 'Loading...'}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
                 <div className='flex items-start justify-between'>
                     <div className="space-y-1">
                         <h2 className='text-2xl font-bold tracking-tight'>
