@@ -2,10 +2,10 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { type SourceTableInfo } from '@/repo/sources'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Eye } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export const getSourceDetailsTablesColumns = (
     onUnregister: ((tableName: string) => void) | undefined,
@@ -29,48 +29,43 @@ export const getSourceDetailsTablesColumns = (
         {
             id: 'status',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Status' />
+                <DataTableColumnHeader column={column} title='Pipeline Status' />
             ),
             cell: ({ row }) => {
                 const table = row.original
+
+                const Step = ({ label, active }: { label: string, active: boolean }) => (
+                    <div className="flex flex-col items-center gap-1">
+                        <div
+                            className={cn(
+                                "h-2 w-2 rounded-full ring-2 ring-offset-2",
+                                active
+                                    ? "bg-green-500 ring-green-500"
+                                    : "bg-muted ring-muted"
+                            )}
+                            title={active ? `${label} Exists` : `${label} Missing`}
+                        />
+                        <span className={cn("text-[10px] font-medium uppercase", active ? "text-foreground" : "text-muted-foreground")}>{label}</span>
+                    </div>
+                )
+
+                const Connector = ({ active }: { active: boolean }) => (
+                    <div className={cn("h-[2px] w-4 mb-3.5", active ? "bg-green-500/50" : "bg-muted")} />
+                )
+
                 return (
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                            <Checkbox 
-                                checked={table.is_exists_table_landing} 
-                                disabled 
-                                className="cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                            />
-                            <span className="text-sm">Exists Table Landing</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Checkbox 
-                                checked={table.is_exists_stream} 
-                                disabled 
-                                className="cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                            />
-                            <span className="text-sm">Exists Stream</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Checkbox 
-                                checked={table.is_exists_task} 
-                                disabled 
-                                className="cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                            />
-                            <span className="text-sm">Exists Task</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Checkbox 
-                                checked={table.is_exists_table_destination} 
-                                disabled 
-                                className="cursor-default opacity-100 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                            />
-                            <span className="text-sm">Exists Table Target</span>
-                        </div>
+                    <div className="flex items-end gap-0.5 py-2">
+                        <Step label="Landing" active={table.is_exists_table_landing} />
+                        <Connector active={table.is_exists_table_landing && table.is_exists_stream} />
+                        <Step label="Stream" active={table.is_exists_stream} />
+                        <Connector active={table.is_exists_stream && table.is_exists_task} />
+                        <Step label="Task" active={table.is_exists_task} />
+                        <Connector active={table.is_exists_task && table.is_exists_table_destination} />
+                        <Step label="Target" active={table.is_exists_table_destination} />
                     </div>
                 )
             },
-            meta: { title: 'Status' },
+            meta: { title: 'Pipeline Status' },
         },
         {
             id: 'schema_version',
@@ -81,10 +76,10 @@ export const getSourceDetailsTablesColumns = (
                 const table = row.original
                 // Generate list of all versions from 1 to current version
                 const versions = Array.from({ length: table.version }, (_, i) => i + 1)
-                
+
                 return (
-                    <Select 
-                        value={table.version.toString()} 
+                    <Select
+                        value={table.version.toString()}
                         onValueChange={(value) => onViewSchema?.(table.id, parseInt(value))}
                     >
                         <SelectTrigger className="w-[120px]">
