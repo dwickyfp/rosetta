@@ -523,9 +523,10 @@ class PipelineService:
             # Snowflake supports inline or out-of-line. Out-of-line is cleaner for composites or naming.
             cols_ddl.append(f"CONSTRAINT pk_{table_name} PRIMARY KEY ({pk_cols})")
             
+        cols_definition = ",\n            ".join(cols_ddl)
         ddl = f"""
         CREATE TABLE IF NOT EXISTS {db}.{schema}.{table_name} (
-            {",\n            ".join(cols_ddl)}
+            {cols_definition}
         ) ENABLE_SCHEMA_EVOLUTION = TRUE;
         """
         return ddl

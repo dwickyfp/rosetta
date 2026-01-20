@@ -475,7 +475,7 @@ class SourceService:
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:
                 tables_str = ", ".join([f'"{t}"' for t in tables])
-                query = f"CREATE PUBLICATION {source.publication_name} FOR TABLE {tables_str} WITH (publish = 'insert, update, delete, truncate');"
+                query = f"CREATE PUBLICATION {source.publication_name} FOR TABLE {tables_str} WITH (publish = 'insert, update, delete');"
                 logger.info(f"Executing: {query}")
                 cur.execute(query)
             conn.close()
