@@ -584,6 +584,37 @@ class SourceService:
                 cur.execute(query)
             conn.close()
             self.refresh_source_metadata(source_id)
+
+            # Auto-provision resources if pipelines exist
+            try:
+                # Local import to avoid circular dependency
+                from app.domain.services.pipeline import PipelineService
+                from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+                
+                pipeline_repo = PipelineRepository(self.db)
+                pipelines = pipeline_repo.get_by_source_id(source_id)
+                
+                if pipelines:
+                    logger.info(f"Triggering auto-provisioning for table {table_name} on {len(pipelines)} pipelines")
+                    
+                    # Fetch table info (metadata)
+                    table_repo = TableMetadataRepository(self.db)
+                    table_meta = table_repo.get_by_source_and_name(source_id, table_name)
+                    
+                    if table_meta:
+                        pipeline_service = PipelineService(self.db)
+                        for pipeline in pipelines:
+                             try:
+                                 pipeline_service.provision_table(pipeline, table_meta)
+                             except Exception as exc:
+                                 logger.error(f"Failed to auto-provision table {table_name} for pipeline {pipeline.id}: {exc}")
+                    else:
+                        logger.warning(f"Metadata for table {table_name} not found after refresh, skipping provisioning")
+
+            except Exception as e:
+                logger.error(f"Auto-provisioning process failed: {e}")
+                # Don't raise here to avoid failing the registration itself if provisioning fails
+
         except Exception as e:
             logger.error(f"Failed to register table {table_name}: {e}")
             raise ValueError(f"Failed to register table: {str(e)}")
