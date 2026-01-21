@@ -14,7 +14,8 @@
 # =============================================================================
 # STAGE 1: RUST BUILDER
 # =============================================================================
-FROM rust:1.87-bookworm AS rust-builder
+# Using nightly to support dependencies requiring rustc 1.88+
+FROM rustlang/rust:nightly-bookworm AS rust-builder
 
 WORKDIR /app
 
