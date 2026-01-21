@@ -31,7 +31,7 @@ class ConfigurationRepository:
         stmt = select(RosettaSettingConfiguration).where(
             RosettaSettingConfiguration.config_key == config_key
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        return self.db.execute(stmt).scalars().first()
     
     def get_value(self, config_key: str, default: str = "") -> str:
         """

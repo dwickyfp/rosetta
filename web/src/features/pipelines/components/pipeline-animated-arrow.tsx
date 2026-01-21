@@ -1,5 +1,3 @@
-
-
 export function PipelineAnimatedArrow() {
   return (
     <div className='relative flex items-center justify-center w-24 h-8'>
