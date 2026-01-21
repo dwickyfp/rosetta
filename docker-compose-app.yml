@@ -21,11 +21,12 @@ services:
     restart: unless-stopped
     environment:
       MODE: worker
-      RUST_LOG: ${RUST_LOG:-error}
+      RUST_LOG: ${RUST_LOG:-info}
       CONFIG_DATABASE_URL: ${CONFIG_DATABASE_URL:-postgres://postgres:postgres@rosetta-postgres:5432/postgres}
       BATCH_MAX_SIZE: 5000
       BATCH_MAX_FILL_MS: 10000
       MAX_TABLE_SYNC_WORKERS: 8
+      TABLE_ERROR_RETRY_DELAY_MS: 600000
       TZ: Asia/Jakarta
     depends_on:
       rosetta-postgres:
