@@ -1,6 +1,12 @@
 import axios from 'axios'
 
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+// Use VITE_API_URL if set, otherwise:
+// - Development: use localhost:8000/api/v1 directly
+// - Production: use relative path '/api' which nginx will proxy to backend
+const defaultApiUrl = import.meta.env.MODE === 'development' 
+    ? 'http://localhost:8000/api/v1' 
+    : '/api'
+const baseURL = import.meta.env.VITE_API_URL || defaultApiUrl
 
 export const api = axios.create({
     baseURL,
