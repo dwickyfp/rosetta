@@ -10,7 +10,7 @@ export function PipelineAnimatedArrow() {
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div
             key={i}
-            className='absolute left-0 h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.6)]'
+            className='absolute left-0 h-1.5 w-1.5 rounded-full bg-[#1a6ce7] shadow-[0_0_8px_#1a6ce7]'
             style={{
               animation: `flowParticle 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
               animationDelay: `${i * 0.4}s`,
