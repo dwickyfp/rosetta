@@ -390,9 +390,16 @@ class PipelineService:
                     
                     # C. Destination Table
                     target_table = table_name
-                    target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
-                    cursor.execute(target_ddl)
-                    tm_repo.update_status(table_id, is_exists_table_destination=True)
+                    
+                    # Check if table already exists
+                    if self._check_table_exists(cursor, target_db, target_schema, target_table):
+                        logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
+                        tm_repo.update_status(table_id, is_exists_table_destination=True)
+                    else:
+                        logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
+                        target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
+                        cursor.execute(target_ddl)
+                        tm_repo.update_status(table_id, is_exists_table_destination=True)
                     
                     # D. Merge Task
                     task_name = f"TASK_MERGE_{table_name}"
@@ -425,6 +432,28 @@ class PipelineService:
                     self._update_progress(progress, progress.progress, "Initialization failed", "FAILED", str(e))
             except:
                  pass
+
+    def _check_table_exists(self, cursor, db, schema, table_name) -> bool:
+        """Check if a table exists in Snowflake."""
+        try:
+            # Use SHOW TABLES since it's reliable for existence check
+            # Note: SHOW TABLES matches roughly so we filter in python or use exact match dependent on driver behavior
+            # Ideally: SHOW TABLES LIKE 'tablename' IN SCHEMA db.schema
+            query = f"SHOW TABLES LIKE '{table_name}' IN SCHEMA {db}.{schema}"
+            cursor.execute(query)
+            
+            # The result cursor will have rows if there are matches
+            # We iterate to find exact match because LIKE matching can be fuzzy sometimes depending on wildcard chars
+            for result in cursor:
+                # result structure depends on connector, usually a tuple or dict
+                # index 1 usually is 'name' in SHOW TABLES output
+                if result[1] == table_name:
+                    return True
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Failed to check if table exists: {e}")
+            return False
 
     def _update_progress(self, progress, percent, step, status, details=None):
         progress.progress = percent
