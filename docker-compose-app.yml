@@ -61,7 +61,7 @@ services:
       # Security (SECRET_KEY must be at least 32 characters)
       SECRET_KEY: ${SECRET_KEY:-change-this-secret-key-in-production-now}
       API_KEY: ${API_KEY:-change-this-api-key-in-production}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost","http://localhost:80"]}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["*"]}
       # Background Tasks
       BACKGROUND_TASK_ENABLED: ${BACKGROUND_TASK_ENABLED:-True}
       SCHEDULER_TIMEZONE: Asia/Jakarta

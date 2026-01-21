@@ -13,7 +13,7 @@ export const sidebarData: SidebarData = {
   user: {
     name: 'ETL Developer',
     email: 'rosetta@rosetta.com',
-    avatar: '/avatars/shadcn.jpg',
+    avatar: '',
   },
   teams: [
     {
