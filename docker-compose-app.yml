@@ -1,0 +1,133 @@
+version: '3.8'
+
+# =============================================================================
+# ROSETTA APPLICATION DOCKER COMPOSE
+# =============================================================================
+# This compose file runs 2 containers:
+# 1. compute-node: Rust pipeline manager (mode=worker)
+# 2. web: FastAPI backend + React frontend (mode=web)
+#
+# Prerequisites:
+#   Run ./build.sh first to build the images
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # COMPUTE NODE - Rust Pipeline Manager
+  # ===========================================================================
+  compute-node:
+    image: rosetta-etl:1.0.0-compute
+    container_name: rosetta-compute
+    restart: unless-stopped
+    environment:
+      MODE: worker
+      RUST_LOG: ${RUST_LOG:-info}
+      CONFIG_DATABASE_URL: ${CONFIG_DATABASE_URL:-postgres://postgres:postgres@postgres:5432/postgres}
+      TZ: Asia/Jakarta
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - rosetta-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ===========================================================================
+  # WEB - FastAPI Backend + React Frontend
+  # ===========================================================================
+  web:
+    image: rosetta-etl:1.0.0-web
+    container_name: rosetta-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:80"
+      - "${API_PORT:-8000}:8000"
+    environment:
+      MODE: web
+      # Database Configuration
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://postgres:postgres@postgres:5432/postgres}
+      # Application Configuration
+      APP_NAME: ${APP_NAME:-Rosetta ETL Platform}
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-False}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOST: 0.0.0.0
+      PORT: 8000
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
+      API_KEY: ${API_KEY:-change-this-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost","http://localhost:80"]}
+      # Background Tasks
+      BACKGROUND_TASK_ENABLED: ${BACKGROUND_TASK_ENABLED:-True}
+      SCHEDULER_TIMEZONE: Asia/Jakarta
+      # Optional: Run migrations on startup
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
+      # Timezone
+      TZ: Asia/Jakarta
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rosetta-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    
+  postgres:
+    image: postgres:16
+    container_name: postgres-logical
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+      TZ: Asia/Jakarta
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command: >
+      postgres 
+      -c wal_level=logical 
+      -c max_replication_slots=10 
+      -c max_wal_senders=10
+      -c timezone='Asia/Jakarta'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rosetta-network
+
+networks:
+  rosetta-network:
+    driver: bridge
+    name: rosetta-network
+
+# =============================================================================
+# USAGE
+# =============================================================================
+# 1. Build images first:
+#    ./build.sh
+#
+# 2. Start services:
+#    docker compose -f docker-compose-app.yml up -d
+#
+# 3. View logs:
+#    docker compose -f docker-compose-app.yml logs -f
+#
+# 4. Stop services:
+#    docker compose -f docker-compose-app.yml down
+# =============================================================================
