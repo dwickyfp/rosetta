@@ -259,6 +259,7 @@ impl PipelineManager {
 
         let mut pipeline = Pipeline::new(config, store, destination);
 
+        let db_pool = self.db_pool.clone();
         let handle = tokio::spawn(async move {
             match pipeline.start().await {
                 Ok(_) => {
@@ -268,13 +269,43 @@ impl PipelineManager {
                     );
                     if let Err(e) = pipeline.wait().await {
                         error!("Pipeline {} crashed: {}", pipeline_id, e);
-                        // TODO: Update metadata status to ERROR?
+                        
+                        // Update status to ERROR
+                        let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+                        let _ = sqlx::query("UPDATE pipeline_metadata SET status = 'ERROR', last_error = $1, last_error_at = $2, updated_at = $2 WHERE pipeline_id = $3")
+                            .bind(e.to_string())
+                            .bind(now)
+                            .bind(pipeline_id)
+                            .execute(&db_pool)
+                            .await
+                            .map_err(|db_err| error!("Failed to update pipeline {} status: {}", pipeline_id, db_err));
+                        let _ = sqlx::query("UPDATE pipelines SET status = 'PAUSE' WHERE id = $1")
+                            .bind(pipeline_id)
+                            .execute(&db_pool)
+                            .await
+                            .map_err(|db_err| error!("Failed to pause pipeline {}: {}", pipeline_id, db_err));
+                            
                     } else {
                         info!("Pipeline {} finished gracefully.", pipeline_id);
                     }
                 }
                 Err(e) => {
                     error!("Failed to start pipeline {}: {}", pipeline_id, e);
+                     // Update status to ERROR on start failure
+                    let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+                    let _ = sqlx::query("UPDATE pipeline_metadata SET status = 'ERROR', last_error = $1, last_error_at = $2, updated_at = $2 WHERE pipeline_id = $3")
+                        .bind(e.to_string())
+                        .bind(now)
+                        .bind(pipeline_id)
+                        .execute(&db_pool)
+                        .await
+                        .map_err(|db_err| error!("Failed to update pipeline {} status: {}", pipeline_id, db_err));
+
+                    let _ = sqlx::query("UPDATE pipelines SET status = 'PAUSE' WHERE id = $1")
+                        .bind(pipeline_id)
+                        .execute(&db_pool)
+                        .await
+                        .map_err(|db_err| error!("Failed to pause pipeline {}: {}", pipeline_id, db_err));
                 }
             }
         });
