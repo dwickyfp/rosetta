@@ -28,7 +28,7 @@ export interface WALMonitorListResponse {
 
 export const walMonitorRepo = {
     getAll: async () => {
-        const { data } = await api.get<WALMonitorListResponse>('/wal-monitor')
+        const { data } = await api.get<WALMonitorListResponse>('/wal-monitor/')
         return data
     },
 }
