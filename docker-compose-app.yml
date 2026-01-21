@@ -22,13 +22,13 @@ services:
     environment:
       MODE: worker
       RUST_LOG: ${RUST_LOG:-info}
-      CONFIG_DATABASE_URL: ${CONFIG_DATABASE_URL:-postgres://postgres:postgres@postgres-rosetta:5432/postgres}
+      CONFIG_DATABASE_URL: ${CONFIG_DATABASE_URL:-postgres://postgres:postgres@rosetta-postgres:5432/postgres}
       BATCH_MAX_SIZE: 5000
       BATCH_MAX_FILL_MS: 10000
       MAX_TABLE_SYNC_WORKERS: 8
       TZ: Asia/Jakarta
     depends_on:
-      postgres-rosetta:
+      rosetta-postgres:
         condition: service_healthy
     networks:
       - rosetta-network
@@ -50,7 +50,7 @@ services:
     environment:
       MODE: web
       # Database Configuration
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://postgres:postgres@postgres-rosetta:5432/postgres}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://postgres:postgres@rosetta-postgres:5432/postgres}
       # Application Configuration
       APP_NAME: ${APP_NAME:-Rosetta ETL Platform}
       APP_ENV: ${APP_ENV:-production}
@@ -70,7 +70,7 @@ services:
       # Timezone
       TZ: Asia/Jakarta
     depends_on:
-      postgres-rosetta:
+      rosetta-postgres:
         condition: service_healthy
       rosetta-compute-node:
         condition: service_started
@@ -89,9 +89,9 @@ services:
         reservations:
           memory: 256M
     
-  postgres-rosetta:
+  rosetta-postgres:
     image: postgres:16
-    container_name: postgres-rosetta
+    container_name: rosetta-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
