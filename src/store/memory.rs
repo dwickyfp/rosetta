@@ -101,9 +101,14 @@ impl StateStore for CustomStore {
 
     async fn rollback_table_replication_state(
         &self,
-        _id: TableId,
+        table_id: TableId,
     ) -> EtlResult<TableReplicationPhase> {
-        unimplemented!()
+        let state = self.tables.lock().await.get(&table_id).and_then(|e| e.state.clone());
+        if let Some(s) = state {
+            Ok(s)
+        } else {
+             Err(etl::error::EtlError::General("Table state not found during rollback".to_string()))
+        }
     }
 
     async fn get_table_mapping(&self, table_id: &TableId) -> EtlResult<Option<String>> {
