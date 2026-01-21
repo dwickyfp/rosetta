@@ -1,4 +1,5 @@
-use etl::error::EtlResult;
+use etl::error::{EtlResult, ErrorKind};
+use etl::etl_error;
 use etl::state::table::TableReplicationPhase;
 use etl::store::cleanup::CleanupStore;
 use etl::store::schema::SchemaStore;
@@ -107,7 +108,7 @@ impl StateStore for CustomStore {
         if let Some(s) = state {
             Ok(s)
         } else {
-             Err(etl::error::EtlError::General("Table state not found during rollback".to_string()))
+             Err(etl_error!(ErrorKind::Unknown, "Table state not found during rollback"))
         }
     }
 
