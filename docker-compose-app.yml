@@ -23,6 +23,9 @@ services:
       MODE: worker
       RUST_LOG: ${RUST_LOG:-info}
       CONFIG_DATABASE_URL: ${CONFIG_DATABASE_URL:-postgres://postgres:postgres@postgres-rosetta:5432/postgres}
+      BATCH_MAX_SIZE: 5000
+      BATCH_MAX_FILL_MS: 10000
+      MAX_TABLE_SYNC_WORKERS: 8
       TZ: Asia/Jakarta
     depends_on:
       postgres-rosetta:
@@ -32,9 +35,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          cpus: '4'
+          memory: 16G
         reservations:
-          memory: 512M
+          cpus: '2'
+          memory: 8G
 
   rosetta-web:
     image: rosetta-etl:1.0.0-web

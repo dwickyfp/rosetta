@@ -169,17 +169,39 @@ impl PipelineManager {
             }),
         };
 
+        // Read config from environment with defaults
+        let batch_max_size: usize = std::env::var("BATCH_MAX_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
+        let batch_max_fill_ms: u64 = std::env::var("BATCH_MAX_FILL_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5000);
+        let table_error_retry_delay_ms: u64 = std::env::var("TABLE_ERROR_RETRY_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10000);
+        let table_error_retry_max_attempts: u32 = std::env::var("TABLE_ERROR_RETRY_MAX_ATTEMPTS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        let max_table_sync_workers: u16 = std::env::var("MAX_TABLE_SYNC_WORKERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4);
+
         let config = PipelineConfig {
             id: pipeline_id as u64,
             publication_name: source_row.try_get("publication_name")?,
             pg_connection: pg_config.clone(),
             batch: BatchConfig {
-                max_size: 1000,
-                max_fill_ms: 5000,
+                max_size: batch_max_size,
+                max_fill_ms: batch_max_fill_ms,
             },
-            table_error_retry_delay_ms: 10000,
-            table_error_retry_max_attempts: 5,
-            max_table_sync_workers: 4,
+            table_error_retry_delay_ms,
+            table_error_retry_max_attempts,
+            max_table_sync_workers,
             table_sync_copy: TableSyncCopyConfig::SkipAllTables,
         };
 
