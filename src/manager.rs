@@ -162,11 +162,12 @@ impl PipelineManager {
                 enabled: false,
                 trusted_root_certs: "".into(),
             },
-            keepalive: Some(TcpKeepaliveConfig {
-                idle_secs: 60,
-                interval_secs: 5,
-                retries: 5,
-            }),
+            keepalive: None,
+            // keepalive: Some(TcpKeepaliveConfig {
+            //     idle_secs: 60,
+            //     interval_secs: 5,
+            //     retries: 5,
+            // }),
         };
 
         // Read config from environment with defaults
