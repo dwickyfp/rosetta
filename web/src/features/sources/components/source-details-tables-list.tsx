@@ -23,8 +23,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import { type SourceTableInfo, sourcesRepo } from '@/repo/sources'
-import { pipelinesRepo } from '@/repo/pipelines'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { getSourceDetailsTablesColumns } from './source-details-tables-columns'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -41,12 +40,11 @@ import {
 
 interface SourceDetailsTablesListProps {
     sourceId: number
-    pipelineId?: number
     tables: SourceTableInfo[]
     readOnly?: boolean
 }
 
-export function SourceDetailsTablesList({ sourceId, pipelineId, tables, readOnly = false }: SourceDetailsTablesListProps) {
+export function SourceDetailsTablesList({ sourceId, tables, readOnly = false }: SourceDetailsTablesListProps) {
     const [rowSelection, setRowSelection] = useState({})
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -81,25 +79,9 @@ export function SourceDetailsTablesList({ sourceId, pipelineId, tables, readOnly
         }
     }
 
-    const { data: pipelineStats } = useQuery({
-        queryKey: ['pipeline-stats', pipelineId],
-        queryFn: () => pipelinesRepo.getStats(pipelineId!),
-        enabled: !!pipelineId,
-        refetchInterval: 5000, // Refetch every 5 seconds
-    })
-
-    const statsMap = useMemo(() => {
-        if (!pipelineStats) return {}
-        return pipelineStats.reduce((acc, stat) => {
-            acc[stat.table_name] = stat
-            return acc
-        }, {} as Record<string, typeof pipelineStats[0]>)
-    }, [pipelineStats])
-
     const columns = useMemo(() => getSourceDetailsTablesColumns(
-        readOnly ? undefined : handleUnregisterTable,
-        statsMap
-    ), [readOnly, statsMap, handleUnregisterTable])
+        readOnly ? undefined : handleUnregisterTable
+    ), [readOnly, handleUnregisterTable])
 
     const table = useReactTable({
         data: tables,

@@ -28,8 +28,9 @@ RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 # Build dependencies only (this layer will be cached)
 RUN cargo build --release && rm -rf src
 
-# Copy actual source code
+# Copy actual source code and migrations (needed for include_str!)
 COPY src ./src
+COPY migrations ./migrations
 
 # Touch main.rs to ensure it gets rebuilt
 RUN touch src/main.rs

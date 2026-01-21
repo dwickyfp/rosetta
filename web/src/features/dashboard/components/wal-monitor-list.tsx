@@ -3,7 +3,7 @@ import { walMonitorRepo } from '@/repo/wal-monitor'
 import { formatBytes } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Database, HardDrive, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Database, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 export function WALMonitorList() {
     const { data } = useQuery({

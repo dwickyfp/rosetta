@@ -15,7 +15,7 @@ services:
   # ===========================================================================
   # COMPUTE NODE - Rust Pipeline Manager
   # ===========================================================================
-  compute-node:
+  rosetta-compute-node:
     image: rosetta-etl:1.0.0-compute
     container_name: rosetta-compute
     restart: unless-stopped
@@ -25,7 +25,7 @@ services:
       CONFIG_DATABASE_URL: ${CONFIG_DATABASE_URL:-postgres://postgres:postgres@postgres:5432/postgres}
       TZ: Asia/Jakarta
     depends_on:
-      web:
+      postgres:
         condition: service_healthy
     networks:
       - rosetta-network
@@ -36,10 +36,7 @@ services:
         reservations:
           memory: 512M
 
-  # ===========================================================================
-  # WEB - FastAPI Backend + React Frontend
-  # ===========================================================================
-  web:
+  rosetta-web:
     image: rosetta-etl:1.0.0-web
     container_name: rosetta-web
     restart: unless-stopped
@@ -68,6 +65,11 @@ services:
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
       # Timezone
       TZ: Asia/Jakarta
+    depends_on:
+      postgres:
+        condition: service_healthy
+      compute-node:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
