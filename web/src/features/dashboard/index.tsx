@@ -193,7 +193,7 @@ export function Dashboard() {
             </CardHeader>
             <CardContent className='pl-2'>
               <div className='h-[300px] w-full'>
-                <ResponsiveContainer width='100%' height='100%'>
+                <ResponsiveContainer width='100%' height='100%' minWidth={0}>
                   <AreaChart
                     data={flowChart?.history || []}
                     margin={{
@@ -266,7 +266,7 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className='h-[300px] w-full'>
-                <ResponsiveContainer width='100%' height='100%'>
+                <ResponsiveContainer width='100%' height='100%' minWidth={0}>
                   <BarChart data={creditChart?.history || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                     <XAxis
