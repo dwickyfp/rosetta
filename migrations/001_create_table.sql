@@ -179,14 +179,15 @@ CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_pipeline_id ON data_f
 
 CREATE TABLE IF NOT EXISTS rosetta_setting_configuration(
     id SERIAL PRIMARY KEY,
-    config_key VARCHAR(255) NOT NULL,
+    config_key VARCHAR(255) NOT NULL UNIQUE,
     config_value VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('WAL_MONITORING_THRESHOLD_WARNING', '3000');
-INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('WAL_MONITORING_THRESHOLD_ERROR', '6000');
-INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('ALERT_NOTIFICATION_WEBHOOK_URL', '');
+
+INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('WAL_MONITORING_THRESHOLD_WARNING', '3000') ON CONFLICT(config_key) DO NOTHING;
+INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('WAL_MONITORING_THRESHOLD_ERROR', '6000') ON CONFLICT(config_key) DO NOTHING;
+INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('ALERT_NOTIFICATION_WEBHOOK_URL', '') ON CONFLICT(config_key) DO NOTHING;
 
 -- NEW INDEX
 CREATE INDEX IF NOT EXISTS idx_table_metadata_list_source_table ON table_metadata_list(source_id, table_name);
