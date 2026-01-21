@@ -370,51 +370,8 @@ class PipelineService:
                     current_percent = 20 + int((index / total_tables) * 70) 
                     self._update_progress(progress, current_percent, f"Processing table: {table.table_name}", "IN_PROGRESS")
                     
-                    table_name = table.table_name
-                    columns = table.schema_definition # List of column dicts
-                    table_id = table.id # This is table_metadata_list.id from SourceTableInfo
-                    
-                    # 4. Generate & Execute DDLs
-                    
-                    # A. Landing Table
-                    landing_table = f"LANDING_{table_name}"
-                    landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
-                    cursor.execute(landing_ddl)
-                    tm_repo.update_status(table_id, is_exists_table_landing=True)
-                    
-                    # B. Stream
-                    stream_name = f"STREAM_{landing_table}"
-                    stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
-                    cursor.execute(stream_ddl)
-                    tm_repo.update_status(table_id, is_exists_stream=True)
-                    
-                    # C. Destination Table
-                    target_table = table_name
-                    
-                    # Check if table already exists
-                    if self._check_table_exists(cursor, target_db, target_schema, target_table):
-                        logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
-                        tm_repo.update_status(table_id, is_exists_table_destination=True)
-                    else:
-                        logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
-                        target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
-                        cursor.execute(target_ddl)
-                        tm_repo.update_status(table_id, is_exists_table_destination=True)
-                    
-                    # D. Merge Task
-                    task_name = f"TASK_MERGE_{table_name}"
-                    task_ddl = self._generate_merge_task_ddl(
-                        pipeline,
-                        landing_db, landing_schema, landing_table,
-                        stream_name,
-                        target_db, target_schema, target_table,
-                        columns
-                    )
-                    cursor.execute(task_ddl)
-                    cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
-                    tm_repo.update_status(table_id, is_exists_task=True)
-
-                
+                    # Process single table using reusable method
+                    self.provision_table(pipeline, table, cursor, close_cursor=False)
                 # 5. Finalize
                 self._update_progress(progress, 100, "Initialization completed", "COMPLETED")
                 pipeline.status = PipelineStatus.START.value
@@ -432,6 +389,109 @@ class PipelineService:
                     self._update_progress(progress, progress.progress, "Initialization failed", "FAILED", str(e))
             except:
                  pass
+
+    def provision_table(self, pipeline: Pipeline, table_info, cursor=None, close_cursor=False) -> None:
+        """
+        Provision Snowflake resources for a single table.
+        
+        Args:
+            pipeline: Pipeline entity
+            table_info: SourceTableInfo object or similar struct with table_name, schema_definition, id
+            cursor: Optional existing Snowflake cursor
+            close_cursor: Whether to close the cursor if it was created internally
+        """
+        logger.info(f"Provisioning table {table_info.table_name} for pipeline {pipeline.name}")
+        
+        # Need TableMetadataRepository to update flags
+        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+        tm_repo = TableMetadataRepository(self.db)
+        
+        conn = None
+        if cursor is None:
+            conn = self._get_snowflake_connection(pipeline.destination)
+            cursor = conn.cursor()
+            close_cursor = True
+            
+        try:
+            target_db = pipeline.destination.snowflake_database
+            target_schema = pipeline.destination.snowflake_schema
+            landing_db = pipeline.destination.snowflake_landing_database
+            landing_schema = pipeline.destination.snowflake_landing_schema
+            
+            table_name = table_info.table_name
+            # Handle different object structures (SourceTableInfo vs Pydantic model)
+            # If coming from SourceService, it might be SourceTableInfo pydantic model or internal obj
+            # Let's assume consistent attribute access or dict
+            if isinstance(table_info, dict):
+                 columns = table_info['schema_definition']
+                 table_id = table_info['id']
+            else:
+                 # Check if attributes exist, otherwise try dict access
+                 columns = getattr(table_info, 'schema_definition', None) 
+                 # Wait, SourceTableInfo in initialize_pipeline came from source_detail.tables which has schema_definition 
+                 # But SourceTableInfo schema in source.py is different.
+                 # Let's look at initialize_pipeline usage:
+                 # tables = source_details.tables -> these are SourceTableInfo schemas
+                 # But let's check what source_details.tables actually contains.
+                 pass
+                 
+            # Re-evaluating table_info structure from initialize_pipeline context
+            # In initialize_pipeline: tables = source_details.tables
+            # source_details is SourceDetailResponse.
+            # tables is List[SourceTableInfo].
+            # SourceTableInfo has 'schema_definition' ? No, let's check source.py/schema.py
+            # logic in initialize_pipeline used:
+            # table_name = table.table_name
+            # columns = table.schema_definition
+            # table_id = table.id
+             
+            # So we just proceed with attribute access
+            columns = table_info.schema_definition
+            table_id = table_info.id
+
+            # A. Landing Table
+            landing_table = f"LANDING_{table_name}"
+            landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
+            cursor.execute(landing_ddl)
+            tm_repo.update_status(table_id, is_exists_table_landing=True)
+            
+            # B. Stream
+            stream_name = f"STREAM_{landing_table}"
+            stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
+            cursor.execute(stream_ddl)
+            tm_repo.update_status(table_id, is_exists_stream=True)
+            
+            # C. Destination Table
+            target_table = table_name
+            
+            # Check if table already exists
+            if self._check_table_exists(cursor, target_db, target_schema, target_table):
+                logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
+                tm_repo.update_status(table_id, is_exists_table_destination=True)
+            else:
+                logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
+                target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
+                cursor.execute(target_ddl)
+                tm_repo.update_status(table_id, is_exists_table_destination=True)
+            
+            # D. Merge Task
+            task_name = f"TASK_MERGE_{table_name}"
+            task_ddl = self._generate_merge_task_ddl(
+                pipeline,
+                landing_db, landing_schema, landing_table,
+                stream_name,
+                target_db, target_schema, target_table,
+                columns
+            )
+            cursor.execute(task_ddl)
+            cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
+            tm_repo.update_status(table_id, is_exists_task=True)
+
+        finally:
+            if close_cursor:
+                cursor.close()
+                if conn:
+                    conn.close()
 
     def _check_table_exists(self, cursor, db, schema, table_name) -> bool:
         """Check if a table exists in Snowflake."""
