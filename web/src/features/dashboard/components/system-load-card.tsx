@@ -110,7 +110,7 @@ export function SystemLoadCard() {
     : { val: 0, color: 'text-muted-foreground' }
 
   return (
-    <Card className='overflow-hidden shadow-md bg-gradient-to-br from-card to-card/50'>
+    <Card className='overflow-hidden bg-gradient-to-br from-card to-card/50'>
       <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2 border-b border-border/50 bg-muted/20'>
         <CardTitle className='text-sm font-semibold flex items-center gap-2'>
           <Activity className='w-4 h-4 text-primary' />
