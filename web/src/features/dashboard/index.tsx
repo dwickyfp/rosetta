@@ -12,6 +12,7 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { WALMonitorList } from './components/wal-monitor-list'
 import { SystemLoadCard } from './components/system-load-card'
+import { SystemHealthWidget } from './components/system-health-widget'
 import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
 import {
@@ -155,6 +156,9 @@ export function Dashboard() {
 
           {/* System Load Card */}
           <SystemLoadCard />
+          
+          {/* System Health Widget */}
+          <SystemHealthWidget />
         </div>
 
         {/* Charts Section */}

@@ -31,14 +31,28 @@ async def health_check() -> HealthResponse:
     settings = get_settings()
 
     # Check database health
-    db_healthy = await check_database_health()
+    # Check database health
+    db_healthy = check_database_health()
+
+    # Check Redis health
+    redis_healthy = False
+    try:
+        from app.infrastructure.redis import RedisClient
+        redis_client = RedisClient.get_instance()
+        redis_healthy = redis_client.ping()
+    except Exception:
+        redis_healthy = False
 
     # Determine overall status
-    overall_status = "healthy" if db_healthy else "unhealthy"
+    overall_status = "healthy" if db_healthy and redis_healthy else "unhealthy"
 
     return HealthResponse(
         status=overall_status,
         version=__version__,
         timestamp=datetime.now(timezone(timedelta(hours=7))),
-        checks={"database": db_healthy, "wal_monitor": settings.wal_monitor_enabled},
+        checks={
+            "database": db_healthy, 
+            "redis": redis_healthy,
+            "wal_monitor": settings.wal_monitor_enabled
+        },
     )
