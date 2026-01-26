@@ -28,7 +28,7 @@ async fn run_loop(pool: PgPool) {
         let total_swap = sys.total_swap();
 
         // Save to DB (truncate first to keep only latest data)
-        let truncate_result = sqlx::query("TRUNCATE TABLE system_metrics")
+        let truncate_result = sqlx::query("DELETE FROM system_metrics")
             .execute(&pool)
             .await;
 
