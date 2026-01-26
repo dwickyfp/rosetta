@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { walMonitorRepo } from '@/repo/wal-monitor'
-import { formatBytes } from '@/lib/utils'
+import { formatBytes, cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Database, AlertTriangle, CheckCircle2 } from 'lucide-react'
@@ -36,6 +36,19 @@ export function WALMonitorList() {
         }
     }
 
+    const getBorderColor = (status: 'OK' | 'WARNING' | 'ERROR' | null) => {
+        switch (status) {
+            case 'OK':
+                return 'border-l-4 border-l-green-500'
+            case 'WARNING':
+                return 'border-l-4 border-l-yellow-500'
+            case 'ERROR':
+                return 'border-l-4 border-l-red-500'
+            default:
+                return ''
+        }
+    }
+
      const getStatusIcon = (status: string) => {
         if (status === 'ACTIVE') return <CheckCircle2 className="h-4 w-4 text-green-500" />
         return <AlertTriangle className="h-4 w-4 text-red-500" />
@@ -47,7 +60,10 @@ export function WALMonitorList() {
                 {monitors.map((monitor) => (
                     <div
                         key={monitor.id}
-                        className='flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors'
+                        className={cn(
+                            'flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors',
+                            getBorderColor(monitor.wal_threshold_status)
+                        )}
                     >
                         <div className='flex items-center gap-3'>
                             <div className='flex h-9 w-9 items-center justify-center rounded-full bg-primary/10'>

@@ -118,6 +118,16 @@ services:
     networks:
       - rosetta-network
 
+  rosetta-redis:
+    image: redis:7
+    ports:
+      - "7378:6379"
+    command: ["redis-server", "--port", "6379"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - rosetta-network
+
 networks:
   rosetta-network:
     driver: bridge
@@ -125,6 +135,7 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
 
 # =============================================================================
 # USAGE

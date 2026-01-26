@@ -11,12 +11,11 @@ import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { WALMonitorList } from './components/wal-monitor-list'
+import { SystemLoadCard } from './components/system-load-card'
 import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
-import { systemMetricsRepo } from '@/repo/system-metrics'
 import {
   Activity,
-  Cpu,
   CreditCard,
   Server,
   TrendingDown,
@@ -36,6 +35,8 @@ import {
 } from 'recharts'
 import { cn } from '@/lib/utils'
 
+
+
 export function Dashboard() {
   const { data: summary } = useQuery({
     queryKey: ['dashboard', 'summary'],
@@ -53,12 +54,6 @@ export function Dashboard() {
     queryKey: ['dashboard', 'credit-chart'],
     queryFn: () => dashboardRepo.getCreditChart(30),
     refetchInterval: 60000,
-  })
-
-  const { data: metrics } = useQuery({
-    queryKey: ['system-metrics', 'latest'],
-    queryFn: systemMetricsRepo.getLatest,
-    refetchInterval: 5000,
   })
 
   // Calculate trends
@@ -159,26 +154,7 @@ export function Dashboard() {
           </Card>
 
           {/* System Load Card */}
-          <Card>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium'>System Load</CardTitle>
-              <Cpu className='h-4 w-4 text-muted-foreground' />
-            </CardHeader>
-            <CardContent>
-              <div className='flex items-baseline space-x-2'>
-                <div className='text-2xl font-bold'>
-                  {metrics?.cpu_usage?.toFixed(0) || 0}%
-                </div>
-                <span className='text-xs text-muted-foreground'>CPU</span>
-              </div>
-              <div className='flex items-baseline space-x-2'>
-                <div className='text-sm font-semibold'>
-                  {metrics?.memory_usage_percent?.toFixed(0) || 0}%
-                </div>
-                <span className='text-xs text-muted-foreground'>Mem</span>
-              </div>
-            </CardContent>
-          </Card>
+          <SystemLoadCard />
         </div>
 
         {/* Charts Section */}
