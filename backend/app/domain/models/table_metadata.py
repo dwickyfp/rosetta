@@ -7,7 +7,7 @@ This module defines the TableMetadata model representing the list of tables bein
 from datetime import datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from zoneinfo import ZoneInfo
@@ -20,6 +20,9 @@ class TableMetadata(Base):
     """
 
     __tablename__ = "table_metadata_list"
+    __table_args__ = (
+        UniqueConstraint("source_id", "table_name", name="uq_table_metadata_source_table"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     source_id: Mapped[int] = mapped_column(

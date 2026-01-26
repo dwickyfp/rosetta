@@ -471,11 +471,16 @@ class SourceService:
                         schema_details = {col['column_name']: dict(col) for col in schema_list}
                         
                         # Create new TableMetadata
-                        table_repo.create(
-                            source_id=source.id,
-                            table_name=table_name,
-                            schema_table=schema_details 
-                        )
+                        try:
+                            table_repo.create(
+                                source_id=source.id,
+                                table_name=table_name,
+                                schema_table=schema_details 
+                            )
+                        except Exception as e:
+                            # Likely IntegrityError if race condition
+                            logger.warning(f"Skipping creation of {table_name}: {e}")
+                            self.db.rollback() 
             finally:
                 conn_for_schema.close()
 
