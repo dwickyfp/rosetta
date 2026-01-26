@@ -15,7 +15,7 @@ mkdir -p /var/log/nginx
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
     echo "Running database migrations..."
     cd /app/backend
-    alembic upgrade head
+    /app/.venv/bin/alembic upgrade head
     echo "Migrations completed."
 fi
 
