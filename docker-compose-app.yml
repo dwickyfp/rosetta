@@ -70,6 +70,8 @@ services:
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
       # Timezone
       TZ: Asia/Jakarta
+      # Worker Configuration
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
     depends_on:
       rosetta-postgres:
         condition: service_healthy

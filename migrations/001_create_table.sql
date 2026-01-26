@@ -193,3 +193,8 @@ INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('ALER
 CREATE INDEX IF NOT EXISTS idx_table_metadata_list_source_table ON table_metadata_list(source_id, table_name);
 CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_created_at ON data_flow_record_monitoring(created_at);
 CREATE INDEX IF NOT EXISTS idx_credit_snowflake_monitoring_usage_date ON credit_snowflake_monitoring(usage_date);
+
+-- Add unique constraint to table_metadata_list (Added retroactively for new deployments)
+ALTER TABLE table_metadata_list DROP CONSTRAINT IF EXISTS uq_table_metadata_source_table;
+ALTER TABLE table_metadata_list ADD CONSTRAINT uq_table_metadata_source_table UNIQUE (source_id, table_name);
+
