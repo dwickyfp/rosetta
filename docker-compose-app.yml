@@ -123,8 +123,6 @@ services:
 
   rosetta-redis:
     image: redis:7
-    ports:
-      - "7378:6379"
     command: ["redis-server", "--port", "6379"]
     volumes:
       - rosetta_redis_data:/data
