@@ -70,7 +70,7 @@ function MetricItem({
   details?: React.ReactNode
 }) {
   return (
-    <div className='flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors'>
+    <div className='flex items-center justify-between p-1 py-0 rounded-lg hover:bg-muted/50 transition-colors'>
       <div className='flex items-center gap-3'>
         <div className={cn('p-2 rounded-full bg-opacity-10', color.replace('text-', 'bg-'))}>
           <Icon className={cn('w-4 h-4', color)} />
@@ -110,7 +110,7 @@ export function SystemLoadCard() {
     : { val: 0, color: 'text-muted-foreground' }
 
   return (
-    <Card className='overflow-hidden shadow-md bg-gradient-to-br from-card to-card/50'>
+    <Card className='overflow-hidden bg-gradient-to-br from-card to-card/50'>
       <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2 border-b border-border/50 bg-muted/20'>
         <CardTitle className='text-sm font-semibold flex items-center gap-2'>
           <Activity className='w-4 h-4 text-primary' />
@@ -121,7 +121,7 @@ export function SystemLoadCard() {
             <span className='text-[10px] text-muted-foreground font-medium uppercase tracking-wider'>Live</span>
         </div>
       </CardHeader>
-      <CardContent className='p-4 pt-0 grid'>
+      <CardContent className='p-2 pt-0 grid gap-1'>
         <MetricItem
           label="CPU Usage"
           value={cpuParams.val}
