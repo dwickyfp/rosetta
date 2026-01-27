@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 # ETL Framework
 etl = { git = "https://github.com/supabase/etl" }
+duckdb = { version = "1.0", features = ["bundled"] }
 
 # Async & HTTP
 tokio = { version = "1", features = ["full"] }
