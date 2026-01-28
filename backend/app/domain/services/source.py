@@ -622,10 +622,12 @@ class SourceService:
                     if table_meta:
                         pipeline_service = PipelineService(self.db)
                         for pipeline in pipelines:
-                             try:
-                                 pipeline_service.provision_table(pipeline, table_meta)
-                             except Exception as exc:
-                                 logger.error(f"Failed to auto-provision table {table_name} for pipeline {pipeline.id}: {exc}")
+                             for pd in pipeline.destinations:
+                                 if pd.destination.type == "SNOWFLAKE":
+                                     try:
+                                         pipeline_service.provision_table(pipeline, pd.destination, table_meta)
+                                     except Exception as exc:
+                                         logger.error(f"Failed to auto-provision table {table_name} for pipeline {pipeline.id} destination {pd.destination.name}: {exc}")
                     else:
                         logger.warning(f"Metadata for table {table_name} not found after refresh, skipping provisioning")
 

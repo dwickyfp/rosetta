@@ -261,6 +261,7 @@ const AuthenticatedPipelinesPipelineIdFlowRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
+  '/': typeof AuthenticatedIndexRoute
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
   '/destinations': typeof AuthenticatedDestinationsRouteRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
@@ -274,7 +275,6 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/': typeof AuthenticatedIndexRoute
   '/destinations/$destinationId': typeof AuthenticatedDestinationsDestinationIdRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
@@ -286,15 +286,15 @@ export interface FileRoutesByFullPath {
   '/clerk/sign-in': typeof ClerkauthSignInRoute
   '/clerk/sign-up': typeof ClerkauthSignUpRoute
   '/clerk/user-management': typeof ClerkAuthenticatedUserManagementRoute
-  '/apps': typeof AuthenticatedAppsIndexRoute
-  '/chats': typeof AuthenticatedChatsIndexRoute
+  '/apps/': typeof AuthenticatedAppsIndexRoute
+  '/chats/': typeof AuthenticatedChatsIndexRoute
   '/destinations/': typeof AuthenticatedDestinationsIndexRoute
-  '/help-center': typeof AuthenticatedHelpCenterIndexRoute
-  '/pipelines': typeof AuthenticatedPipelinesIndexRoute
+  '/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/pipelines/': typeof AuthenticatedPipelinesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
-  '/sources': typeof AuthenticatedSourcesIndexRoute
-  '/tasks': typeof AuthenticatedTasksIndexRoute
-  '/users': typeof AuthenticatedUsersIndexRoute
+  '/sources/': typeof AuthenticatedSourcesIndexRoute
+  '/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/users/': typeof AuthenticatedUsersIndexRoute
   '/pipelines/$pipelineId/flow': typeof AuthenticatedPipelinesPipelineIdFlowRoute
   '/sources/$sourceId/details': typeof AuthenticatedSourcesSourceIdDetailsRoute
 }
@@ -379,6 +379,7 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/'
     | '/clerk'
     | '/destinations'
     | '/settings'
@@ -392,7 +393,6 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
-    | '/'
     | '/destinations/$destinationId'
     | '/errors/$error'
     | '/pipelines/$pipelineId'
@@ -404,15 +404,15 @@ export interface FileRouteTypes {
     | '/clerk/sign-in'
     | '/clerk/sign-up'
     | '/clerk/user-management'
-    | '/apps'
-    | '/chats'
+    | '/apps/'
+    | '/chats/'
     | '/destinations/'
-    | '/help-center'
-    | '/pipelines'
+    | '/help-center/'
+    | '/pipelines/'
     | '/settings/'
-    | '/sources'
-    | '/tasks'
-    | '/users'
+    | '/sources/'
+    | '/tasks/'
+    | '/users/'
     | '/pipelines/$pipelineId/flow'
     | '/sources/$sourceId/details'
   fileRoutesByTo: FileRoutesByTo
@@ -521,7 +521,7 @@ declare module '@tanstack/react-router' {
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -633,21 +633,21 @@ declare module '@tanstack/react-router' {
     '/_authenticated/users/': {
       id: '/_authenticated/users/'
       path: '/users'
-      fullPath: '/users'
+      fullPath: '/users/'
       preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/tasks/': {
       id: '/_authenticated/tasks/'
       path: '/tasks'
-      fullPath: '/tasks'
+      fullPath: '/tasks/'
       preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/sources/': {
       id: '/_authenticated/sources/'
       path: '/sources'
-      fullPath: '/sources'
+      fullPath: '/sources/'
       preLoaderRoute: typeof AuthenticatedSourcesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
@@ -661,14 +661,14 @@ declare module '@tanstack/react-router' {
     '/_authenticated/pipelines/': {
       id: '/_authenticated/pipelines/'
       path: '/pipelines'
-      fullPath: '/pipelines'
+      fullPath: '/pipelines/'
       preLoaderRoute: typeof AuthenticatedPipelinesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/help-center/': {
       id: '/_authenticated/help-center/'
       path: '/help-center'
-      fullPath: '/help-center'
+      fullPath: '/help-center/'
       preLoaderRoute: typeof AuthenticatedHelpCenterIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
@@ -682,14 +682,14 @@ declare module '@tanstack/react-router' {
     '/_authenticated/chats/': {
       id: '/_authenticated/chats/'
       path: '/chats'
-      fullPath: '/chats'
+      fullPath: '/chats/'
       preLoaderRoute: typeof AuthenticatedChatsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/apps/': {
       id: '/_authenticated/apps/'
       path: '/apps'
-      fullPath: '/apps'
+      fullPath: '/apps/'
       preLoaderRoute: typeof AuthenticatedAppsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }

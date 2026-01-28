@@ -206,8 +206,13 @@ class ColumnSchemaResponse(BaseSchema):
 
     column_name: str = Field(..., description="Column name")
     data_type: str = Field(..., description="PostgreSQL data type")
+    real_data_type: str | None = Field(default=None, description="Detailed PostgreSQL data type")
     is_nullable: bool = Field(default=True, description="Whether column is nullable")
     is_primary_key: bool = Field(default=False, description="Whether column is primary key")
+    has_default: bool = Field(default=False, description="Whether column has a default value")
+    default_value: str | None = Field(default=None, description="Default value")
+    numeric_scale: int | None = Field(default=None, description="Numeric scale")
+    numeric_precision: int | None = Field(default=None, description="Numeric precision")
 
 
 class TableWithSyncInfoResponse(BaseSchema):

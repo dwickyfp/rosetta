@@ -22,12 +22,12 @@ export interface Pipeline {
     name: string
   }
   destinations?: {
-     id: number
-     destination: {
-        id: number
-        name: string
-        type: string
-     }
+    id: number
+    destination: {
+      id: number
+      name: string
+      type: string
+    }
   }[]
 }
 
@@ -83,7 +83,7 @@ export const pipelinesRepo = {
   },
   addDestination: async (id: number, destinationId: number): Promise<Pipeline> => {
     const response: AxiosResponse<Pipeline> = await api.post(`/pipelines/${id}/destinations`, null, {
-        params: { destination_id: destinationId }
+      params: { destination_id: destinationId }
     })
     return response.data
   }
@@ -104,9 +104,14 @@ export interface PipelineStats {
 // Table Sync Types
 export interface ColumnSchema {
   column_name: string
-  data_type: string
-  is_nullable: boolean
+  data_type?: string
+  real_data_type?: string
+  is_nullable: boolean | string
   is_primary_key: boolean
+  has_default?: boolean
+  default_value?: string | null
+  numeric_scale?: number | null
+  numeric_precision?: number | null
 }
 
 export interface TableSyncConfig {

@@ -36,12 +36,15 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
       setDrawerOpen(true)
     } else if (node.id.startsWith('dest-')) {
       const destId = parseInt(node.id.replace('dest-', ''))
-      if (!isNaN(destId)) {
-        setSelectedDestId(destId)
+      // Find the pipeline_destination ID from the destination ID
+      const pipelineDest = pipeline?.destinations?.find((d) => d.destination.id === destId)
+      
+      if (pipelineDest) {
+        setSelectedDestId(pipelineDest.id)
         setDrawerOpen(true)
       }
     }
-  }, [])
+  }, [pipeline])
 
   // Build nodes and edges for React Flow
   const { nodes, edges } = useMemo(() => {

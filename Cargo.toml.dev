@@ -35,4 +35,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "json", "chro
 secrecy = "0.10.3"
 sysinfo = "0.37.2"
 
+[patch.crates-io]
+flate2 = { path = "C:/rust-deps/flate2-1.1.8" }
 

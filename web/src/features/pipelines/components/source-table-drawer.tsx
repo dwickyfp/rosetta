@@ -7,10 +7,14 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet'
 import { Pipeline, TableWithSyncInfo, tableSyncRepo } from '@/repo/pipelines'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
 import { PostgresTableConfig } from '@/features/pipelines/components/postgres-table-config'
 import { SnowflakeTableConfig } from '@/features/pipelines/components/snowflake-table-config'
-import { Loader2 } from 'lucide-react'
+import { TableFilterCard } from '@/features/pipelines/components/table-filter-card'
+import { TableCustomSqlCard } from '@/features/pipelines/components/table-custom-sql-card'
+import { Loader2, Search } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { toast } from 'sonner'
 
 interface SourceTableDrawerProps {
   open: boolean
@@ -28,9 +32,22 @@ export function SourceTableDrawer({
   const [selectedDestinationId, setSelectedDestinationId] = useState<number | null>(null)
   const [tables, setTables] = useState<TableWithSyncInfo[]>([])
   const [loading, setLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Floating Card State
+  const [activeTable, setActiveTable] = useState<TableWithSyncInfo | null>(null)
+  const [activeMode, setActiveMode] = useState<'filter' | 'custom' | null>(null)
 
   // Get destinations
   const destinations = pipeline.destinations || []
+
+  // Close floating cards when drawer closes
+  useEffect(() => {
+    if (!open) {
+      setActiveTable(null)
+      setActiveMode(null)
+    }
+  }, [open])
 
   // Set first destination as default or use initialDestinationId
   useEffect(() => {
@@ -52,7 +69,7 @@ export function SourceTableDrawer({
 
   const loadTables = async () => {
     if (!selectedDestinationId) return
-    
+
     setLoading(true)
     try {
       const data = await tableSyncRepo.getDestinationTables(
@@ -67,6 +84,40 @@ export function SourceTableDrawer({
     }
   }
 
+  const handleSaveFilter = async (filterSql: string) => {
+    if (!activeTable || !selectedDestinationId) return
+
+    try {
+      await tableSyncRepo.saveTableSync(pipeline.id, selectedDestinationId, {
+        table_name: activeTable.table_name,
+        filter_sql: filterSql,
+        custom_sql: activeTable.sync_config?.custom_sql,
+      })
+      toast.success('Filter saved successfully')
+      setActiveMode(null)
+      loadTables()
+    } catch (error) {
+      toast.error('Failed to save filter')
+    }
+  }
+
+  const handleSaveCustomSql = async (customSql: string) => {
+    if (!activeTable || !selectedDestinationId) return
+
+    try {
+      await tableSyncRepo.saveTableSync(pipeline.id, selectedDestinationId, {
+        table_name: activeTable.table_name,
+        custom_sql: customSql,
+        filter_sql: activeTable.sync_config?.filter_sql,
+      })
+      toast.success('Custom SQL saved successfully')
+      setActiveMode(null)
+      loadTables()
+    } catch (error) {
+      toast.error('Failed to save custom SQL')
+    }
+  }
+
   const getCurrentDestination = () => {
     return destinations.find((d) => d.id === selectedDestinationId)
   }
@@ -74,73 +125,113 @@ export function SourceTableDrawer({
   const currentDestination = getCurrentDestination()
   const destinationType = currentDestination?.destination?.type || 'POSTGRESQL'
 
+  const filteredTables = tables.filter(table =>
+    table.table_name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="left"
-        className="w-[500px] sm:max-w-[500px] overflow-y-auto"
-      >
-        <SheetHeader>
-          <SheetTitle>Source Tables Configuration</SheetTitle>
-          <SheetDescription>
-            Configure table synchronization for{' '}
-            <span className="font-medium">{pipeline.source?.name}</span>
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      {/* Manual Backdrop when modal={false} */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 animate-in fade-in duration-300"
+          onClick={() => {
+            // Close drawer when clicking backdrop
+            onOpenChange(false)
+          }}
+        />
+      )}
 
-        <div className="mt-6">
-          {/* Destination Tabs */}
-          {destinations.length > 1 ? (
-            <Tabs
-              value={String(selectedDestinationId || '')}
-              onValueChange={(val) => setSelectedDestinationId(Number(val))}
-            >
-              <TabsList className="w-full">
-                {destinations.map((d) => (
-                  <TabsTrigger key={d.id} value={String(d.id)} className="flex-1">
-                    {d.destination.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          ) : destinations.length === 1 ? (
-            <div className="text-sm text-muted-foreground mb-4">
-              Destination:{' '}
-              <span className="font-medium text-foreground">
-                {destinations[0].destination.name}
-              </span>{' '}
-              ({destinations[0].destination.type})
-            </div>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              No destinations configured
-            </div>
-          )}
+      {/* Sheet with modal={false} to not block interactions with siblings */}
+      <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+        <SheetContent
+          side="left"
+          className="w-[500px] sm:max-w-[500px] flex flex-col h-full p-0 gap-0 z-50 shadow-none border-r"
+          // We remove the internal overlay if needed in sheet.tsx or it's handled by modal=false
+          onInteractOutside={(e) => {
+            // We allow interaction with outside because we manage backdrop ourselves,
+            // so we prevent Radix from handling "outside" click closing logic.
+            e.preventDefault()
+          }}
+        >
+          {/* Fixed Header section */}
+          <div className="p-6 pb-4 border-b flex-shrink-0">
+            <SheetHeader className="mb-6">
+              <SheetTitle>Source Tables Configuration</SheetTitle>
+              <SheetDescription>
+                Configure table synchronization for{' '}
+                <span className="font-medium text-foreground">{pipeline.source?.name}</span>
+              </SheetDescription>
+            </SheetHeader>
 
-          {/* Table List */}
-          <div className="mt-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : destinationType === 'SNOWFLAKE' ? (
-              <SnowflakeTableConfig
-                tables={tables}
-                pipelineId={pipeline.id}
-                pipelineDestinationId={selectedDestinationId!}
-                onRefresh={loadTables}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search tables..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
               />
-            ) : (
-              <PostgresTableConfig
-                tables={tables}
-                pipelineId={pipeline.id}
-                pipelineDestinationId={selectedDestinationId!}
-                onRefresh={loadTables}
-              />
-            )}
+            </div>
           </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+
+          {/* Scrollable Content section */}
+          <div className="flex-1 overflow-y-auto p-6 pt-4">
+            <div className="space-y-6">
+              {/* Table List */}
+              <div className="mt-0">
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : destinationType === 'SNOWFLAKE' ? (
+                  <SnowflakeTableConfig
+                    tables={filteredTables}
+                    pipelineId={pipeline.id}
+                    pipelineDestinationId={selectedDestinationId!}
+                    onRefresh={loadTables}
+                  />
+                ) : (
+                  <PostgresTableConfig
+                    tables={filteredTables}
+                    pipelineId={pipeline.id}
+                    pipelineDestinationId={selectedDestinationId!}
+                    onRefresh={loadTables}
+                    onEditFilter={(table) => {
+                      setActiveTable(table)
+                      setActiveMode('filter')
+                    }}
+                    onEditCustomSql={(table) => {
+                      setActiveTable(table)
+                      setActiveMode('custom')
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Floating Panels - Rendered as siblings, higher Z-index */}
+      {/* Since modal={false}, these are interactive */}
+      {open && activeMode === 'filter' && (
+        <TableFilterCard
+          table={activeTable}
+          open={true}
+          onClose={() => setActiveMode(null)}
+          onSave={handleSaveFilter}
+        />
+      )}
+
+      {open && activeMode === 'custom' && (
+        <TableCustomSqlCard
+          table={activeTable}
+          open={true}
+          onClose={() => setActiveMode(null)}
+          onSave={handleSaveCustomSql}
+        />
+      )}
+    </>
   )
 }

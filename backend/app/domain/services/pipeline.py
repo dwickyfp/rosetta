@@ -903,7 +903,7 @@ class PipelineService:
 
     def get_destination_tables(self, pipeline_id: int, pipeline_destination_id: int) -> List[dict]:
         """
-        Get tables available for sync with current configuration.
+        Get tables available for sync with current configuration using Left Join.
 
         Args:
             pipeline_id: Pipeline identifier
@@ -912,7 +912,8 @@ class PipelineService:
         Returns:
             List of tables with sync info
         """
-        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+        from app.domain.models.table_metadata import TableMetadata
+        from app.domain.models.pipeline import PipelineDestination, PipelineDestinationTableSync
         from app.domain.schemas.pipeline import (
             TableWithSyncInfoResponse,
             ColumnSchemaResponse,
@@ -920,58 +921,83 @@ class PipelineService:
         )
         from app.core.exceptions import EntityNotFoundError
 
-        # Get pipeline and validate
+        # Get pipeline to verify it exists and get source_id
         pipeline = self.repository.get_by_id_with_relations(pipeline_id)
 
-        # Find the specific pipeline destination
-        pipeline_dest = None
-        for pd in pipeline.destinations:
-            if pd.id == pipeline_destination_id:
-                pipeline_dest = pd
-                break
-
-        if not pipeline_dest:
-            raise EntityNotFoundError(
+        # Verify destination exists for this pipeline
+        pipeline_dest_exists = (
+            self.db.query(PipelineDestination)
+            .filter_by(id=pipeline_destination_id, pipeline_id=pipeline_id)
+            .first()
+        )
+        if not pipeline_dest_exists:
+             raise EntityNotFoundError(
                 entity_type="PipelineDestination", entity_id=pipeline_destination_id
             )
 
-        # Get source tables from table_metadata_list
-        tm_repo = TableMetadataRepository(self.db)
-        source_tables = tm_repo.get_by_source_id(pipeline.source_id)
+        # Perform Left Join: TableMetadata (Source Tables) LEFT JOIN PipelineDestinationTableSync (Sync Config)
+        # on table_name and pipeline_destination_id
+        results = (
+            self.db.query(TableMetadata, PipelineDestinationTableSync)
+            .outerjoin(
+                PipelineDestinationTableSync,
+                and_(
+                    TableMetadata.table_name == PipelineDestinationTableSync.table_name,
+                    PipelineDestinationTableSync.pipeline_destination_id == pipeline_destination_id
+                )
+            )
+            .filter(TableMetadata.source_id == pipeline.source_id)
+            .all()
+        )
 
-        # Build response with sync info
-        result = []
-        existing_syncs = {ts.table_name: ts for ts in pipeline_dest.table_syncs}
-
-        for table in source_tables:
-            # Parse columns from schema_table JSONB
+        response_list = []
+        for table_meta, sync_config_row in results:
+            # Parse columns from schema_table
             columns = []
-            if table.schema_table:
-                for col in table.schema_table:
-                    columns.append(ColumnSchemaResponse(
-                        column_name=col.get("column_name", ""),
-                        data_type=col.get("real_data_type") or col.get("data_type", ""),
-                        is_nullable=col.get("is_nullable", True),
-                        is_primary_key=col.get("is_primary_key", False),
-                    ))
+            if table_meta.schema_table:
+                # Handle both list (older format) and dict (newer format) schemas
+                schema_items = table_meta.schema_table
+                if isinstance(schema_items, dict):
+                    schema_items = schema_items.values()
+                
+                for col in schema_items:
+                    if isinstance(col, dict):
+                        columns.append(ColumnSchemaResponse(
+                            column_name=col.get("column_name", ""),
+                            data_type=col.get("real_data_type") or col.get("data_type", ""),
+                            real_data_type=col.get("real_data_type"),
+                            is_nullable=col.get("is_nullable") in [True, "YES"],
+                            is_primary_key=col.get("is_primary_key", False),
+                            has_default=col.get("has_default", False),
+                            default_value=str(col.get("default_value")) if col.get("default_value") is not None else None,
+                            numeric_scale=col.get("numeric_scale"),
+                            numeric_precision=col.get("numeric_precision"),
+                        ))
+                    elif isinstance(col, str):
+                        # Handle case where schema might be list of strings logic
+                        columns.append(ColumnSchemaResponse(
+                            column_name=col,
+                            data_type="UNKNOWN",
+                            is_nullable=True,
+                            is_primary_key=False,
+                        ))
 
-            # Get sync config if exists
+            # Convert sync config if it exists
             sync_config = None
-            if table.table_name in existing_syncs:
-                sync = existing_syncs[table.table_name]
-                sync_config = PipelineDestinationTableSyncResponse.from_orm(sync)
+            if sync_config_row:
+                sync_config = PipelineDestinationTableSyncResponse.from_orm(sync_config_row)
 
-            result.append(TableWithSyncInfoResponse(
-                table_name=table.table_name,
+            response_list.append(TableWithSyncInfoResponse(
+                table_name=table_meta.table_name,
                 columns=columns,
                 sync_config=sync_config,
-                is_exists_table_landing=table.is_exists_table_landing,
-                is_exists_stream=table.is_exists_stream,
-                is_exists_task=table.is_exists_task,
-                is_exists_table_destination=table.is_exists_table_destination,
+                is_exists_table_landing=table_meta.is_exists_table_landing,
+                is_exists_stream=table_meta.is_exists_stream,
+                is_exists_task=table_meta.is_exists_task,
+                is_exists_table_destination=table_meta.is_exists_table_destination,
             ))
 
-        return [r.dict() for r in result]
+        return [r.dict() for r in response_list]
 
     def save_table_sync(
         self, pipeline_id: int, pipeline_destination_id: int, table_sync_data
@@ -1141,7 +1167,7 @@ class PipelineService:
 
         # Get table metadata
         tm_repo = TableMetadataRepository(self.db)
-        table_meta = tm_repo.get_by_source_and_table(pipeline.source_id, table_name)
+        table_meta = tm_repo.get_by_source_and_name(pipeline.source_id, table_name)
 
         if not table_meta:
             raise EntityNotFoundError(entity_type="TableMetadata", entity_id=table_name)
