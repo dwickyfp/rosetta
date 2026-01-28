@@ -4,32 +4,16 @@ export interface Destination {
     id: number
     name: string
     type: string
-    snowflake_account: string | null
-    snowflake_user: string | null
-    snowflake_database: string | null
-    snowflake_schema: string | null
-    snowflake_landing_database: string | null
-    snowflake_landing_schema: string | null
-    snowflake_role: string | null
-    snowflake_private_key: string | null
-    snowflake_private_key_passphrase?: string | null // Optional in response, handled securely
-    snowflake_warehouse: string | null
+    config: Record<string, any>
     created_at: string
     updated_at: string
+    is_used_in_active_pipeline?: boolean
 }
 
 export interface DestinationCreate {
     name: string
-    snowflake_account?: string
-    snowflake_user?: string
-    snowflake_database?: string
-    snowflake_schema?: string
-    snowflake_landing_database?: string
-    snowflake_landing_schema?: string
-    snowflake_role?: string
-    snowflake_private_key?: string
-    snowflake_private_key_passphrase?: string
-    snowflake_warehouse?: string
+    type: string
+    config?: Record<string, any>
 }
 
 export interface DestinationUpdate extends Partial<DestinationCreate> { }
