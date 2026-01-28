@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     credits,
     configuration,
     dashboard,
+    table_sync,
 )
 
 # Create v1 router
@@ -33,6 +34,10 @@ api_router.include_router(
 )
 
 api_router.include_router(pipelines.router, prefix="/pipelines", tags=["pipelines"])
+
+api_router.include_router(
+    table_sync.router, prefix="/pipelines", tags=["table-sync"]
+)
 
 api_router.include_router(wal_metrics.router, prefix="/metrics", tags=["metrics"])
 

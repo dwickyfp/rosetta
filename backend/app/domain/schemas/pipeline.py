@@ -7,6 +7,7 @@ Defines schemas for creating, updating, and retrieving pipeline configurations.
 from datetime import datetime
 
 from pydantic import Field, validator
+from typing import List
 
 from app.domain.models.pipeline import PipelineMetadataStatus, PipelineStatus
 from app.domain.schemas.common import BaseSchema, TimestampSchema
@@ -29,15 +30,10 @@ class PipelineBase(BaseSchema):
 class PipelineCreate(PipelineBase):
     """
     Schema for creating a new pipeline.
-
-    Connects a source to a destination.
     """
 
     source_id: int = Field(
         ..., ge=1, description="ID of the source database", examples=[1, 42]
-    )
-    destination_id: int = Field(
-        ..., ge=1, description="ID of the destination warehouse", examples=[1, 42]
     )
     status: PipelineStatus = Field(
         default=PipelineStatus.START,
@@ -60,7 +56,6 @@ class PipelineCreate(PipelineBase):
             "example": {
                 "name": "production-to-snowflake",
                 "source_id": 1,
-                "destination_id": 1,
                 "status": "START",
             }
         }
@@ -78,9 +73,6 @@ class PipelineUpdate(BaseSchema):
     )
     source_id: int | None = Field(
         default=None, ge=1, description="ID of the source database"
-    )
-    destination_id: int | None = Field(
-        default=None, ge=1, description="ID of the destination warehouse"
     )
     status: PipelineStatus | None = Field(default=None, description="Pipeline status")
 
@@ -148,7 +140,6 @@ class PipelineMetadataResponse(BaseSchema):
         }
 
 
-
 class PipelineProgressResponse(BaseSchema):
     """
     Schema for pipeline progress.
@@ -167,25 +158,114 @@ class PipelineProgressResponse(BaseSchema):
         orm_mode = True
 
 
+class PipelineDestinationTableSyncResponse(BaseSchema):
+    """
+    Schema for pipeline destination table sync.
+    """
+
+    id: int = Field(..., description="Unique table sync identifier")
+    pipeline_destination_id: int = Field(..., description="Pipeline destination ID")
+    table_name: str = Field(..., description="Table name")
+    custom_sql: str | None = Field(default=None, description="Custom SQL")
+    filter_sql: str | None = Field(default=None, description="Filter SQL")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        orm_mode = True
+
+
+class TableSyncCreateRequest(BaseSchema):
+    """
+    Schema for creating/updating a table sync configuration.
+    """
+
+    table_name: str = Field(..., min_length=1, max_length=255, description="Table name")
+    custom_sql: str | None = Field(default=None, description="Custom SQL query")
+    filter_sql: str | None = Field(
+        default=None,
+        description="Filter conditions in format: column:operator:value;column2:operator:value2",
+    )
+    enabled: bool = Field(default=True, description="Whether sync is enabled")
+
+
+class TableSyncBulkRequest(BaseSchema):
+    """
+    Schema for bulk table sync operations.
+    """
+
+    tables: List[TableSyncCreateRequest] = Field(
+        ..., min_items=1, description="List of table sync configurations"
+    )
+
+
+class ColumnSchemaResponse(BaseSchema):
+    """
+    Schema for table column information.
+    """
+
+    column_name: str = Field(..., description="Column name")
+    data_type: str = Field(..., description="PostgreSQL data type")
+    is_nullable: bool = Field(default=True, description="Whether column is nullable")
+    is_primary_key: bool = Field(default=False, description="Whether column is primary key")
+
+
+class TableWithSyncInfoResponse(BaseSchema):
+    """
+    Schema for table with sync configuration info.
+    """
+
+    table_name: str = Field(..., description="Table name")
+    columns: List[ColumnSchemaResponse] = Field(default=[], description="Column schema")
+    sync_config: PipelineDestinationTableSyncResponse | None = Field(
+        default=None, description="Current sync configuration if exists"
+    )
+    # Snowflake status flags
+    is_exists_table_landing: bool = Field(default=False, description="Landing table exists")
+    is_exists_stream: bool = Field(default=False, description="Stream exists")
+    is_exists_task: bool = Field(default=False, description="Task exists")
+    is_exists_table_destination: bool = Field(default=False, description="Target table exists")
+
+
+class PipelineDestinationResponse(BaseSchema):
+    """
+    Schema for pipeline destination.
+    """
+
+    id: int = Field(..., description="Unique pipeline destination identifier")
+    pipeline_id: int = Field(..., description="Pipeline ID")
+    destination_id: int = Field(..., description="Destination ID")
+    destination: DestinationResponse | None = Field(
+        default=None, description="Destination details"
+    )
+    table_syncs: List[PipelineDestinationTableSyncResponse] = Field(
+        default=[], description="Table sync settings"
+    )
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        orm_mode = True
+
+
 class PipelineResponse(PipelineBase, TimestampSchema):
 
     """
     Schema for pipeline API responses.
 
-    Includes full pipeline details with related source and destination.
+    Includes full pipeline details with related source and destinations.
     """
 
     id: int = Field(..., description="Unique pipeline identifier", examples=[1, 42])
     source_id: int = Field(..., description="ID of the source database")
-    destination_id: int = Field(..., description="ID of the destination warehouse")
     status: PipelineStatus = Field(..., description="Pipeline operational status")
 
     # Nested relationships
     source: SourceResponse | None = Field(
         default=None, description="Source configuration details"
     )
-    destination: DestinationResponse | None = Field(
-        default=None, description="Destination configuration details"
+    destinations: List[PipelineDestinationResponse] = Field(
+        default=[], description="List of destinations"
     )
     pipeline_metadata: PipelineMetadataResponse | None = Field(
         default=None, description="Pipeline runtime metadata"
@@ -201,7 +281,6 @@ class PipelineResponse(PipelineBase, TimestampSchema):
                 "id": 1,
                 "name": "production-to-snowflake",
                 "source_id": 1,
-                "destination_id": 1,
                 "status": "START",
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z",
@@ -217,19 +296,24 @@ class PipelineResponse(PipelineBase, TimestampSchema):
                     "created_at": "2024-01-01T00:00:00Z",
                     "updated_at": "2024-01-01T00:00:00Z",
                 },
-                "destination": {
-                    "id": 1,
-                    "name": "snowflake-production",
-                    "snowflake_account": "xy12345.us-east-1",
-                    "snowflake_user": "ETL_USER",
-                    "snowflake_database": "ANALYTICS",
-                    "snowflake_schema": "RAW_DATA",
-                    "snowflake_role": "SYSADMIN",
-                    "snowflake_private_key_path": "user/snowflake_key.p8",
-                    "snowflake_host": "xy12345.snowflakecomputing.com",
-                    "created_at": "2024-01-01T00:00:00Z",
-                    "updated_at": "2024-01-01T00:00:00Z",
-                },
+                "destinations": [
+                    {
+                        "id": 1,
+                        "pipeline_id": 1,
+                        "destination_id": 1,
+                        "destination": {
+                            "id": 1,
+                            "name": "snowflake-production",
+                            "type": "SNOWFLAKE",
+                            "config": {},
+                            "created_at": "2024-01-01T00:00:00Z",
+                            "updated_at": "2024-01-01T00:00:00Z",
+                        },
+                        "table_syncs": [],
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                ],
                 "pipeline_metadata": {
                     "id": 1,
                     "pipeline_id": 1,

@@ -302,10 +302,12 @@ class SourceService:
         pipeline_repo = PipelineRepository(self.db)
         pipelines = pipeline_repo.get_by_source_id(source_id)
         
-        # Extract unique destination names
+        # Extract unique destination names from all pipelines' destinations
         destination_names = list(set(
-            p.destination.name for p in pipelines 
-            if p.destination
+            pd.destination.name 
+            for p in pipelines 
+            for pd in p.destinations 
+            if pd.destination
         ))
 
         return SourceDetailResponse(

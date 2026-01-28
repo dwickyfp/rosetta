@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateEntityError
 from app.core.logging import get_logger
-from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus
+from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineDestination
 from app.domain.repositories.pipeline import PipelineRepository
-from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate
+from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate, PipelineDestinationResponse, PipelineDestinationTableSyncResponse
 from app.domain.services.source import SourceService
 from app.domain.models.data_flow_monitoring import DataFlowRecordMonitoring
 from sqlalchemy import func, desc, and_
@@ -63,6 +63,7 @@ class PipelineService:
         pipeline_data.status = PipelineStatus.PAUSE
         
         # Create pipeline with metadata using repository method
+        # Note: PipelineCreate no longer has destination_id
         pipeline = self.repository.create_with_metadata(**pipeline_data.dict())
 
         logger.info(
@@ -71,6 +72,48 @@ class PipelineService:
         )
 
         return pipeline
+
+    def add_pipeline_destination(self, pipeline_id: int, destination_id: int) -> Pipeline:
+        """
+        Add a destination to an existing pipeline.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            destination_id: Destination identifier
+
+        Returns:
+            Updated pipeline
+        """
+        logger.info(
+            "Adding destination to pipeline",
+            extra={"pipeline_id": pipeline_id, "destination_id": destination_id},
+        )
+
+        pipeline = self.repository.get_by_id(pipeline_id)
+        
+        # Check if destination already exists
+        existing = (
+            self.db.query(PipelineDestination)
+            .filter_by(pipeline_id=pipeline_id, destination_id=destination_id)
+            .first()
+        )
+        if existing:
+            raise DuplicateEntityError(
+                entity_type="PipelineDestination",
+                field="destination_id",
+                value=destination_id,
+                details={"message": "Destination is already added to this pipeline"},
+            )
+
+        # Add destination
+        new_dest = PipelineDestination(
+            pipeline_id=pipeline_id, destination_id=destination_id
+        )
+        self.db.add(new_dest)
+        self.db.commit()
+        self.db.refresh(pipeline)
+
+        return self.repository.get_by_id_with_relations(pipeline_id)
 
     def get_pipeline(self, pipeline_id: int) -> Pipeline:
         """
@@ -335,52 +378,62 @@ class PipelineService:
             
             if not tables:
                 self._update_progress(progress, 100, "No tables to process", "COMPLETED")
-                pipeline.status = PipelineStatus.START.value
+                pipeline.status = PipelineStatus.PAUSE.value
                 self.db.commit()
                 return
 
-            # 3. Connect to Snowflake
-            self._update_progress(progress, 20, "Connecting to Snowflake", "IN_PROGRESS")
-            conn = self._get_snowflake_connection(pipeline.destination)
-            cursor = conn.cursor()
+            # 3. Connect to Snowflake (Iterate over destinations)
+            self._update_progress(progress, 20, "Initializing destinations", "IN_PROGRESS")
             
-            try:
-                # Set context
-                config = pipeline.destination.config
-                landing_db = config.get("landing_database")
-                landing_schema = config.get("landing_schema")
-                target_db = config.get("database")
-                target_schema = config.get("schema")
+            for index, p_dest in enumerate(pipeline.destinations):
+                destination = p_dest.destination
+                # Only support Snowflake for now in this provisioner? 
+                # User asked for Postgres later. 
+                if destination.type != 'SNOWFLAKE':
+                    logger.info(f"Skipping provisioning for non-Snowflake destination: {destination.name}")
+                    continue
 
-                # Validate configuration
-                if not all([landing_db, landing_schema, target_db, target_schema]):
-                    raise ValueError(
-                        f"Destination configuration incomplete for pipeline {pipeline.name}. "
-                        "Ensure landing_database, landing_schema, database, and schema are set."
-                    )
+                conn = self._get_snowflake_connection(destination)
+                cursor = conn.cursor()
                 
-                # Check Databases/Schemas existence? usually assumed or created.
-                # Just use them.
-                
-                # Need TableMetadataRepository to update flags
-                from app.domain.repositories.table_metadata_repo import TableMetadataRepository
-                tm_repo = TableMetadataRepository(self.db)
-                
-                total_tables = len(tables)
-                for index, table in enumerate(tables):
-                    current_percent = 20 + int((index / total_tables) * 70) 
-                    self._update_progress(progress, current_percent, f"Processing table: {table.table_name}", "IN_PROGRESS")
+                try:
+                    # Set context
+                    config = destination.config
+                    landing_db = config.get("landing_database")
+                    landing_schema = config.get("landing_schema")
+                    target_db = config.get("database")
+                    target_schema = config.get("schema")
+
+                    # Validate configuration
+                    if not all([landing_db, landing_schema, target_db, target_schema]):
+                        raise ValueError(
+                            f"Destination configuration incomplete for pipeline {pipeline.name}. "
+                            "Ensure landing_database, landing_schema, database, and schema are set."
+                        )
                     
-                    # Process single table using reusable method
-                    self.provision_table(pipeline, table, cursor, close_cursor=False)
-                # 5. Finalize
-                self._update_progress(progress, 100, "Initialization completed", "COMPLETED")
-                pipeline.status = PipelineStatus.START.value
-                self.db.commit()
+                    # Check Databases/Schemas existence? usually assumed or created.
+                    # Just use them.
+                    
+                    # Need TableMetadataRepository to update flags
+                    from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+                    tm_repo = TableMetadataRepository(self.db)
+                    
+                    total_tables = len(tables)
+                    for index, table in enumerate(tables):
+                        current_percent = 20 + int((index / total_tables) * 70) 
+                        self._update_progress(progress, current_percent, f"Processing table: {table.table_name}", "IN_PROGRESS")
+                        
+                        # Process single table using reusable method
+                        self.provision_table(pipeline, destination, table, cursor, close_cursor=False)
                 
-            finally:
-                cursor.close()
-                conn.close()
+                finally:
+                    cursor.close()
+                    conn.close()
+
+            # 5. Finalize
+            self._update_progress(progress, 100, "Initialization completed", "COMPLETED")
+            pipeline.status = PipelineStatus.PAUSE.value
+            self.db.commit()
                 
         except Exception as e:
             logger.error(f"Pipeline initialization failed: {e}", exc_info=True)
@@ -391,17 +444,18 @@ class PipelineService:
             except:
                  pass
 
-    def provision_table(self, pipeline: Pipeline, table_info, cursor=None, close_cursor=False) -> None:
+    def provision_table(self, pipeline: Pipeline, destination, table_info, cursor=None, close_cursor=False) -> None:
         """
         Provision Snowflake resources for a single table.
         
         Args:
             pipeline: Pipeline entity
+            destination: Destination entity (Snowflake)
             table_info: SourceTableInfo object or similar struct with table_name, schema_definition, id
             cursor: Optional existing Snowflake cursor
             close_cursor: Whether to close the cursor if it was created internally
         """
-        logger.info(f"Provisioning table {table_info.table_name} for pipeline {pipeline.name}")
+        logger.info(f"Provisioning table {table_info.table_name} for pipeline {pipeline.name} to destination {destination.name}")
         
         # Need TableMetadataRepository to update flags
         from app.domain.repositories.table_metadata_repo import TableMetadataRepository
@@ -409,12 +463,12 @@ class PipelineService:
         
         conn = None
         if cursor is None:
-            conn = self._get_snowflake_connection(pipeline.destination)
+            conn = self._get_snowflake_connection(destination)
             cursor = conn.cursor()
             close_cursor = True
             
         try:
-            config = pipeline.destination.config
+            config = destination.config
             target_db = config.get("database")
             target_schema = config.get("schema")
             landing_db = config.get("landing_database")
@@ -484,7 +538,7 @@ class PipelineService:
             # D. Merge Task
             task_name = f"TASK_MERGE_{table_name}"
             task_ddl = self._generate_merge_task_ddl(
-                pipeline,
+                pipeline, destination,
                 landing_db, landing_schema, landing_table,
                 stream_name,
                 target_db, target_schema, target_table,
@@ -656,7 +710,7 @@ class PipelineService:
         """
         return ddl
 
-    def _generate_merge_task_ddl(self, pipeline, l_db, l_schema, l_table, stream, t_db, t_schema, t_table, columns):
+    def _generate_merge_task_ddl(self, pipeline, destination, l_db, l_schema, l_table, stream, t_db, t_schema, t_table, columns):
         # 1. Try to find explicit PK
         pk_cols = []
         for col in columns:
@@ -718,7 +772,7 @@ class PipelineService:
         # Use Snowflake scripting block to run MERGE then DELETE from landing table
         task_ddl = f"""
         CREATE OR REPLACE TASK {l_db}.{l_schema}.TASK_MERGE_{t_table}
-        WAREHOUSE = {pipeline.destination.config.get("warehouse")}
+        WAREHOUSE = {destination.config.get("warehouse")}
         SCHEDULE = '60 MINUTE'
         WHEN SYSTEM$STREAM_HAS_DATA('{l_db}.{l_schema}.{stream}')
         AS
@@ -846,4 +900,268 @@ class PipelineService:
             })
             
         return list(stats_by_table.values())
+
+    def get_destination_tables(self, pipeline_id: int, pipeline_destination_id: int) -> List[dict]:
+        """
+        Get tables available for sync with current configuration.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+
+        Returns:
+            List of tables with sync info
+        """
+        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+        from app.domain.schemas.pipeline import (
+            TableWithSyncInfoResponse,
+            ColumnSchemaResponse,
+            PipelineDestinationTableSyncResponse,
+        )
+        from app.core.exceptions import EntityNotFoundError
+
+        # Get pipeline and validate
+        pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+
+        # Find the specific pipeline destination
+        pipeline_dest = None
+        for pd in pipeline.destinations:
+            if pd.id == pipeline_destination_id:
+                pipeline_dest = pd
+                break
+
+        if not pipeline_dest:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        # Get source tables from table_metadata_list
+        tm_repo = TableMetadataRepository(self.db)
+        source_tables = tm_repo.get_by_source_id(pipeline.source_id)
+
+        # Build response with sync info
+        result = []
+        existing_syncs = {ts.table_name: ts for ts in pipeline_dest.table_syncs}
+
+        for table in source_tables:
+            # Parse columns from schema_table JSONB
+            columns = []
+            if table.schema_table:
+                for col in table.schema_table:
+                    columns.append(ColumnSchemaResponse(
+                        column_name=col.get("column_name", ""),
+                        data_type=col.get("real_data_type") or col.get("data_type", ""),
+                        is_nullable=col.get("is_nullable", True),
+                        is_primary_key=col.get("is_primary_key", False),
+                    ))
+
+            # Get sync config if exists
+            sync_config = None
+            if table.table_name in existing_syncs:
+                sync = existing_syncs[table.table_name]
+                sync_config = PipelineDestinationTableSyncResponse.from_orm(sync)
+
+            result.append(TableWithSyncInfoResponse(
+                table_name=table.table_name,
+                columns=columns,
+                sync_config=sync_config,
+                is_exists_table_landing=table.is_exists_table_landing,
+                is_exists_stream=table.is_exists_stream,
+                is_exists_task=table.is_exists_task,
+                is_exists_table_destination=table.is_exists_table_destination,
+            ))
+
+        return [r.dict() for r in result]
+
+    def save_table_sync(
+        self, pipeline_id: int, pipeline_destination_id: int, table_sync_data
+    ) -> "PipelineDestinationTableSync":
+        """
+        Create or update table sync configuration.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            table_sync_data: Table sync configuration
+
+        Returns:
+            Created/updated table sync
+        """
+        from app.domain.models.pipeline import PipelineDestinationTableSync
+        from app.core.exceptions import EntityNotFoundError
+
+        # Validate pipeline destination exists
+        pipeline_dest = (
+            self.db.query(PipelineDestination)
+            .filter_by(id=pipeline_destination_id, pipeline_id=pipeline_id)
+            .first()
+        )
+        if not pipeline_dest:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        # Check if sync already exists for this table
+        existing = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(
+                pipeline_destination_id=pipeline_destination_id,
+                table_name=table_sync_data.table_name,
+            )
+            .first()
+        )
+
+        if existing:
+            # Update existing
+            existing.custom_sql = table_sync_data.custom_sql
+            existing.filter_sql = table_sync_data.filter_sql
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+        else:
+            # Create new
+            new_sync = PipelineDestinationTableSync(
+                pipeline_destination_id=pipeline_destination_id,
+                table_name=table_sync_data.table_name,
+                custom_sql=table_sync_data.custom_sql,
+                filter_sql=table_sync_data.filter_sql,
+            )
+            self.db.add(new_sync)
+            self.db.commit()
+            self.db.refresh(new_sync)
+            return new_sync
+
+    def save_table_syncs_bulk(
+        self, pipeline_id: int, pipeline_destination_id: int, bulk_request
+    ) -> List["PipelineDestinationTableSync"]:
+        """
+        Bulk create or update table sync configurations.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            bulk_request: Bulk table sync configurations
+
+        Returns:
+            List of created/updated table syncs
+        """
+        results = []
+        for table_sync_data in bulk_request.tables:
+            result = self.save_table_sync(
+                pipeline_id, pipeline_destination_id, table_sync_data
+            )
+            results.append(result)
+        return results
+
+    def delete_table_sync(
+        self, pipeline_id: int, pipeline_destination_id: int, table_name: str
+    ) -> None:
+        """
+        Remove table from sync configuration.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            table_name: Table name to remove
+        """
+        from app.domain.models.pipeline import PipelineDestinationTableSync
+        from app.core.exceptions import EntityNotFoundError
+
+        # Validate pipeline destination exists
+        pipeline_dest = (
+            self.db.query(PipelineDestination)
+            .filter_by(id=pipeline_destination_id, pipeline_id=pipeline_id)
+            .first()
+        )
+        if not pipeline_dest:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        # Find and delete
+        sync = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(
+                pipeline_destination_id=pipeline_destination_id, table_name=table_name
+            )
+            .first()
+        )
+
+        if sync:
+            self.db.delete(sync)
+            self.db.commit()
+
+    def init_snowflake_table(
+        self, pipeline_id: int, pipeline_destination_id: int, table_name: str
+    ) -> dict:
+        """
+        Initialize Snowflake objects for a single table.
+
+        Creates landing table, stream, task, and target table if they don't exist.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            table_name: Table name to initialize
+
+        Returns:
+            Status of initialization
+        """
+        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+        from app.core.exceptions import EntityNotFoundError
+
+        logger.info(
+            f"Initializing Snowflake table",
+            extra={
+                "pipeline_id": pipeline_id,
+                "pipeline_destination_id": pipeline_destination_id,
+                "table_name": table_name,
+            },
+        )
+
+        # Get pipeline and destination
+        pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+
+        # Find the specific pipeline destination
+        pipeline_dest = None
+        destination = None
+        for pd in pipeline.destinations:
+            if pd.id == pipeline_destination_id:
+                pipeline_dest = pd
+                destination = pd.destination
+                break
+
+        if not pipeline_dest or not destination:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        if destination.type != "SNOWFLAKE":
+            return {"status": "skipped", "message": "Not a Snowflake destination"}
+
+        # Get table metadata
+        tm_repo = TableMetadataRepository(self.db)
+        table_meta = tm_repo.get_by_source_and_table(pipeline.source_id, table_name)
+
+        if not table_meta:
+            raise EntityNotFoundError(entity_type="TableMetadata", entity_id=table_name)
+
+        # Create a simple object to pass to provision_table
+        class TableInfo:
+            def __init__(self, meta):
+                self.id = meta.id
+                self.table_name = meta.table_name
+                self.schema_table = meta.schema_table
+
+        table_info = TableInfo(table_meta)
+
+        try:
+            self.provision_table(pipeline, destination, table_info)
+            return {
+                "status": "success",
+                "message": f"Snowflake objects created for {table_name}",
+            }
+        except Exception as e:
+            logger.error(f"Failed to initialize Snowflake table: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
 

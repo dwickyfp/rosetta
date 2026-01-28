@@ -13,7 +13,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from app.domain.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from app.domain.models.pipeline import Pipeline
+    from app.domain.models.pipeline import PipelineDestination
+
 
 
 class Destination(Base, TimestampMixin):
@@ -63,8 +64,8 @@ class Destination(Base, TimestampMixin):
     )
 
     # Relationships
-    pipelines: Mapped[list["Pipeline"]] = relationship(
-        "Pipeline",
+    pipeline_destinations: Mapped[list["PipelineDestination"]] = relationship(
+        "PipelineDestination",
         back_populates="destination",
         cascade="all, delete-orphan",
         lazy="selectin",
@@ -89,4 +90,4 @@ class Destination(Base, TimestampMixin):
     @property
     def is_used_in_active_pipeline(self) -> bool:
         """Check if destination is used in any active pipeline."""
-        return any(p.status == "START" for p in self.pipelines)
+        return any(pd.pipeline.status == "START" for pd in self.pipeline_destinations)

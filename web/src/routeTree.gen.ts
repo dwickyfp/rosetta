@@ -47,6 +47,7 @@ import { Route as AuthenticatedPipelinesPipelineIdRouteImport } from './routes/_
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedDestinationsDestinationIdRouteImport } from './routes/_authenticated/destinations/$destinationId'
 import { Route as AuthenticatedSourcesSourceIdDetailsRouteImport } from './routes/_authenticated/sources/$sourceId.details'
+import { Route as AuthenticatedPipelinesPipelineIdFlowRouteImport } from './routes/_authenticated/pipelines/$pipelineId.flow'
 
 const ClerkRouteRoute = ClerkRouteRouteImport.update({
   id: '/clerk',
@@ -252,6 +253,12 @@ const AuthenticatedSourcesSourceIdDetailsRoute =
     path: '/sources/$sourceId/details',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedPipelinesPipelineIdFlowRoute =
+  AuthenticatedPipelinesPipelineIdFlowRouteImport.update({
+    id: '/flow',
+    path: '/flow',
+    getParentRoute: () => AuthenticatedPipelinesPipelineIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
@@ -270,7 +277,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/destinations/$destinationId': typeof AuthenticatedDestinationsDestinationIdRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
-  '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRoute
+  '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -288,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/sources': typeof AuthenticatedSourcesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
+  '/pipelines/$pipelineId/flow': typeof AuthenticatedPipelinesPipelineIdFlowRoute
   '/sources/$sourceId/details': typeof AuthenticatedSourcesSourceIdDetailsRoute
 }
 export interface FileRoutesByTo {
@@ -305,7 +313,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/destinations/$destinationId': typeof AuthenticatedDestinationsDestinationIdRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
-  '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRoute
+  '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -323,6 +331,7 @@ export interface FileRoutesByTo {
   '/sources': typeof AuthenticatedSourcesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
+  '/pipelines/$pipelineId/flow': typeof AuthenticatedPipelinesPipelineIdFlowRoute
   '/sources/$sourceId/details': typeof AuthenticatedSourcesSourceIdDetailsRoute
 }
 export interface FileRoutesById {
@@ -346,7 +355,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/destinations/$destinationId': typeof AuthenticatedDestinationsDestinationIdRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
-  '/_authenticated/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRoute
+  '/_authenticated/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/_authenticated/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -364,6 +373,7 @@ export interface FileRoutesById {
   '/_authenticated/sources/': typeof AuthenticatedSourcesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
+  '/_authenticated/pipelines/$pipelineId/flow': typeof AuthenticatedPipelinesPipelineIdFlowRoute
   '/_authenticated/sources/$sourceId/details': typeof AuthenticatedSourcesSourceIdDetailsRoute
 }
 export interface FileRouteTypes {
@@ -403,6 +413,7 @@ export interface FileRouteTypes {
     | '/sources'
     | '/tasks'
     | '/users'
+    | '/pipelines/$pipelineId/flow'
     | '/sources/$sourceId/details'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/sources'
     | '/tasks'
     | '/users'
+    | '/pipelines/$pipelineId/flow'
     | '/sources/$sourceId/details'
   id:
     | '__root__'
@@ -478,6 +490,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sources/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
+    | '/_authenticated/pipelines/$pipelineId/flow'
     | '/_authenticated/sources/$sourceId/details'
   fileRoutesById: FileRoutesById
 }
@@ -764,6 +777,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSourcesSourceIdDetailsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/pipelines/$pipelineId/flow': {
+      id: '/_authenticated/pipelines/$pipelineId/flow'
+      path: '/flow'
+      fullPath: '/pipelines/$pipelineId/flow'
+      preLoaderRoute: typeof AuthenticatedPipelinesPipelineIdFlowRouteImport
+      parentRoute: typeof AuthenticatedPipelinesPipelineIdRoute
+    }
   }
 }
 
@@ -809,12 +829,27 @@ const AuthenticatedSettingsRouteRouteWithChildren =
     AuthenticatedSettingsRouteRouteChildren,
   )
 
+interface AuthenticatedPipelinesPipelineIdRouteChildren {
+  AuthenticatedPipelinesPipelineIdFlowRoute: typeof AuthenticatedPipelinesPipelineIdFlowRoute
+}
+
+const AuthenticatedPipelinesPipelineIdRouteChildren: AuthenticatedPipelinesPipelineIdRouteChildren =
+  {
+    AuthenticatedPipelinesPipelineIdFlowRoute:
+      AuthenticatedPipelinesPipelineIdFlowRoute,
+  }
+
+const AuthenticatedPipelinesPipelineIdRouteWithChildren =
+  AuthenticatedPipelinesPipelineIdRoute._addFileChildren(
+    AuthenticatedPipelinesPipelineIdRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDestinationsRouteRoute: typeof AuthenticatedDestinationsRouteRouteWithChildren
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
-  AuthenticatedPipelinesPipelineIdRoute: typeof AuthenticatedPipelinesPipelineIdRoute
+  AuthenticatedPipelinesPipelineIdRoute: typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   AuthenticatedAppsIndexRoute: typeof AuthenticatedAppsIndexRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
   AuthenticatedHelpCenterIndexRoute: typeof AuthenticatedHelpCenterIndexRoute
@@ -831,7 +866,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
-  AuthenticatedPipelinesPipelineIdRoute: AuthenticatedPipelinesPipelineIdRoute,
+  AuthenticatedPipelinesPipelineIdRoute:
+    AuthenticatedPipelinesPipelineIdRouteWithChildren,
   AuthenticatedAppsIndexRoute: AuthenticatedAppsIndexRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
   AuthenticatedHelpCenterIndexRoute: AuthenticatedHelpCenterIndexRoute,

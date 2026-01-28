@@ -21,16 +21,24 @@ export interface Pipeline {
   source?: {
     name: string
   }
-  destination?: {
-    name: string
-  }
+  destinations?: {
+     id: number
+     destination: {
+        id: number
+        name: string
+        type: string
+     }
+  }[]
 }
 
 export interface CreatePipelineRequest {
   name: string
   source_id: number
-  destination_id: number
   status?: string
+}
+
+export interface AddPipelineDestinationRequest {
+  destination_id: number
 }
 
 export interface PipelineListResponse {
@@ -72,6 +80,12 @@ export const pipelinesRepo = {
   getStats: async (id: number, days: number = 7): Promise<PipelineStats[]> => {
     const response: AxiosResponse<PipelineStats[]> = await api.get(`/pipelines/${id}/stats`, { params: { days } })
     return response.data
+  },
+  addDestination: async (id: number, destinationId: number): Promise<Pipeline> => {
+    const response: AxiosResponse<Pipeline> = await api.post(`/pipelines/${id}/destinations`, null, {
+        params: { destination_id: destinationId }
+    })
+    return response.data
   }
 }
 
@@ -85,4 +99,85 @@ export interface PipelineStats {
     timestamp: string
     count: number
   }[]
+}
+
+// Table Sync Types
+export interface ColumnSchema {
+  column_name: string
+  data_type: string
+  is_nullable: boolean
+  is_primary_key: boolean
+}
+
+export interface TableSyncConfig {
+  id: number
+  pipeline_destination_id: number
+  table_name: string
+  custom_sql: string | null
+  filter_sql: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TableWithSyncInfo {
+  table_name: string
+  columns: ColumnSchema[]
+  sync_config: TableSyncConfig | null
+  is_exists_table_landing: boolean
+  is_exists_stream: boolean
+  is_exists_task: boolean
+  is_exists_table_destination: boolean
+}
+
+export interface TableSyncRequest {
+  table_name: string
+  custom_sql?: string | null
+  filter_sql?: string | null
+  enabled?: boolean
+}
+
+export const tableSyncRepo = {
+  getDestinationTables: async (
+    pipelineId: number,
+    pipelineDestinationId: number
+  ): Promise<TableWithSyncInfo[]> => {
+    const response: AxiosResponse<TableWithSyncInfo[]> = await api.get(
+      `/pipelines/${pipelineId}/destinations/${pipelineDestinationId}/tables`
+    )
+    return response.data
+  },
+
+  saveTableSync: async (
+    pipelineId: number,
+    pipelineDestinationId: number,
+    config: TableSyncRequest
+  ): Promise<TableSyncConfig> => {
+    const response: AxiosResponse<TableSyncConfig> = await api.post(
+      `/pipelines/${pipelineId}/destinations/${pipelineDestinationId}/tables`,
+      config
+    )
+    return response.data
+  },
+
+  deleteTableSync: async (
+    pipelineId: number,
+    pipelineDestinationId: number,
+    tableName: string
+  ): Promise<void> => {
+    await api.delete(
+      `/pipelines/${pipelineId}/destinations/${pipelineDestinationId}/tables/${tableName}`
+    )
+  },
+
+  initSnowflakeTable: async (
+    pipelineId: number,
+    pipelineDestinationId: number,
+    tableName: string
+  ): Promise<{ status: string; message: string }> => {
+    const response: AxiosResponse<{ status: string; message: string }> =
+      await api.post(
+        `/pipelines/${pipelineId}/destinations/${pipelineDestinationId}/tables/${tableName}/init`
+      )
+    return response.data
+  },
 }

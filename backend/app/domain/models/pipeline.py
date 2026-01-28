@@ -64,21 +64,13 @@ class Pipeline(Base, TimestampMixin):
         comment="Unique pipeline name",
     )
 
-    # Source and Destination References
+    # Source Reference
     source_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("sources.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="Reference to source configuration",
-    )
-
-    destination_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("destinations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-        comment="Reference to destination configuration",
     )
 
     # Pipeline Status
@@ -95,8 +87,11 @@ class Pipeline(Base, TimestampMixin):
         "Source", back_populates="pipelines", lazy="selectin"
     )
 
-    destination: Mapped["Destination"] = relationship(
-        "Destination", back_populates="pipelines", lazy="selectin"
+    destinations: Mapped[list["PipelineDestination"]] = relationship(
+        "PipelineDestination",
+        back_populates="pipeline",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
     pipeline_metadata: Mapped["PipelineMetadata"] = relationship(
@@ -107,13 +102,14 @@ class Pipeline(Base, TimestampMixin):
         lazy="selectin",
     )
 
-    pipeline_progress: Mapped["PipelineProgress"] = relationship(
-        "PipelineProgress",
-        back_populates="pipeline",
-        uselist=False,
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
+    # Temporarily disabled - table does not exist
+    # pipeline_progress: Mapped["PipelineProgress"] = relationship(
+    #     "PipelineProgress",
+    #     back_populates="pipeline",
+    #     uselist=False,
+    #     cascade="all, delete-orphan",
+    #     lazy="select",
+    # )
 
     data_flow_records: Mapped[list["DataFlowRecordMonitoring"]] = relationship(
         "DataFlowRecordMonitoring",
@@ -146,6 +142,125 @@ class Pipeline(Base, TimestampMixin):
     def refresh(self) -> None:
         """Set pipeline status to REFRESH."""
         self.status = PipelineStatus.REFRESH.value
+
+
+class PipelineDestination(Base, TimestampMixin):
+    """
+    Pipeline Destination configuration.
+
+    Connects a pipeline to a destination.
+    """
+
+    __tablename__ = "pipelines_destination"
+    __table_args__ = {"comment": "Pipeline destination configurations"}
+
+    # Primary Key
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique pipeline destination identifier",
+    )
+
+    # Pipeline Reference
+    pipeline_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("pipelines.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Reference to pipeline",
+    )
+
+    # Destination Reference
+    destination_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("destinations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Reference to destination",
+    )
+
+    # Relationships
+    pipeline: Mapped["Pipeline"] = relationship(
+        "Pipeline", back_populates="destinations"
+    )
+
+    destination: Mapped["Destination"] = relationship(
+        "Destination", back_populates="pipeline_destinations", lazy="selectin"
+    )
+
+    table_syncs: Mapped[list["PipelineDestinationTableSync"]] = relationship(
+        "PipelineDestinationTableSync",
+        back_populates="pipeline_destination",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"PipelineDestination(id={self.id}, pipeline_id={self.pipeline_id}, "
+            f"destination_id={self.destination_id})"
+        )
+
+
+class PipelineDestinationTableSync(Base, TimestampMixin):
+    """
+    Pipeline Destination Table Sync configuration.
+
+    Specific settings for table synchronization.
+    """
+
+    __tablename__ = "pipelines_destination_table_sync"
+    __table_args__ = {"comment": "Table synchronization settings"}
+
+    # Primary Key
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique table sync identifier",
+    )
+
+    # Pipeline Destination Reference
+    pipeline_destination_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("pipelines_destination.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Reference to pipeline destination",
+    )
+
+    # Table Configuration
+    table_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Name of the table",
+    )
+
+    custom_sql: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Custom SQL for transformation",
+    )
+
+    filter_sql: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="SQL filter condition",
+    )
+
+    # Relationships
+    pipeline_destination: Mapped["PipelineDestination"] = relationship(
+        "PipelineDestination", back_populates="table_syncs"
+    )
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return (
+            f"PipelineDestinationTableSync(id={self.id}, "
+            f"table_name={self.table_name!r})"
+        )
 
 
 class PipelineMetadata(Base, TimestampMixin):
@@ -292,7 +407,7 @@ class PipelineProgress(Base, TimestampMixin):
         comment="Additional details about progress",
     )
 
-    # Relationships
-    pipeline: Mapped["Pipeline"] = relationship(
-        "Pipeline", back_populates="pipeline_progress"
-    )
+    # Relationships - disabled since Pipeline.pipeline_progress is disabled
+    # pipeline: Mapped["Pipeline"] = relationship(
+    #     "Pipeline", back_populates="pipeline_progress"
+    # )

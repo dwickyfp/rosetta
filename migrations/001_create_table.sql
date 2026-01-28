@@ -32,10 +32,29 @@ CREATE TABLE IF NOT EXISTS destinations (
 -- Table 3: Pipelines (connects source to destination)
 CREATE TABLE IF NOT EXISTS pipelines (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL UNIQUE,-- 'SNOWFLAKE' or 'POSTGRESQL'
     source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'PAUSE', -- 'START' or 'PAUSE' or 'REFRESH
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 1 pipelines sources, now can have more then 1 destination
+CREATE TABLE IF NOT EXISTS pipelines_destination (
+    id SERIAL PRIMARY KEY,
+    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
     destination_id INTEGER NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
-    status VARCHAR(20) NOT NULL DEFAULT 'START', -- 'START' or 'PAUSE' or 'REFRESH
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Table Metadata Sync Postgres to Postgres
+CREATE TABLE IF NOT EXISTS pipelines_destination_table_sync(
+    id SERIAL PRIMARY KEY,
+    pipeline_destination_id INTEGER NOT NULL REFERENCES pipelines_destination(id) ON DELETE CASCADE,
+    table_name VARCHAR(255) NOT NULL,
+    custom_sql TEXT NULL,
+    filter_sql TEXT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -200,18 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_credit_snowflake_monitoring_usage_date ON credit_
 ALTER TABLE table_metadata_list DROP CONSTRAINT IF EXISTS uq_table_metadata_source_table;
 ALTER TABLE table_metadata_list ADD CONSTRAINT uq_table_metadata_source_table UNIQUE (source_id, table_name);
 
--- Table Metadata Sync Postgres to Postgres
-CREATE TABLE IF NOT EXISTS table_metadata_sync(
-    id SERIAL PRIMARY KEY,
-    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
-    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-    destination_id INTEGER NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
-    table_name VARCHAR(255) NOT NULL,
-    custom_sql TEXT NULL,
-    filter_sql TEXT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+
 
 
 
