@@ -370,6 +370,12 @@ impl PostgresDuckdbDestination {
             let custom_sql: Option<String> = r.try_get("custom_sql")?;
             let filter_sql: Option<String> = r.try_get("filter_sql")?;
             let table_name_target: String = r.try_get("table_name_target")?;
+
+            info!(
+                "Fetched sync config for '{}': target='{}' (pipeline_dest_id={})",
+                table_name, table_name_target, self.pipeline_destination_id
+            );
+
             Ok(Some((
                 custom_sql.unwrap_or_default(),
                 filter_sql.unwrap_or_default(),
