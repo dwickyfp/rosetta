@@ -200,5 +200,18 @@ CREATE INDEX IF NOT EXISTS idx_credit_snowflake_monitoring_usage_date ON credit_
 ALTER TABLE table_metadata_list DROP CONSTRAINT IF EXISTS uq_table_metadata_source_table;
 ALTER TABLE table_metadata_list ADD CONSTRAINT uq_table_metadata_source_table UNIQUE (source_id, table_name);
 
+-- Table Metadata Sync Postgres to Postgres
+CREATE TABLE IF NOT EXISTS table_metadata_sync(
+    id SERIAL PRIMARY KEY,
+    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    destination_id INTEGER NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+    table_name VARCHAR(255) NOT NULL,
+    custom_sql TEXT NULL,
+    filter_sql TEXT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 
 

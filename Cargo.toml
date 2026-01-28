@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 # ETL Framework
 etl = { git = "https://github.com/supabase/etl" }
-duckdb = { version = "1.0", features = ["bundled"] }
+duckdb = { version = "1.4.4", features = ["bundled"] }
 
 # Async & HTTP
 tokio = { version = "1", features = ["full"] }
@@ -34,3 +34,7 @@ figlet-rs = "0.1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "json", "chrono"] }
 secrecy = "0.10.3"
 sysinfo = "0.37.2"
+
+[patch.crates-io]
+flate2 = { path = "C:/rust-deps/flate2-1.1.8" }
+
