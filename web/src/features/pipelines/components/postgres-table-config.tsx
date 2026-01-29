@@ -89,8 +89,8 @@ export function PostgresTableConfig({
 
               <div className="flex-1 min-w-0">
                 {/* Table name with arrow to target */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium font-mono" title={table.table_name}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium font-mono truncate" title={table.table_name}>
                     {table.table_name}
                   </span>
                   {table.sync_config && (
@@ -98,7 +98,7 @@ export function PostgresTableConfig({
                       <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                       <span
                         className={cn(
-                          "text-sm font-mono",
+                          "text-sm font-mono truncate",
                           hasCustomTarget(table) ? "text-green-600 font-medium" : "text-muted-foreground"
                         )}
                         title={getTargetName(table)}

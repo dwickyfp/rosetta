@@ -140,17 +140,39 @@ export function TableCustomSqlCard({
 
             {/* Footer */}
             <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/30">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                        e.stopPropagation()
-                        setSql(`SELECT * FROM ${table.table_name}`)
-                    }}
-                    className="text-muted-foreground"
-                >
-                    Reset to Default
-                </Button>
+                <div className="flex gap-2">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setSql(`SELECT * FROM ${table.table_name}`)
+                        }}
+                        className="text-muted-foreground"
+                    >
+                        Reset to Default
+                    </Button>
+                    {table.sync_config?.custom_sql && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async (e) => {
+                                e.stopPropagation()
+                                setIsSaving(true)
+                                try {
+                                    await onSave('')
+                                    setSql(`SELECT * FROM ${table.table_name}`)
+                                } finally {
+                                    setIsSaving(false)
+                                }
+                            }}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={isSaving}
+                        >
+                            Remove Custom SQL
+                        </Button>
+                    )}
+                </div>
                 <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={handleClose}>
                         Cancel

@@ -602,39 +602,157 @@ impl Destination for PostgresDuckdbDestination {
                 ));
             }
 
+            // Execute custom SQL if provided - this transforms the source table data
+            // custom_sql should be a SELECT statement that will replace the source-named table content
             if !data.custom_sql.trim().is_empty() {
-                // Execute custom SQL
-                if let Err(e) = conn.execute_batch(&data.custom_sql) {
+                // Custom SQL should be a CREATE TABLE or SELECT statement
+                // We wrap it to replace the source-named table with the transformed result
+                let safe_custom_sql = data.custom_sql.trim().trim_end_matches(';');
+                
+                // Check if custom_sql is a SELECT statement (transform query)
+                let is_select = safe_custom_sql.to_uppercase().trim_start().starts_with("SELECT");
+                
+                if is_select {
+                    // Wrap the SELECT to create/replace the source-named table
+                    let transform_sql = format!(
+                        "CREATE OR REPLACE TABLE \"{}\" AS {};",
+                        data.table_name, safe_custom_sql
+                    );
+                    info!("Executing custom SQL transformation: {}", transform_sql);
+                    if let Err(e) = conn.execute_batch(&transform_sql) {
+                        return Err(etl_error!(
+                            ErrorKind::Unknown,
+                            "Custom SQL execution error: {}",
+                            e
+                        ));
+                    }
+                } else {
+                    // Execute as-is (e.g., if user provides CREATE TABLE or other DDL)
+                    info!("Executing custom SQL: {}", safe_custom_sql);
+                    if let Err(e) = conn.execute_batch(safe_custom_sql) {
+                        return Err(etl_error!(
+                            ErrorKind::Unknown,
+                            "Custom SQL execution error: {}",
+                            e
+                        ));
+                    }
+                }
+            }
+
+            // After filter_sql and custom_sql (if any), get the columns from the result table
+            // This allows custom_sql to transform/select specific columns
+            let result_columns: Vec<(String, String)> = {
+                let query = format!("DESCRIBE \"{}\"", data.table_name);
+                match conn.prepare(&query) {
+                    Ok(mut stmt) => {
+                        let rows: Vec<(String, String)> = stmt
+                            .query_map([], |row| {
+                                let col_name: String = row.get(0)?;
+                                let col_type: String = row.get(1)?;
+                                Ok((col_name, col_type))
+                            })
+                            .map(|iter| iter.filter_map(|r| r.ok()).collect())
+                            .unwrap_or_default();
+                        if rows.is_empty() {
+                            // Fallback to original columns if DESCRIBE fails
+                            data.columns.clone()
+                        } else {
+                            rows
+                        }
+                    }
+                    Err(_) => data.columns.clone(),
+                }
+            };
+
+            // Now upsert the result into target Postgres table
+            // This applies to all cases (with or without custom_sql)
+            if data.pk_columns.is_empty() {
+                warn!(
+                    "No primary key found for table {}, using INSERT instead of MERGE.",
+                    data.table_name
+                );
+                // Fallback to simple INSERT
+                let col_list = result_columns
+                    .iter()
+                    .map(|(c, _)| format!("\"{}\"", c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Use original column types for casting (not DuckDB VARCHAR types)
+                let select_list = result_columns
+                    .iter()
+                    .map(|(c, _)| {
+                        // Find the original Postgres type for this column
+                        let orig_type = data
+                            .columns
+                            .iter()
+                            .find(|(orig_c, _)| orig_c == c)
+                            .map(|(_, t)| t.as_str())
+                            .unwrap_or("VARCHAR");
+                        format!("\"{}\"::{}", c, orig_type)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Use proper path: pg_<dest>.<schema>."<table>"
+                let insert_sql = format!(
+                    "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
+                    sanitized_dest_name,
+                    data.schema_name,
+                    data.short_table_name,
+                    col_list,
+                    select_list,
+                    data.table_name
+                );
+                info!("Executing INSERT: {}", insert_sql);
+                if let Err(e) = conn.execute_batch(&insert_sql) {
                     return Err(etl_error!(
                         ErrorKind::Unknown,
-                        "Custom SQL execution error: {}",
+                        "INSERT execution error: {}",
                         e
                     ));
                 }
             } else {
-                // Default behavior: MERGE data into target Postgres table
-                if data.pk_columns.is_empty() {
+                // Use DELETE + INSERT pattern instead of MERGE
+                // DuckDB's postgres_scanner strips type casts when translating MERGE to UPDATE,
+                // causing type mismatch errors. DELETE+INSERT is more reliable.
+
+                let col_list = result_columns
+                    .iter()
+                    .map(|(c, _)| format!("\"{}\"", c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Use original column types for casting (not DuckDB VARCHAR types)
+                let select_list = result_columns
+                    .iter()
+                    .map(|(c, _)| {
+                        // Find the original Postgres type for this column
+                        let orig_type = data
+                            .columns
+                            .iter()
+                            .find(|(orig_c, _)| orig_c == c)
+                            .map(|(_, t)| t.as_str())
+                            .unwrap_or("VARCHAR");
+                        format!("\"{}\"::{}", c, orig_type)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Build WHERE clause for DELETE based on PKs
+                // Need to cast the PK column from DuckDB (TEXT) to match Postgres type
+                // Only use PKs that exist in the result columns
+                let available_pks: Vec<&String> = data
+                    .pk_columns
+                    .iter()
+                    .filter(|pk| result_columns.iter().any(|(c, _)| c == *pk))
+                    .collect();
+
+                if available_pks.is_empty() {
                     warn!(
-                        "No primary key found for table {}, using INSERT instead of MERGE.",
+                        "No primary key columns found in result for table {}, using INSERT only.",
                         data.table_name
                     );
-                    // Fallback to simple INSERT
-                    // Fallback to simple INSERT
-                    let col_list = data
-                        .columns
-                        .iter()
-                        .map(|(c, _)| format!("\"{}\"", c))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    let select_list = data
-                        .columns
-                        .iter()
-                        .map(|(c, t)| format!("\"{}\"::{}", c, t))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Use proper path: pg_<dest>.<schema>."<table>"
                     let insert_sql = format!(
                         "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
                         sanitized_dest_name,
@@ -653,35 +771,15 @@ impl Destination for PostgresDuckdbDestination {
                         ));
                     }
                 } else {
-                    // Use DELETE + INSERT pattern instead of MERGE
-                    // DuckDB's postgres_scanner strips type casts when translating MERGE to UPDATE,
-                    // causing type mismatch errors. DELETE+INSERT is more reliable.
-
-                    let col_list = data
-                        .columns
-                        .iter()
-                        .map(|(c, _)| format!("\"{}\"", c))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    let select_list = data
-                        .columns
-                        .iter()
-                        .map(|(c, t)| format!("\"{}\"::{}", c, t))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Build WHERE clause for DELETE based on PKs
-                    // Need to cast the PK column from DuckDB (TEXT) to match Postgres type
-                    let pk_match = data
-                        .pk_columns
+                    let pk_match = available_pks
                         .iter()
                         .map(|pk| {
-                            // Find the type for this PK column
+                            // Find the type for this PK column from ORIGINAL columns (not DuckDB result)
+                            // DuckDB stores everything as TEXT/VARCHAR, but we need the actual Postgres type
                             let pk_type = data
                                 .columns
                                 .iter()
-                                .find(|(c, _)| c == pk)
+                                .find(|(c, _)| c == *pk)
                                 .map(|(_, t)| t.as_str())
                                 .unwrap_or("BIGINT");
                             format!(
