@@ -4,7 +4,7 @@ import { pipelinesRepo } from '@/repo/pipelines'
 import { useQuery } from '@tanstack/react-query'
 import { ReactFlow, Background, Controls, Node, Edge, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Loader2, Plus } from 'lucide-react'
+import { Loader2, Plus, Snowflake } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { AddDestinationModal } from '../components/add-destination-modal'
@@ -46,11 +46,22 @@ export default function PipelineFlowPage() {
     // Destination Nodes
     pipeline.destinations?.forEach((d, index) => {
       const destId = `dest-${d.destination.id}`
+      const isSnowflake = d.destination.type.toLowerCase().includes('snowflake')
+
+      const label = isSnowflake ? (
+        <div className="flex items-center justify-center gap-2">
+          <Snowflake className="h-4 w-4 text-blue-500" />
+          <span>{d.destination.name}</span>
+        </div>
+      ) : (
+        `${d.destination.name} (${d.destination.type})`
+      )
+
       nodes.push({
         id: destId,
         type: 'output',
         position: { x: 500, y: 100 + index * 150 }, // Simple vertical stack
-        data: { label: `${d.destination.name} (${d.destination.type})` },
+        data: { label },
         style: { background: '#eff6ff', borderColor: '#2563eb', width: 200 },
         targetPosition: Position.Left,
       })
@@ -81,8 +92,8 @@ export default function PipelineFlowPage() {
     <div className='flex h-full flex-col'>
       <div className='flex items-center justify-between border-b px-6 py-4'>
         <div>
-           <h1 className='text-2xl font-bold tracking-tight'>{pipeline.name}</h1>
-           <p className='text-sm text-muted-foreground'>Visual flow editor</p>
+          <h1 className='text-2xl font-bold tracking-tight'>{pipeline.name}</h1>
+          <p className='text-sm text-muted-foreground'>Visual flow editor</p>
         </div>
         <Button onClick={() => setOpenAddDest(true)}>
           <Plus className='mr-2 h-4 w-4' />
@@ -97,8 +108,8 @@ export default function PipelineFlowPage() {
           fitView
           attributionPosition="bottom-right"
         >
-           <Background />
-           <Controls />
+          <Background />
+          <Controls />
         </ReactFlow>
       </div>
 

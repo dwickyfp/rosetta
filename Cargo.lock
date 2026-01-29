@@ -866,7 +866,7 @@ dependencies = [
 [[package]]
 name = "etl"
 version = "0.1.0"
-source = "git+https://github.com/supabase/etl#05a91c3aa63717e733e7fdfb6c1ecea18fba93a2"
+source = "git+https://github.com/supabase/etl#f2247595d4d2a989d2e9fcb4ec13090cd4004692"
 dependencies = [
  "aws-lc-rs",
  "byteorder",
@@ -895,7 +895,7 @@ dependencies = [
 [[package]]
 name = "etl-config"
 version = "0.1.0"
-source = "git+https://github.com/supabase/etl#05a91c3aa63717e733e7fdfb6c1ecea18fba93a2"
+source = "git+https://github.com/supabase/etl#f2247595d4d2a989d2e9fcb4ec13090cd4004692"
 dependencies = [
  "config",
  "secrecy",
@@ -908,7 +908,7 @@ dependencies = [
 [[package]]
 name = "etl-postgres"
 version = "0.1.0"
-source = "git+https://github.com/supabase/etl#05a91c3aa63717e733e7fdfb6c1ecea18fba93a2"
+source = "git+https://github.com/supabase/etl#f2247595d4d2a989d2e9fcb4ec13090cd4004692"
 dependencies = [
  "bytes",
  "chrono",
@@ -1018,6 +1018,8 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 [[package]]
 name = "flate2"
 version = "1.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b375d6465b98090a5f25b1c7703f3859783755aa9a80433b36e0379a3ec2f369"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
