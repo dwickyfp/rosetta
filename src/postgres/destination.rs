@@ -298,9 +298,13 @@ impl PostgresDuckdbDestination {
 
     pub async fn check_connection(&self) -> EtlResult<()> {
         // Try to initialize DuckDB connection which attempts to connect to Postgres
-        self.get_duckdb_connection()
-            .map(|_| ())
-            .map_err(|e| etl::etl_error!(etl::error::ErrorKind::Unknown, "Connection check failed: {}", e))
+        self.get_duckdb_connection().map(|_| ()).map_err(|e| {
+            etl::etl_error!(
+                etl::error::ErrorKind::Unknown,
+                "Connection check failed: {}",
+                e
+            )
+        })
     }
 
     fn get_duckdb_connection(&self) -> Result<Connection> {
@@ -369,17 +373,19 @@ impl PostgresDuckdbDestination {
     async fn get_table_sync_config(
         &self,
         table_name: &str,
-    ) -> Result<Option<(i32, String, String, String)>> {
-        let row = sqlx::query(
+    ) -> Result<Vec<(i32, String, String, String)>> {
+        let rows = sqlx::query(
             "SELECT id, custom_sql, filter_sql, table_name_target FROM pipelines_destination_table_sync 
              WHERE pipeline_destination_id = $1 AND table_name = $2",
         )
         .bind(self.pipeline_destination_id)
         .bind(table_name)
-        .fetch_optional(&self.db_pool)
+        .fetch_all(&self.db_pool)
         .await?;
 
-        if let Some(r) = row {
+        let mut configs = Vec::new();
+
+        for r in rows {
             let id: i32 = r.try_get("id")?;
             let custom_sql: Option<String> = r.try_get("custom_sql")?;
             let filter_sql: Option<String> = r.try_get("filter_sql")?;
@@ -390,15 +396,15 @@ impl PostgresDuckdbDestination {
                 table_name, table_name_target, self.pipeline_destination_id
             );
 
-            Ok(Some((
+            configs.push((
                 id,
                 custom_sql.unwrap_or_default(),
                 filter_sql.unwrap_or_default(),
                 table_name_target,
-            )))
-        } else {
-            Ok(None)
+            ));
         }
+
+        Ok(configs)
     }
 }
 
@@ -438,10 +444,10 @@ impl Destination for PostgresDuckdbDestination {
         #[allow(dead_code)]
         struct TableData {
             sync_id: Option<i32>,
-            table_name: String,             // Full name with schema (e.g., "public.table")
-            table_name_target: String,      // Target table name for destination
-            schema_name: String,            // Schema part (e.g., "public")
-            short_table_name: String,       // Target table name only (e.g., "table")
+            table_name: String, // Full name with schema (e.g., "public.table")
+            table_name_target: String, // Target table name for destination
+            schema_name: String, // Schema part (e.g., "public")
+            short_table_name: String, // Target table name only (e.g., "table")
             columns: Vec<(String, String)>, // (name, type)
             pk_columns: Vec<String>,
             custom_sql: String,
@@ -462,36 +468,15 @@ impl Destination for PostgresDuckdbDestination {
             }
 
             // Sync config
-            let sync_config = self
+            let sync_configs = self
                 .get_table_sync_config(&table_name)
                 .await
                 .map_err(|e| etl_error!(ErrorKind::Unknown, "Fetch config error: {}", e))?;
 
-            let (sync_id, custom_sql, filter_sql, table_name_target) = match sync_config {
-                Some(c) => (Some(c.0), c.1, c.2, c.3),
-                None => {
-                    info!("No sync config for {}, skipping.", table_name);
-                    continue;
-                }
-            };
-
-            // Parse target table name for schema/table parts
-            let (schema_name, short_table_name) = if table_name_target.contains('.') {
-                let parts: Vec<&str> = table_name_target.splitn(2, '.').collect();
-                (parts[0].to_string(), parts[1].to_string())
-            } else {
-                // If target doesn't have schema, use schema from source table
-                let source_schema = if table_name.contains('.') {
-                    table_name
-                        .splitn(2, '.')
-                        .next()
-                        .unwrap_or("public")
-                        .to_string()
-                } else {
-                    "public".to_string()
-                };
-                (source_schema, table_name_target.clone())
-            };
+            if sync_configs.is_empty() {
+                info!("No sync config for {}, skipping.", table_name);
+                continue;
+            }
 
             // Get primary key columns for MERGE
             let pk_columns = self.resolve_primary_key_columns(table_id).await;
@@ -521,19 +506,40 @@ impl Destination for PostgresDuckdbDestination {
                 }
             }
 
-            tables_data.push(TableData {
-                sync_id,
-                table_name,
-                table_name_target,
-                schema_name,
-                short_table_name,
-                columns,
-                pk_columns,
-                custom_sql,
-                filter_sql,
-                upsert_events,
-                delete_events,
-            });
+            // Process each sync configuration (branch)
+            for (sync_id, custom_sql, filter_sql, table_name_target) in sync_configs {
+                // Parse target table name for schema/table parts
+                let (schema_name, short_table_name) = if table_name_target.contains('.') {
+                    let parts: Vec<&str> = table_name_target.splitn(2, '.').collect();
+                    (parts[0].to_string(), parts[1].to_string())
+                } else {
+                    // If target doesn't have schema, use schema from source table
+                    let source_schema = if table_name.contains('.') {
+                        table_name
+                            .splitn(2, '.')
+                            .next()
+                            .unwrap_or("public")
+                            .to_string()
+                    } else {
+                        "public".to_string()
+                    };
+                    (source_schema, table_name_target.clone())
+                };
+
+                tables_data.push(TableData {
+                    sync_id: Some(sync_id),
+                    table_name: table_name.clone(),
+                    table_name_target,
+                    schema_name,
+                    short_table_name,
+                    columns: columns.clone(),
+                    pk_columns: pk_columns.clone(),
+                    custom_sql,
+                    filter_sql,
+                    upsert_events: upsert_events.clone(),
+                    delete_events: delete_events.clone(),
+                });
+            }
         }
 
         // Now create DuckDB connection and process synchronously (no await points)
@@ -792,8 +798,6 @@ impl Destination for PostgresDuckdbDestination {
                             ));
                         }
                     } else {
-
-
                         // Step 1: DELETE existing rows that match PKs
                         // The SQL for DELETE using IN clause
                         let pk_conditions = available_pks
@@ -852,88 +856,88 @@ impl Destination for PostgresDuckdbDestination {
                     }
                 }
 
-            if !data.delete_events.is_empty() && !data.pk_columns.is_empty() {
-                // Create a temp table for delete PKs
-                let delete_table_name = format!("{}_deletes", data.table_name);
+                if !data.delete_events.is_empty() && !data.pk_columns.is_empty() {
+                    // Create a temp table for delete PKs
+                    let delete_table_name = format!("{}_deletes", data.table_name);
 
-                // Build PK column definitions for delete temp table
-                let pk_col_defs = data
-                    .pk_columns
-                    .iter()
-                    .map(|pk| format!("\"{}\" TEXT", pk))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                let create_delete_table = format!(
-                    "CREATE OR REPLACE TABLE \"{}\" ({});",
-                    delete_table_name, pk_col_defs
-                );
-
-                if let Err(e) = conn.execute_batch(&create_delete_table) {
-                    warn!("Create delete table error: {}", e);
-                } else {
-                    // Insert delete PKs into temp table
-                    let pk_indices: Vec<usize> = data
+                    // Build PK column definitions for delete temp table
+                    let pk_col_defs = data
                         .pk_columns
                         .iter()
-                        .filter_map(|pk| data.columns.iter().position(|(c, _)| c == pk))
-                        .collect();
+                        .map(|pk| format!("\"{}\" TEXT", pk))
+                        .collect::<Vec<_>>()
+                        .join(", ");
 
-                    let insert_delete_sql = format!(
-                        "INSERT INTO \"{}\" VALUES ({})",
-                        delete_table_name,
-                        vec!["?"; data.pk_columns.len()].join(", ")
+                    let create_delete_table = format!(
+                        "CREATE OR REPLACE TABLE \"{}\" ({});",
+                        delete_table_name, pk_col_defs
                     );
 
-                    if let Ok(mut stmt) = conn.prepare(&insert_delete_sql) {
-                        for row_params in &data.delete_events {
-                            let pk_values: Vec<Option<String>> = pk_indices
-                                .iter()
-                                .filter_map(|&i| row_params.get(i).cloned())
-                                .collect();
-                            let _ = stmt.execute(duckdb::params_from_iter(pk_values));
+                    if let Err(e) = conn.execute_batch(&create_delete_table) {
+                        warn!("Create delete table error: {}", e);
+                    } else {
+                        // Insert delete PKs into temp table
+                        let pk_indices: Vec<usize> = data
+                            .pk_columns
+                            .iter()
+                            .filter_map(|pk| data.columns.iter().position(|(c, _)| c == pk))
+                            .collect();
+
+                        let insert_delete_sql = format!(
+                            "INSERT INTO \"{}\" VALUES ({})",
+                            delete_table_name,
+                            vec!["?"; data.pk_columns.len()].join(", ")
+                        );
+
+                        if let Ok(mut stmt) = conn.prepare(&insert_delete_sql) {
+                            for row_params in &data.delete_events {
+                                let pk_values: Vec<Option<String>> = pk_indices
+                                    .iter()
+                                    .filter_map(|&i| row_params.get(i).cloned())
+                                    .collect();
+                                let _ = stmt.execute(duckdb::params_from_iter(pk_values));
+                            }
+                        }
+
+                        // Execute DELETE based on PKs in temp table
+                        let pk_match = data
+                            .pk_columns
+                            .iter()
+                            .map(|pk| {
+                                let pk_type = data
+                                    .columns
+                                    .iter()
+                                    .find(|(c, _)| c == pk)
+                                    .map(|(_, t)| t.as_str())
+                                    .unwrap_or("BIGINT");
+                                format!(
+                                    "\"{}\" IN (SELECT \"{}\"::{} FROM \"{}\")",
+                                    pk, pk, pk_type, delete_table_name
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" AND ");
+
+                        let delete_sql = format!(
+                            "DELETE FROM pg_{}.{}.\"{}\" WHERE {};",
+                            sanitized_dest_name, data.schema_name, data.short_table_name, pk_match
+                        );
+
+                        info!(
+                            "Executing DELETE for {} delete events: {}",
+                            data.delete_events.len(),
+                            delete_sql
+                        );
+                        if let Err(e) = conn.execute_batch(&delete_sql) {
+                            warn!("DELETE execution error for delete events: {}", e);
+                        } else {
+                            info!(
+                                "DELETE completed successfully for {} rows",
+                                data.delete_events.len()
+                            );
                         }
                     }
-
-                    // Execute DELETE based on PKs in temp table
-                    let pk_match = data
-                        .pk_columns
-                        .iter()
-                        .map(|pk| {
-                            let pk_type = data
-                                .columns
-                                .iter()
-                                .find(|(c, _)| c == pk)
-                                .map(|(_, t)| t.as_str())
-                                .unwrap_or("BIGINT");
-                            format!(
-                                "\"{}\" IN (SELECT \"{}\"::{} FROM \"{}\")",
-                                pk, pk, pk_type, delete_table_name
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" AND ");
-
-                    let delete_sql = format!(
-                        "DELETE FROM pg_{}.{}.\"{}\" WHERE {};",
-                        sanitized_dest_name, data.schema_name, data.short_table_name, pk_match
-                    );
-
-                    info!(
-                        "Executing DELETE for {} delete events: {}",
-                        data.delete_events.len(),
-                        delete_sql
-                    );
-                    if let Err(e) = conn.execute_batch(&delete_sql) {
-                        warn!("DELETE execution error for delete events: {}", e);
-                    } else {
-                        info!(
-                            "DELETE completed successfully for {} rows",
-                            data.delete_events.len()
-                        );
-                    }
                 }
-            }
                 Ok(())
             })();
 

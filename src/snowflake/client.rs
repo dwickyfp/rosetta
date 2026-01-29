@@ -63,11 +63,7 @@ impl SnowpipeClient {
             self.ingest_host = Some(format!("https://{}", raw_host.replace('_', "-")));
             debug!("Ingest Host discovered: {:?}", self.ingest_host);
         }
-
-        // 2. Token Exchange Skipped - Use JWT Directly
-        // Snowpipe Streaming supports direct Key Pair Authentication
         self.scoped_token = Some(jwt);
-        info!("Snowflake Auth Successful (Direct JWT)");
 
         Ok(())
     }
