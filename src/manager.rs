@@ -278,6 +278,7 @@ impl PipelineManager {
                         source_pool,
                         self.db_pool.clone(),
                         pipeline_id,
+                        pd_id,
                         source_id,
                     )?)
                 }

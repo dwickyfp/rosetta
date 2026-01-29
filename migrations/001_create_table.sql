@@ -193,6 +193,7 @@ CREATE INDEX IF NOT EXISTS idx_credit_snowflake_monitoring_destination_id ON cre
 CREATE TABLE IF NOT EXISTS data_flow_record_monitoring(
     id SERIAL PRIMARY KEY,
     pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    pipeline_destination_id INTEGER NULL REFERENCES pipelines_destination(id) ON DELETE CASCADE,
     source_id  INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
     table_name VARCHAR(255) NOT NULL,
     record_count BIGINT NOT NULL,
@@ -201,6 +202,7 @@ CREATE TABLE IF NOT EXISTS data_flow_record_monitoring(
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_pipeline_id ON data_flow_record_monitoring(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_pipeline_destination_id ON data_flow_record_monitoring(pipeline_destination_id);
 
 
 CREATE TABLE IF NOT EXISTS rosetta_setting_configuration(

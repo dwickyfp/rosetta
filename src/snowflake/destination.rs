@@ -18,6 +18,7 @@ pub struct SnowflakeDestination {
     pg_pool: Pool<Postgres>,
     metadata_pool: Pool<Postgres>,
     pipeline_id: i32,
+    pipeline_destination_id: i32,
     source_id: i32,
     table_cache: Arc<Mutex<HashMap<TableId, String>>>,
     real_table_cache: Arc<Mutex<HashMap<TableId, String>>>,
@@ -110,6 +111,7 @@ impl SnowflakeDestination {
         pg_pool: Pool<Postgres>,
         metadata_pool: Pool<Postgres>,
         pipeline_id: i32,
+        pipeline_destination_id: i32,
         source_id: i32,
     ) -> EtlResult<Self> {
         // Init client (akan hitung fingerprint di sini)
@@ -122,6 +124,7 @@ impl SnowflakeDestination {
             pg_pool,
             metadata_pool,
             pipeline_id,
+            pipeline_destination_id,
             source_id,
             table_cache: Arc::new(Mutex::new(HashMap::new())),
             real_table_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -281,9 +284,10 @@ impl Destination for SnowflakeDestination {
         let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
 
         if let Err(e) = sqlx::query(
-            "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO data_flow_record_monitoring (pipeline_id, pipeline_destination_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(self.pipeline_id)
+        .bind(self.pipeline_destination_id)
         .bind(self.source_id)
         .bind(&real_table_name)
         .bind(record_count)
@@ -375,9 +379,10 @@ impl Destination for SnowflakeDestination {
                 let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
 
                 if let Err(e) = sqlx::query(
-                    "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                    "INSERT INTO data_flow_record_monitoring (pipeline_id, pipeline_destination_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 )
                 .bind(self.pipeline_id)
+                .bind(self.pipeline_destination_id)
                 .bind(self.source_id)
                 .bind(&real_table_name)
                 .bind(record_count)
