@@ -1,4 +1,5 @@
 pub mod retry;
+pub mod serialization;
 pub mod store;
 pub mod wrapper;
 

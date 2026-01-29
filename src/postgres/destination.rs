@@ -711,7 +711,6 @@ impl Destination for PostgresDuckdbDestination {
                     select_list,
                     data.table_name
                 );
-                info!("Executing INSERT: {}", insert_sql);
                 if let Err(e) = conn.execute_batch(&insert_sql) {
                     return Err(etl_error!(
                         ErrorKind::Unknown,
@@ -769,7 +768,6 @@ impl Destination for PostgresDuckdbDestination {
                         select_list,
                         data.table_name
                     );
-                    info!("Executing INSERT: {}", insert_sql);
                     if let Err(e) = conn.execute_batch(&insert_sql) {
                         return Err(etl_error!(
                             ErrorKind::Unknown,
@@ -823,7 +821,6 @@ impl Destination for PostgresDuckdbDestination {
                         data.table_name
                     );
 
-                    info!("Executing INSERT: {}", insert_sql);
                     if let Err(e) = conn.execute_batch(&insert_sql) {
                         return Err(etl_error!(
                             ErrorKind::Unknown,

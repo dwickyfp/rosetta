@@ -342,13 +342,19 @@ impl PipelineManager {
             };
 
             // Wrap destination with DLQ support
-            let dest_with_dlq = DestinationWithDlq::new(
+            let dest_with_dlq = Arc::new(DestinationWithDlq::new(
                 destination_enum,
                 pd_id,
                 self.db_pool.clone(),
                 self.dlq_store.clone(),
-            );
-            destinations_with_dlq.push(Arc::new(dest_with_dlq));
+            ));
+
+            // Initialize from persistence (restores DLQ state from fjall)
+            if let Err(e) = dest_with_dlq.clone().init_from_persistence().await {
+                error!("Failed to initialize DLQ persistence for dest {}: {}", pd_id, e);
+            }
+
+            destinations_with_dlq.push(dest_with_dlq);
         }
 
         // Use MultiWithDlq for DLQ-aware multi-destination

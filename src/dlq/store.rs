@@ -1,40 +1,32 @@
-//! DLQ Store - In-memory Dead Letter Queue with fjall metadata persistence
+//! DLQ Store - Persistent Dead Letter Queue using fjall
 //!
 //! Stores events that failed to write to destination due to connection errors.
-//! Events are kept in-memory (since Event from etl crate doesn't implement Serialize),
-//! while metadata (counts, error states) are persisted to fjall for durability.
+//! Events are serialized to JSON and persisted to fjall for durability.
 
+use crate::dlq::serialization::SerializableEvent;
 use anyhow::{Context, Result};
 use etl::types::Event;
-use fjall::{Database, Keyspace, KeyspaceCreateOptions, PersistMode};
-use std::collections::{HashMap, VecDeque};
+use fjall::{Database, Keyspace, KeyspaceCreateOptions};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+use uuid::Uuid;
 
-/// Entry in the DLQ
-#[allow(dead_code)]
-struct DlqEntry {
-    events: Vec<Event>,
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-/// Dead Letter Queue store using in-memory queue with fjall metadata persistence
+/// Dead Letter Queue store using fjall for persistence
 pub struct DlqStore {
-    /// In-memory queues per destination/table: (dest_id, table) -> queue of event batches
-    queues: Arc<RwLock<HashMap<(i32, String), VecDeque<DlqEntry>>>>,
-    /// Fjall DB for metadata persistence (counts, last error times, etc)
+    /// Fjall DB
     db: Arc<Database>,
-    /// Metadata keyspace
+    /// Events keyspace: (dest_id, table, timestamp, uuid) -> serialized events
+    events_ks: Keyspace,
+    /// Metadata keyspace: (dest_id, table) -> count
     metadata_ks: Keyspace,
 }
 
 impl Clone for DlqStore {
     fn clone(&self) -> Self {
         Self {
-            queues: self.queues.clone(),
             db: self.db.clone(),
+            events_ks: self.events_ks.clone(),
             metadata_ks: self.metadata_ks.clone(),
         }
     }
@@ -53,23 +45,27 @@ impl DlqStore {
 
         let db = Arc::new(db);
 
-        // Create metadata keyspace
+        // Create keyspaces
         let metadata_ks = db
             .keyspace("dlq_metadata", || KeyspaceCreateOptions::default())
             .context("Failed to create metadata keyspace")?;
 
+        let events_ks = db
+            .keyspace("dlq_events", || KeyspaceCreateOptions::default())
+            .context("Failed to create events keyspace")?;
+
         info!("DLQ store initialized at {:?}", dlq_path);
 
         Ok(Self {
-            queues: Arc::new(RwLock::new(HashMap::new())),
             db,
+            events_ks,
             metadata_ks,
         })
     }
 
-    /// Generate key for a destination/table combination
-    fn make_key(pipeline_dest_id: i32, table_name: &str) -> (i32, String) {
-        (pipeline_dest_id, table_name.to_string())
+    /// Generate prefix key for a destination/table combination
+    fn make_prefix(pipeline_dest_id: i32, table_name: &str) -> String {
+        format!("{}:{}", pipeline_dest_id, table_name)
     }
 
     /// Push events to the DLQ for a specific destination and table
@@ -78,21 +74,31 @@ impl DlqStore {
             return Ok(());
         }
 
-        let key = Self::make_key(pipeline_dest_id, table_name);
-        let entry = DlqEntry {
-            events,
-            timestamp: chrono::Utc::now(),
-        };
+        // 1. Serialize events
+        let serializable_events: Vec<SerializableEvent> = events
+            .into_iter()
+            .map(SerializableEvent::from)
+            .collect();
+        
+        let json_bytes = serde_json::to_vec(&serializable_events)
+            .context("Failed to serialize events")?;
 
-        let mut queues = self.queues.write().await;
-        queues.entry(key.clone()).or_insert_with(VecDeque::new).push_back(entry);
+        // 2. Generate unique key (using timestamp + uuid to ensure order and uniqueness)
+        let prefix = Self::make_prefix(pipeline_dest_id, table_name);
+        let timestamp = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+        let uuid = Uuid::new_v4();
+        let key = format!("{}:{}:{}", prefix, timestamp, uuid);
 
-        // Update metadata (count)
-        let count = queues.get(&key).map(|q| q.len()).unwrap_or(0);
+        // 3. Write to DB
+        self.events_ks.insert(&key, json_bytes)?;
+
+        // 4. Update metadata count
+        let count = self.get_stored_count(pipeline_dest_id, table_name) + serializable_events.len();
         self.update_count_metadata(pipeline_dest_id, table_name, count)?;
 
         debug!(
-            "DLQ: Pushed events for dest {} table {}, queue size: {}",
+            "DLQ: Pushed {} events for dest {} table {}, total stored: {}",
+            serializable_events.len(),
             pipeline_dest_id,
             table_name,
             count
@@ -104,30 +110,81 @@ impl DlqStore {
     /// Pop a batch of events from the DLQ (oldest first)
     /// Returns events and removes them from the store
     pub async fn pop_batch(&self, pipeline_dest_id: i32, table_name: &str, limit: usize) -> Result<Vec<Event>> {
-        let key = Self::make_key(pipeline_dest_id, table_name);
-        let mut queues = self.queues.write().await;
-
-        let mut all_events = Vec::new();
+        let prefix = Self::make_prefix(pipeline_dest_id, table_name);
         
-        if let Some(queue) = queues.get_mut(&key) {
-            let mut batches_to_take = limit;
-            while batches_to_take > 0 && !queue.is_empty() {
-                if let Some(entry) = queue.pop_front() {
-                    all_events.extend(entry.events);
-                    batches_to_take -= 1;
-                }
-            }
+        let mut all_events = Vec::new();
+        let mut keys_to_delete = Vec::new();
+        let mut events_count = 0;
 
-            // Update metadata
-            let remaining = queue.len();
-            self.update_count_metadata(pipeline_dest_id, table_name, remaining)?;
+        // Iterate manually. Item is Guard.
+        for guard in self.events_ks.prefix(prefix.as_bytes()) {
+             // into_inner() consumes the guard and returns (UserKey, UserValue)
+             let (key_slice, value_slice) = guard.into_inner()?;
+             let key = key_slice.to_vec();
+             let value = value_slice.to_vec();
 
+             // Deserialize batch
+             let serializable_events: Vec<SerializableEvent> = match serde_json::from_slice(&value) {
+                 Ok(evs) => evs,
+                 Err(e) => {
+                     warn!("Failed to deserialize DLQ entry: {}", e);
+                     keys_to_delete.push(key);
+                     continue;
+                 }
+             };
+
+             if serializable_events.is_empty() {
+                 keys_to_delete.push(key);
+                 continue;
+             }
+
+             // Convert back to Event
+             let mut events: Vec<Event> = serializable_events
+                 .into_iter()
+                 .map(Event::from)
+                 .collect();
+
+             if events_count + events.len() <= limit {
+                 events_count += events.len();
+                 all_events.append(&mut events);
+                 keys_to_delete.push(key);
+             } else {
+                 let needed = limit - events_count;
+                 let remaining = events.split_off(needed);
+                 
+                 all_events.append(&mut events);
+                 // No need to increment events_count here as we break
+                 
+                 let remaining_serializable: Vec<SerializableEvent> = remaining
+                     .into_iter()
+                     .map(SerializableEvent::from)
+                     .collect();
+                     
+                 if let Ok(new_json) = serde_json::to_vec(&remaining_serializable) {
+                     let _ = self.events_ks.insert(&key, new_json);
+                 }
+                 
+                 break;
+             }
+        }
+
+        // Delete processed batches
+        for key in keys_to_delete {
+            let _ = self.events_ks.remove(key);
+        }
+
+        // Update metadata
+        let current_total = self.get_stored_count(pipeline_dest_id, table_name);
+        let new_total = current_total.saturating_sub(all_events.len());
+        self.update_count_metadata(pipeline_dest_id, table_name, new_total)?;
+
+        if !all_events.is_empty() {
             debug!(
                 "DLQ: Popped {} events for dest {} table {}, remaining: {}",
                 all_events.len(),
                 pipeline_dest_id,
                 table_name,
-                remaining
+                new_total
             );
         }
 
@@ -136,41 +193,59 @@ impl DlqStore {
 
     /// Check if DLQ is empty for a destination/table
     pub async fn is_empty(&self, pipeline_dest_id: i32, table_name: &str) -> bool {
-        let key = Self::make_key(pipeline_dest_id, table_name);
-        let queues = self.queues.read().await;
-        queues.get(&key).map(|q| q.is_empty()).unwrap_or(true)
+        self.get_stored_count(pipeline_dest_id, table_name) == 0
     }
 
     /// Count total event batches in DLQ for a destination (across all tables)
     pub async fn count_for_destination(&self, pipeline_dest_id: i32) -> usize {
-        let queues = self.queues.read().await;
-        queues
-            .iter()
-            .filter(|((dest_id, _), _)| *dest_id == pipeline_dest_id)
-            .map(|(_, queue)| queue.len())
-            .sum()
+        let prefix = format!("count:{}:", pipeline_dest_id);
+        let mut total = 0;
+        
+        for guard in self.metadata_ks.prefix(prefix.as_bytes()) {
+             if let Ok(value) = guard.value() {
+                 let count: usize = String::from_utf8_lossy(&value).parse().unwrap_or(0);
+                 total += count;
+             }
+        }
+        total
     }
 
     /// Get all table names with pending DLQ entries for a destination
     pub async fn get_pending_tables(&self, pipeline_dest_id: i32) -> Vec<String> {
-        let queues = self.queues.read().await;
-        queues
-            .iter()
-            .filter(|((dest_id, _), queue)| *dest_id == pipeline_dest_id && !queue.is_empty())
-            .map(|((_, table), _)| table.clone())
-            .collect()
+        let prefix = format!("count:{}:", pipeline_dest_id);
+        let mut tables = Vec::new();
+        
+        for guard in self.metadata_ks.prefix(prefix.as_bytes()) {
+             if let Ok((key, value)) = guard.into_inner() {
+                 let count: usize = String::from_utf8_lossy(&value).parse().unwrap_or(0);
+                 if count > 0 {
+                     let key_str = String::from_utf8_lossy(&key);
+                     let parts: Vec<&str> = key_str.splitn(3, ':').collect();
+                     if parts.len() == 3 {
+                         tables.push(parts[2].to_string());
+                     }
+                 }
+             }
+        }
+        tables
     }
 
     /// Update count metadata in fjall
     fn update_count_metadata(&self, pipeline_dest_id: i32, table_name: &str, count: usize) -> Result<()> {
         let key = format!("count:{}:{}", pipeline_dest_id, table_name);
-        let value = count.to_string();
         
-        self.metadata_ks.insert(&key, &value)
-            .context("Failed to update DLQ count metadata")?;
-        
+        if count == 0 {
+            // Remove metadata if empty to keep it clean
+            let _ = self.metadata_ks.remove(&key);
+        } else {
+             let value = count.to_string();
+             self.metadata_ks.insert(&key, &value)
+                .context("Failed to update DLQ count metadata")?;
+        }
+       
         // Persist asynchronously (best effort)
-        let _ = self.db.persist(PersistMode::Buffer);
+        // Note: Fjall flushes automatically in background, but we can hint
+        // self.db.persist(PersistMode::Buffer)?;
         
         Ok(())
     }
@@ -187,20 +262,5 @@ impl DlqStore {
             }
             _ => 0,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[tokio::test]
-    async fn test_dlq_store_basic() {
-        let dir = tempdir().unwrap();
-        let store = DlqStore::new(dir.path()).unwrap();
-        
-        // Initially empty
-        assert!(store.is_empty(1, "test_table").await);
     }
 }

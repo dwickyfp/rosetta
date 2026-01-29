@@ -109,6 +109,40 @@ impl DestinationWithDlq {
         Ok(())
     }
 
+    /// Initialize state from persistent storage on startup
+    pub async fn init_from_persistence(self: Arc<Self>) -> anyhow::Result<()> {
+        let count = self.dlq_store.count_for_destination(self.pipeline_dest_id).await;
+        
+        if count > 0 {
+            let tables = self.dlq_store.get_pending_tables(self.pipeline_dest_id).await;
+            info!(
+                "Dest {}: Found {} pending DLQ events for tables {:?}. Starting recovery.",
+                self.pipeline_dest_id, count, tables
+            );
+
+            // Set internal error state
+            // We don't call set_error_state because that updates the DB with a generic "Database Error"
+            // We want to keep whatever error was there, or just set the flag.
+            self.is_error.store(true, Ordering::SeqCst);
+            {
+                let mut pt = self.pending_tables.write().await;
+                for t in tables {
+                    pt.insert(t);
+                }
+            }
+
+            // Start recovery background task
+            self.clone().start_recovery_loop();
+        } else {
+            // Check if DB says we are in error, maybe we should recover anyway?
+            // For now, if DLQ is empty, we assume we are healthy on startup.
+            // This is simpler and avoids stuck states if DB wasn't updated.
+            let _ = self.update_error_in_db(false, None).await;
+        }
+
+        Ok(())
+    }
+
     async fn push_to_dlq(&self, table_name: &str, events: Vec<Event>) -> anyhow::Result<()> {
         self.dlq_store.push(self.pipeline_dest_id, table_name, events).await?;
         self.pending_tables.write().await.insert(table_name.to_string());
