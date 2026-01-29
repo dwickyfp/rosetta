@@ -275,6 +275,19 @@ class PipelineDestinationTableSync(Base, TimestampMixin):
         comment="SQL filter condition",
     )
 
+    # Error Log
+    is_error: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+        comment="Whether table sync is in error state",
+    )
+
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Error message if in error state",
+    )
+
     # Relationships
     pipeline_destination: Mapped["PipelineDestination"] = relationship(
         "PipelineDestination", back_populates="table_syncs"

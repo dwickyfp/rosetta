@@ -31,6 +31,7 @@ export interface Pipeline {
     is_error?: boolean
     error_message?: string | null
     last_error_at?: string | null
+    table_syncs?: TableSyncConfig[]
   }[]
 }
 
@@ -128,6 +129,8 @@ export interface TableSyncConfig {
   table_name_target: string
   custom_sql: string | null
   filter_sql: string | null
+  is_error: boolean
+  error_message: string | null
   created_at: string
   updated_at: string
 }

@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS pipelines_destination_table_sync(
     table_name_target VARCHAR(255) NOT NULL,
     custom_sql TEXT NULL,
     filter_sql TEXT NULL,
+    is_error BOOLEAN NOT NULL DEFAULT FALSE,
+    error_message TEXT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

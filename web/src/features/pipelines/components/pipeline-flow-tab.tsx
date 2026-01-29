@@ -88,7 +88,8 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
           pipelineId: pipeline.id,
           destinationId: d.destination.id,
           isError: d.is_error,
-          errorMessage: d.error_message ?? undefined
+          errorMessage: d.error_message ?? undefined,
+          errorCount: d.table_syncs?.filter(t => t.is_error).length || 0
         },
         targetPosition: Position.Left,
       })

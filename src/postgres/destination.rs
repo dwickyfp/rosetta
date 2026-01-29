@@ -363,9 +363,9 @@ impl PostgresDuckdbDestination {
     async fn get_table_sync_config(
         &self,
         table_name: &str,
-    ) -> Result<Option<(String, String, String)>> {
+    ) -> Result<Option<(i32, String, String, String)>> {
         let row = sqlx::query(
-            "SELECT custom_sql, filter_sql, table_name_target FROM pipelines_destination_table_sync 
+            "SELECT id, custom_sql, filter_sql, table_name_target FROM pipelines_destination_table_sync 
              WHERE pipeline_destination_id = $1 AND table_name = $2",
         )
         .bind(self.pipeline_destination_id)
@@ -374,6 +374,7 @@ impl PostgresDuckdbDestination {
         .await?;
 
         if let Some(r) = row {
+            let id: i32 = r.try_get("id")?;
             let custom_sql: Option<String> = r.try_get("custom_sql")?;
             let filter_sql: Option<String> = r.try_get("filter_sql")?;
             let table_name_target: String = r.try_get("table_name_target")?;
@@ -384,6 +385,7 @@ impl PostgresDuckdbDestination {
             );
 
             Ok(Some((
+                id,
                 custom_sql.unwrap_or_default(),
                 filter_sql.unwrap_or_default(),
                 table_name_target,
@@ -429,6 +431,7 @@ impl Destination for PostgresDuckdbDestination {
         // Collect all async data first (before creating DuckDB connection)
         #[allow(dead_code)]
         struct TableData {
+            sync_id: Option<i32>,
             table_name: String,             // Full name with schema (e.g., "public.table")
             table_name_target: String,      // Target table name for destination
             schema_name: String,            // Schema part (e.g., "public")
@@ -458,8 +461,8 @@ impl Destination for PostgresDuckdbDestination {
                 .await
                 .map_err(|e| etl_error!(ErrorKind::Unknown, "Fetch config error: {}", e))?;
 
-            let (custom_sql, filter_sql, table_name_target) = match sync_config {
-                Some(c) => c,
+            let (sync_id, custom_sql, filter_sql, table_name_target) = match sync_config {
+                Some(c) => (Some(c.0), c.1, c.2, c.3),
                 None => {
                     info!("No sync config for {}, skipping.", table_name);
                     continue;
@@ -513,6 +516,7 @@ impl Destination for PostgresDuckdbDestination {
             }
 
             tables_data.push(TableData {
+                sync_id,
                 table_name,
                 table_name_target,
                 schema_name,
@@ -545,220 +549,170 @@ impl Destination for PostgresDuckdbDestination {
             })
             .collect();
 
+        // Clone the pool for use in the closure/loop
+        let db_pool = self.db_pool.clone();
+
         for data in tables_data {
-            // Prepare DuckDB Table
-            let create_cols = data
-                .columns
-                .iter()
-                .map(|(c, _)| format!("\"{}\" TEXT", c))
-                .collect::<Vec<_>>()
-                .join(", ");
-            if let Err(e) = conn.execute_batch(&format!(
-                "CREATE OR REPLACE TABLE duckdb_updates ({});",
-                create_cols
-            )) {
-                return Err(etl_error!(ErrorKind::Unknown, "Create table error: {}", e));
-            }
-
-            // Insert Data
-            info!(
-                "Processing table {}: {} events, {} columns, pk_columns: {:?}",
-                data.table_name,
-                data.upsert_events.len(),
-                data.columns.len(),
-                data.pk_columns
-            );
-
-            let insert_sql = format!(
-                "INSERT INTO duckdb_updates VALUES ({})",
-                vec!["?"; data.columns.len()].join(", ")
-            );
-            let mut stmt = conn
-                .prepare(&insert_sql)
-                .map_err(|e| etl_error!(ErrorKind::Unknown, "Prepare insert error: {}", e))?;
-
-            let mut inserted_count = 0;
-            for params in &data.upsert_events {
-                if let Err(e) = stmt.execute(duckdb::params_from_iter(params.clone())) {
-                    warn!("Insert row error: {}", e);
-                } else {
-                    inserted_count += 1;
+            // We'll wrap processing in a function/block to catch errors
+            let result = (|| -> EtlResult<()> {
+                // Prepare DuckDB Table
+                let create_cols = data
+                    .columns
+                    .iter()
+                    .map(|(c, _)| format!("\"{}\" TEXT", c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if let Err(e) = conn.execute_batch(&format!(
+                    "CREATE OR REPLACE TABLE duckdb_updates ({});",
+                    create_cols
+                )) {
+                    return Err(etl_error!(ErrorKind::Unknown, "Create table error: {}", e));
                 }
-            }
-            info!("Inserted {} rows into duckdb_updates", inserted_count);
 
-            // Apply filter logic
-            let filtered_table = if !data.filter_sql.trim().is_empty() {
-                let safe_filter: String = data.filter_sql.trim().replace(";", "");
-                format!(
-                    "CREATE OR REPLACE TABLE \"{}\" AS SELECT * FROM duckdb_updates WHERE {};",
-                    data.table_name, safe_filter
-                )
-            } else {
-                format!(
-                    "CREATE OR REPLACE TABLE \"{}\" AS SELECT * FROM duckdb_updates;",
-                    data.table_name
-                )
-            };
-
-            if let Err(e) = conn.execute_batch(&filtered_table) {
-                return Err(etl_error!(
-                    ErrorKind::Unknown,
-                    "Filter execution error: {}",
-                    e
-                ));
-            }
-
-            // Execute custom SQL if provided - this transforms the source table data
-            // custom_sql should be a SELECT statement that will replace the source-named table content
-            if !data.custom_sql.trim().is_empty() {
-                // Custom SQL should be a CREATE TABLE or SELECT statement
-                // We wrap it to replace the source-named table with the transformed result
-                let safe_custom_sql = data.custom_sql.trim().trim_end_matches(';');
-                
-                // Check if custom_sql is a SELECT statement (transform query)
-                let is_select = safe_custom_sql.to_uppercase().trim_start().starts_with("SELECT");
-                
-                if is_select {
-                    // Wrap the SELECT to create/replace the source-named table
-                    let transform_sql = format!(
-                        "CREATE OR REPLACE TABLE \"{}\" AS {};",
-                        data.table_name, safe_custom_sql
-                    );
-                    info!("Executing custom SQL transformation: {}", transform_sql);
-                    if let Err(e) = conn.execute_batch(&transform_sql) {
-                        return Err(etl_error!(
-                            ErrorKind::Unknown,
-                            "Custom SQL execution error: {}",
-                            e
-                        ));
-                    }
-                } else {
-                    // Execute as-is (e.g., if user provides CREATE TABLE or other DDL)
-                    info!("Executing custom SQL: {}", safe_custom_sql);
-                    if let Err(e) = conn.execute_batch(safe_custom_sql) {
-                        return Err(etl_error!(
-                            ErrorKind::Unknown,
-                            "Custom SQL execution error: {}",
-                            e
-                        ));
-                    }
-                }
-            }
-
-            // After filter_sql and custom_sql (if any), get the columns from the result table
-            // This allows custom_sql to transform/select specific columns
-            let result_columns: Vec<(String, String)> = {
-                let query = format!("DESCRIBE \"{}\"", data.table_name);
-                match conn.prepare(&query) {
-                    Ok(mut stmt) => {
-                        let rows: Vec<(String, String)> = stmt
-                            .query_map([], |row| {
-                                let col_name: String = row.get(0)?;
-                                let col_type: String = row.get(1)?;
-                                Ok((col_name, col_type))
-                            })
-                            .map(|iter| iter.filter_map(|r| r.ok()).collect())
-                            .unwrap_or_default();
-                        if rows.is_empty() {
-                            // Fallback to original columns if DESCRIBE fails
-                            data.columns.clone()
-                        } else {
-                            rows
-                        }
-                    }
-                    Err(_) => data.columns.clone(),
-                }
-            };
-
-            // Now upsert the result into target Postgres table
-            // This applies to all cases (with or without custom_sql)
-            if data.pk_columns.is_empty() {
-                warn!(
-                    "No primary key found for table {}, using INSERT instead of MERGE.",
-                    data.table_name
+                // Insert Data
+                info!(
+                    "Processing table {}: {} events, {} columns, pk_columns: {:?}",
+                    data.table_name,
+                    data.upsert_events.len(),
+                    data.columns.len(),
+                    data.pk_columns
                 );
-                // Fallback to simple INSERT
-                let col_list = result_columns
-                    .iter()
-                    .map(|(c, _)| format!("\"{}\"", c))
-                    .collect::<Vec<_>>()
-                    .join(", ");
 
-                // Use original column types for casting (not DuckDB VARCHAR types)
-                let select_list = result_columns
-                    .iter()
-                    .map(|(c, _)| {
-                        // Find the original Postgres type for this column
-                        let orig_type = data
-                            .columns
-                            .iter()
-                            .find(|(orig_c, _)| orig_c == c)
-                            .map(|(_, t)| t.as_str())
-                            .unwrap_or("VARCHAR");
-                        format!("\"{}\"::{}", c, orig_type)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                // Use proper path: pg_<dest>.<schema>."<table>"
                 let insert_sql = format!(
-                    "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
-                    sanitized_dest_name,
-                    data.schema_name,
-                    data.short_table_name,
-                    col_list,
-                    select_list,
-                    data.table_name
+                    "INSERT INTO duckdb_updates VALUES ({})",
+                    vec!["?"; data.columns.len()].join(", ")
                 );
-                if let Err(e) = conn.execute_batch(&insert_sql) {
+                let mut stmt = conn
+                    .prepare(&insert_sql)
+                    .map_err(|e| etl_error!(ErrorKind::Unknown, "Prepare insert error: {}", e))?;
+
+                let mut inserted_count = 0;
+                for params in &data.upsert_events {
+                    if let Err(e) = stmt.execute(duckdb::params_from_iter(params.clone())) {
+                        warn!("Insert row error: {}", e);
+                    } else {
+                        inserted_count += 1;
+                    }
+                }
+                info!("Inserted {} rows into duckdb_updates", inserted_count);
+
+                // Apply filter logic
+                let filtered_table = if !data.filter_sql.trim().is_empty() {
+                    let safe_filter: String = data.filter_sql.trim().replace(";", "");
+                    format!(
+                        "CREATE OR REPLACE TABLE \"{}\" AS SELECT * FROM duckdb_updates WHERE {};",
+                        data.table_name, safe_filter
+                    )
+                } else {
+                    format!(
+                        "CREATE OR REPLACE TABLE \"{}\" AS SELECT * FROM duckdb_updates;",
+                        data.table_name
+                    )
+                };
+
+                if let Err(e) = conn.execute_batch(&filtered_table) {
                     return Err(etl_error!(
                         ErrorKind::Unknown,
-                        "INSERT execution error: {}",
+                        "Filter execution error: {}",
                         e
                     ));
                 }
-            } else {
-                // Use DELETE + INSERT pattern instead of MERGE
-                // DuckDB's postgres_scanner strips type casts when translating MERGE to UPDATE,
-                // causing type mismatch errors. DELETE+INSERT is more reliable.
 
-                let col_list = result_columns
-                    .iter()
-                    .map(|(c, _)| format!("\"{}\"", c))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                // Execute custom SQL if provided - this transforms the source table data
+                // custom_sql should be a SELECT statement that will replace the source-named table content
+                if !data.custom_sql.trim().is_empty() {
+                    // Custom SQL should be a CREATE TABLE or SELECT statement
+                    // We wrap it to replace the source-named table with the transformed result
+                    let safe_custom_sql = data.custom_sql.trim().trim_end_matches(';');
 
-                // Use original column types for casting (not DuckDB VARCHAR types)
-                let select_list = result_columns
-                    .iter()
-                    .map(|(c, _)| {
-                        // Find the original Postgres type for this column
-                        let orig_type = data
-                            .columns
-                            .iter()
-                            .find(|(orig_c, _)| orig_c == c)
-                            .map(|(_, t)| t.as_str())
-                            .unwrap_or("VARCHAR");
-                        format!("\"{}\"::{}", c, orig_type)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                    // Check if custom_sql is a SELECT statement (transform query)
+                    let is_select = safe_custom_sql
+                        .to_uppercase()
+                        .trim_start()
+                        .starts_with("SELECT");
 
-                // Build WHERE clause for DELETE based on PKs
-                // Need to cast the PK column from DuckDB (TEXT) to match Postgres type
-                // Only use PKs that exist in the result columns
-                let available_pks: Vec<&String> = data
-                    .pk_columns
-                    .iter()
-                    .filter(|pk| result_columns.iter().any(|(c, _)| c == *pk))
-                    .collect();
+                    if is_select {
+                        // Wrap the SELECT to create/replace the source-named table
+                        let transform_sql = format!(
+                            "CREATE OR REPLACE TABLE \"{}\" AS {};",
+                            data.table_name, safe_custom_sql
+                        );
+                        if let Err(e) = conn.execute_batch(&transform_sql) {
+                            return Err(etl_error!(
+                                ErrorKind::Unknown,
+                                "Custom SQL execution error: {}",
+                                e
+                            ));
+                        }
+                    } else {
+                        // Execute as-is (e.g., if user provides CREATE TABLE or other DDL)
+                        info!("Executing custom SQL: {}", safe_custom_sql);
+                        if let Err(e) = conn.execute_batch(safe_custom_sql) {
+                            return Err(etl_error!(
+                                ErrorKind::Unknown,
+                                "Custom SQL execution error: {}",
+                                e
+                            ));
+                        }
+                    }
+                }
 
-                if available_pks.is_empty() {
+                // After filter_sql and custom_sql (if any), get the columns from the result table
+                // This allows custom_sql to transform/select specific columns
+                let result_columns: Vec<(String, String)> = {
+                    let query = format!("DESCRIBE \"{}\"", data.table_name);
+                    match conn.prepare(&query) {
+                        Ok(mut stmt) => {
+                            let rows: Vec<(String, String)> = stmt
+                                .query_map([], |row| {
+                                    let col_name: String = row.get(0)?;
+                                    let col_type: String = row.get(1)?;
+                                    Ok((col_name, col_type))
+                                })
+                                .map(|iter| iter.filter_map(|r| r.ok()).collect())
+                                .unwrap_or_default();
+                            if rows.is_empty() {
+                                // Fallback to original columns if DESCRIBE fails
+                                data.columns.clone()
+                            } else {
+                                rows
+                            }
+                        }
+                        Err(_) => data.columns.clone(),
+                    }
+                };
+
+                // Now upsert the result into target Postgres table
+                // This applies to all cases (with or without custom_sql)
+                if data.pk_columns.is_empty() {
                     warn!(
-                        "No primary key columns found in result for table {}, using INSERT only.",
+                        "No primary key found for table {}, using INSERT instead of MERGE.",
                         data.table_name
                     );
+                    // Fallback to simple INSERT
+                    let col_list = result_columns
+                        .iter()
+                        .map(|(c, _)| format!("\"{}\"", c))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    // Use original column types for casting (not DuckDB VARCHAR types)
+                    let select_list = result_columns
+                        .iter()
+                        .map(|(c, _)| {
+                            // Find the original Postgres type for this column
+                            let orig_type = data
+                                .columns
+                                .iter()
+                                .find(|(orig_c, _)| orig_c == c)
+                                .map(|(_, t)| t.as_str())
+                                .unwrap_or("VARCHAR");
+                            format!("\"{}\"::{}", c, orig_type)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    // Use proper path: pg_<dest>.<schema>."<table>"
                     let insert_sql = format!(
                         "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
                         sanitized_dest_name,
@@ -776,66 +730,123 @@ impl Destination for PostgresDuckdbDestination {
                         ));
                     }
                 } else {
-                    let pk_match = available_pks
+                    // Use DELETE + INSERT pattern instead of MERGE
+                    // DuckDB's postgres_scanner strips type casts when translating MERGE to UPDATE,
+                    // causing type mismatch errors. DELETE+INSERT is more reliable.
+
+                    let col_list = result_columns
                         .iter()
-                        .map(|pk| {
-                            // Find the type for this PK column from ORIGINAL columns (not DuckDB result)
-                            // DuckDB stores everything as TEXT/VARCHAR, but we need the actual Postgres type
-                            let pk_type = data
+                        .map(|(c, _)| format!("\"{}\"", c))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    // Use original column types for casting (not DuckDB VARCHAR types)
+                    let select_list = result_columns
+                        .iter()
+                        .map(|(c, _)| {
+                            // Find the original Postgres type for this column
+                            let orig_type = data
                                 .columns
                                 .iter()
-                                .find(|(c, _)| c == *pk)
+                                .find(|(orig_c, _)| orig_c == c)
                                 .map(|(_, t)| t.as_str())
-                                .unwrap_or("BIGINT");
-                            format!(
-                                "\"{}\" IN (SELECT \"{}\"::{} FROM \"{}\")",
-                                pk, pk, pk_type, data.table_name
-                            )
+                                .unwrap_or("VARCHAR");
+                            format!("\"{}\"::{}", c, orig_type)
                         })
                         .collect::<Vec<_>>()
-                        .join(" AND ");
+                        .join(", ");
 
-                    // Step 1: DELETE existing rows that match PKs
-                    let delete_sql = format!(
-                        "DELETE FROM pg_{}.{}.\"{}\" WHERE {};",
-                        sanitized_dest_name, data.schema_name, data.short_table_name, pk_match
-                    );
+                    // Build WHERE clause for DELETE based on PKs
+                    // Need to cast the PK column from DuckDB (TEXT) to match Postgres type
+                    // Only use PKs that exist in the result columns
+                    let available_pks: Vec<&String> = data
+                        .pk_columns
+                        .iter()
+                        .filter(|pk| result_columns.iter().any(|(c, _)| c == *pk))
+                        .collect();
 
-                    info!("Executing DELETE: {}", delete_sql);
-                    if let Err(e) = conn.execute_batch(&delete_sql) {
-                        return Err(etl_error!(
-                            ErrorKind::Unknown,
-                            "DELETE execution error: {}",
-                            e
-                        ));
+                    if available_pks.is_empty() {
+                        warn!(
+                            "No primary key columns found in result for table {}, using INSERT only.",
+                            data.table_name
+                        );
+                        let insert_sql = format!(
+                            "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
+                            sanitized_dest_name,
+                            data.schema_name,
+                            data.short_table_name,
+                            col_list,
+                            select_list,
+                            data.table_name
+                        );
+                        if let Err(e) = conn.execute_batch(&insert_sql) {
+                            return Err(etl_error!(
+                                ErrorKind::Unknown,
+                                "INSERT execution error: {}",
+                                e
+                            ));
+                        }
+                    } else {
+
+
+                        // Step 1: DELETE existing rows that match PKs
+                        // The SQL for DELETE using IN clause
+                        let pk_conditions = available_pks
+                            .iter()
+                            .map(|pk| {
+                                let pk_type = data
+                                    .columns
+                                    .iter()
+                                    .find(|(c, _)| c == *pk)
+                                    .map(|(_, t)| t.as_str())
+                                    .unwrap_or("BIGINT");
+                                format!("\"{}\"::{}", pk, pk_type)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+
+                        let delete_sql = format!(
+                            "DELETE FROM pg_{}.{}.\"{}\" WHERE ({}) IN (SELECT {} FROM \"{}\");",
+                            sanitized_dest_name,
+                            data.schema_name,
+                            data.short_table_name,
+                            available_pks
+                                .iter()
+                                .map(|k| format!("\"{}\"", k))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            pk_conditions,
+                            data.table_name
+                        );
+
+                        if let Err(e) = conn.execute_batch(&delete_sql) {
+                            return Err(etl_error!(
+                                ErrorKind::Unknown,
+                                "DELETE execution error: {}",
+                                e
+                            ));
+                        }
+
+                        // Step 2: INSERT new rows
+                        let insert_sql = format!(
+                            "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
+                            sanitized_dest_name,
+                            data.schema_name,
+                            data.short_table_name,
+                            col_list,
+                            select_list,
+                            data.table_name
+                        );
+                        if let Err(e) = conn.execute_batch(&insert_sql) {
+                            return Err(etl_error!(
+                                ErrorKind::Unknown,
+                                "INSERT execution error: {}",
+                                e
+                            ));
+                        }
                     }
-
-                    // Step 2: INSERT all rows with explicit type casts
-                    let insert_sql = format!(
-                        "INSERT INTO pg_{}.{}.\"{}\" ({}) SELECT {} FROM \"{}\";",
-                        sanitized_dest_name,
-                        data.schema_name,
-                        data.short_table_name,
-                        col_list,
-                        select_list,
-                        data.table_name
-                    );
-
-                    if let Err(e) = conn.execute_batch(&insert_sql) {
-                        return Err(etl_error!(
-                            ErrorKind::Unknown,
-                            "INSERT execution error: {}",
-                            e
-                        ));
-                    }
-                    info!(
-                        "DELETE+INSERT completed successfully for table {}",
-                        data.table_name
-                    );
                 }
-            }
 
-            // Handle DELETE events separately - only delete from target, don't insert
             if !data.delete_events.is_empty() && !data.pk_columns.is_empty() {
                 // Create a temp table for delete PKs
                 let delete_table_name = format!("{}_deletes", data.table_name);
@@ -917,6 +928,42 @@ impl Destination for PostgresDuckdbDestination {
                         );
                     }
                 }
+            }
+                Ok(())
+            })();
+
+            if let Some(sid) = data.sync_id {
+                let pool = db_pool.clone();
+                match result {
+                    Ok(_) => {
+                        let _ = sqlx::query(
+                            "UPDATE pipelines_destination_table_sync 
+                             SET is_error = false, error_message = NULL, updated_at = NOW() 
+                             WHERE id = $1",
+                        )
+                        .bind(sid)
+                        .execute(&pool)
+                        .await;
+                    }
+                    Err(e) => {
+                        error!("Error processing table {}: {}", data.table_name, e);
+                        let _ = sqlx::query(
+                            "UPDATE pipelines_destination_table_sync 
+                             SET is_error = true, error_message = $2, updated_at = NOW() 
+                             WHERE id = $1",
+                        )
+                        .bind(sid)
+                        .bind(e.to_string())
+                        .execute(&pool)
+                        .await;
+                        continue;
+                    }
+                }
+            } else if let Err(e) = result {
+                error!(
+                    "Error processing table {} (no sync config): {}",
+                    data.table_name, e
+                );
             }
         }
 

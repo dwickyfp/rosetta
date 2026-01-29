@@ -31,6 +31,7 @@ export interface PipelineNodeData extends Record<string, unknown> {
   destinationId?: number
   isError?: boolean
   errorMessage?: string
+  errorCount?: number
 }
 
 export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
@@ -162,6 +163,12 @@ export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
             <span className="uppercase tracking-wider font-medium">
               {data.type}
             </span>
+            {data.errorCount !== undefined && data.errorCount > 0 && (
+              <div className="flex items-center gap-1.5 ml-2 bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">
+                <span className="font-bold text-[10px]">{data.errorCount}</span>
+                <span className="text-[10px] font-medium">Error</span>
+              </div>
+            )}
           </div>
           {data.status && (
             <div className="flex items-center gap-1.5">

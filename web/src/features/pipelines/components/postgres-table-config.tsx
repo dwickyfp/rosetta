@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { TableWithSyncInfo, tableSyncRepo } from '@/repo/pipelines'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { Filter, Code2, Loader2, AlertCircle, Database, ArrowRight } from 'lucide-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Filter, Code2, Loader2, AlertCircle, Database, ArrowRight, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -72,7 +77,10 @@ export function PostgresTableConfig({
         {tables.map((table) => (
           <div
             key={table.table_name}
-            className="p-3 border rounded-lg bg-card hover:bg-accent/5 transition-colors group"
+            className={cn(
+              "p-3 border rounded-lg bg-card hover:bg-accent/5 transition-colors group",
+              table.sync_config?.is_error ? "animate-error-pulse bg-red-50/10" : "border-border"
+            )}
           >
             {/* Row 1: Toggle + Table Name */}
             <div className="flex items-start gap-3">
@@ -108,22 +116,6 @@ export function PostgresTableConfig({
                     </>
                   )}
                 </div>
-
-                {/* Badges */}
-                {(table.sync_config?.filter_sql || table.sync_config?.custom_sql) && (
-                  <div className="flex gap-2 mt-1.5 flex-wrap">
-                    {table.sync_config?.filter_sql && (
-                      <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">
-                        Filtered
-                      </span>
-                    )}
-                    {table.sync_config?.custom_sql && (
-                      <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-100">
-                        Custom SQL
-                      </span>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -178,6 +170,31 @@ export function PostgresTableConfig({
                   <Code2 className="h-3 w-3 mr-1.5" />
                   Custom SQL
                 </Button>
+
+                {table.sync_config?.is_error && (
+                  <Popover>
+                    <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Info className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-3" side="top" align="end">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-red-600 font-medium">
+                          <AlertCircle className="h-4 w-4" />
+                          <span className="text-sm">Sync Error</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground break-words bg-muted/50 p-2 rounded border">
+                          {table.sync_config.error_message || "Unknown error occurred during sync."}
+                        </p>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
               </div>
             )}
           </div>
