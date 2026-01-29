@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import AceEditor from 'react-ace'
 import { Button } from '@/components/ui/button'
 import { Loader2, Save, X } from 'lucide-react'
-import { TableWithSyncInfo } from '@/repo/pipelines'
+import { TableWithSyncInfo, TableSyncConfig } from '@/repo/pipelines'
 import { cn } from '@/lib/utils'
 
 import 'ace-builds/src-noconflict/mode-mysql'
@@ -10,11 +10,12 @@ import 'ace-builds/src-noconflict/theme-tomorrow'
 import 'ace-builds/src-noconflict/ext-language_tools'
 
 interface TableCustomSqlCardProps {
-    table: TableWithSyncInfo | null
+    table: (TableWithSyncInfo & { sync_config?: TableSyncConfig }) | null
     open: boolean
     onClose: () => void
     onSave: (sql: string) => Promise<void>
     className?: string
+    destinationName?: string
 }
 
 export function TableCustomSqlCard({
@@ -22,7 +23,8 @@ export function TableCustomSqlCard({
     open,
     onClose,
     onSave,
-    className
+    className,
+    destinationName
 }: TableCustomSqlCardProps) {
     const [sql, setSql] = useState('')
     const [isSaving, setIsSaving] = useState(false)
@@ -87,27 +89,20 @@ export function TableCustomSqlCard({
                     </p>
                 </div>
 
-                {/* Columns reference */}
-                <div className="mb-4 p-3 bg-muted/50 rounded-lg border">
-                    <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Available Columns</p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {table.columns.slice(0, 15).map(col => (
-                            <span
-                                key={col.column_name}
-                                className="text-xs bg-background px-2 py-1 rounded border cursor-pointer hover:bg-accent transition-colors"
-                                title={col.data_type}
-                                onClick={() => {
-                                    setSql(prev => prev + col.column_name)
-                                }}
-                            >
-                                {col.column_name}
-                            </span>
-                        ))}
-                        {table.columns.length > 15 && (
-                            <span className="text-xs text-muted-foreground px-2 py-1">
-                                +{table.columns.length - 15} more
-                            </span>
-                        )}
+                <div className="mb-4 p-3 bg-blue-50/50 rounded-lg border border-blue-100 dark:bg-blue-900/10 dark:border-blue-900/30">
+                    <div className="flex gap-2">
+                        <div className="flex-1 space-y-2">
+                            <p className="text-xs text-blue-700 dark:text-blue-300">
+                                You can join this table with all tables in the destination database using the prefix <code className="bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 rounded">pg_{destinationName ? destinationName.toLowerCase() : 'dest_name'}</code>.
+                            </p>
+                            <div className="bg-background/80 p-2 rounded border border-blue-200/50 dark:border-blue-800/30">
+                                <code className="text-[10px] font-mono text-muted-foreground block">
+                                    -- Example query<br />
+                                    SELECT * FROM {table.table_name} t <br />
+                                    JOIN pg_{destinationName ? destinationName.toLowerCase() : 'dest_1'}.table_a a ON t.id = a.id
+                                </code>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

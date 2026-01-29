@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { TableWithSyncInfo, tableSyncRepo, TableSyncConfig } from '@/repo/pipelines'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Plus, Loader2, AlertCircle, Database } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -116,89 +117,101 @@ export function PostgresTableConfig({
       </div>
 
       <div className="space-y-6">
-        {tables.map((table) => {
-          const hasBranches = table.sync_configs && table.sync_configs.length > 0
-          const isProcessing = processingTable === table.table_name
+        {[...tables]
+          .sort((a, b) => {
+            const aActive = a.sync_configs && a.sync_configs.length > 0
+            const bActive = b.sync_configs && b.sync_configs.length > 0
+            if (aActive === bActive) return 0
+            return aActive ? -1 : 1
+          })
+          .map((table) => {
+            const hasBranches = table.sync_configs && table.sync_configs.length > 0
+            const isProcessing = processingTable === table.table_name
 
-          return (
-            <div key={table.table_name} className="relative pl-4 border-l-2 border-muted hover:border-primary/50 transition-colors">
-              {/* Source Node */}
-              <div className="mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0">
-                    {isProcessing ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    ) : (
-                      <Switch
-                        checked={hasBranches}
-                        onCheckedChange={() => handleToggleSync(table)}
-                      />
-                    )}
+            return (
+              <div key={table.table_name} className="relative pl-4 border-l-2 border-muted hover:border-primary/50 transition-colors">
+                {/* Source Node */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0">
+                      {isProcessing ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Switch
+                          checked={hasBranches}
+                          onCheckedChange={() => handleToggleSync(table)}
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Database className="h-4 w-4 text-muted-foreground" />
+                      <span className={cn("font-semibold text-sm", !hasBranches && "text-muted-foreground")}>
+                        {table.table_name}
+                      </span>
+                      {hasBranches && (
+                        <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 text-[10px] h-5 px-1.5">
+                          Stream
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-muted-foreground" />
-                    <span className={cn("font-semibold text-sm", !hasBranches && "text-muted-foreground")}>
-                      {table.table_name}
-                    </span>
+                  <div className="text-[10px] text-muted-foreground font-mono mt-0.5 ml-14">
+                    {table.columns.length} columns • Source
                   </div>
                 </div>
-                <div className="text-[10px] text-muted-foreground font-mono mt-0.5 ml-14">
-                  {table.columns.length} columns • Source
+
+                {/* Branches (Mindmap connections) */}
+                <div className="pl-6 space-y-3 relative">
+                  {/* Connection Lines Container */}
+                  {hasBranches && (
+                    <div className="absolute top-0 bottom-4 left-2 w-4 border-l border-b border-border rounded-bl-lg -translate-y-6 -z-10" />
+                  )}
+
+                  {table.sync_configs.map((config, idx) => (
+                    <div key={config.id || idx} className="relative">
+                      {/* SVG Connector for each branch */}
+                      <svg className="absolute -left-6 top-1/2 -translate-y-1/2 w-6 h-full pointer-events-none overflow-visible" style={{ height: '40px' }}>
+                        <path
+                          d="M -16 0 C -8 0, -8 20, 0 20"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="text-border"
+                          transform="translate(0, -20)"
+                        />
+                        {/* Arrow Head */}
+                        <path d="M 0 0 L -4 -2 L -4 2 Z" fill="currentColor" className="text-border" />
+                      </svg>
+
+                      <TableBranchNode
+                        syncConfig={config}
+                        onEditFilter={() => onEditFilter(table, config.id)}
+                        onEditCustomSql={() => onEditCustomSql(table, config.id)}
+                        onEditTargetName={() => onEditTargetName(table, config.id)}
+                        onDelete={() => handleDeleteBranch(table, config)}
+                        isDeleting={isProcessing}
+                      />
+                    </div>
+                  ))}
+
+                  {/* Add Branch Button (Node) */}
+                  <div className="relative pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleAddBranch(table)}
+                      disabled={isProcessing}
+                      className="h-7 text-xs gap-1.5 border-dashed text-muted-foreground hover:text-primary hover:border-primary hover:bg-primary/5"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Destination Target
+                    </Button>
+                  </div>
                 </div>
               </div>
-
-              {/* Branches (Mindmap connections) */}
-              <div className="pl-6 space-y-3 relative">
-                {/* Connection Lines Container */}
-                {hasBranches && (
-                  <div className="absolute top-0 bottom-4 left-2 w-4 border-l border-b border-border rounded-bl-lg -translate-y-6 -z-10" />
-                )}
-
-                {table.sync_configs.map((config, idx) => (
-                  <div key={config.id || idx} className="relative">
-                    {/* SVG Connector for each branch */}
-                    <svg className="absolute -left-6 top-1/2 -translate-y-1/2 w-6 h-full pointer-events-none overflow-visible" style={{ height: '40px' }}>
-                      <path
-                        d="M -16 0 C -8 0, -8 20, 0 20"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        className="text-border"
-                        transform="translate(0, -20)"
-                      />
-                      {/* Arrow Head */}
-                      <path d="M 0 0 L -4 -2 L -4 2 Z" fill="currentColor" className="text-border" />
-                    </svg>
-
-                    <TableBranchNode
-                      syncConfig={config}
-                      onEditFilter={() => onEditFilter(table, config.id)}
-                      onEditCustomSql={() => onEditCustomSql(table, config.id)}
-                      onEditTargetName={() => onEditTargetName(table, config.id)}
-                      onDelete={() => handleDeleteBranch(table, config)}
-                      isDeleting={isProcessing}
-                    />
-                  </div>
-                ))}
-
-                {/* Add Branch Button (Node) */}
-                <div className="relative pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleAddBranch(table)}
-                    disabled={isProcessing}
-                    className="h-7 text-xs gap-1.5 border-dashed text-muted-foreground hover:text-primary hover:border-primary hover:bg-primary/5"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add Destination Target
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
+            )
+          })}
 
         {tables.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-lg">

@@ -286,6 +286,7 @@ export function SourceTableDrawer({
           open={true}
           onClose={() => setActiveMode(null)}
           onSave={handleSaveCustomSql}
+          destinationName={currentDestination?.destination.name}
         />
       )}
 
