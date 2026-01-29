@@ -12,6 +12,7 @@ from app.core.exceptions import DuplicateEntityError
 from app.core.logging import get_logger
 from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineDestination
 from app.domain.repositories.pipeline import PipelineRepository
+from app.domain.repositories.table_metadata_repo import TableMetadataRepository
 from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate, PipelineDestinationResponse, PipelineDestinationTableSyncResponse
 from app.domain.services.source import SourceService
 from app.domain.models.data_flow_monitoring import DataFlowRecordMonitoring
@@ -975,24 +976,24 @@ class PipelineService:
                 entity_type="PipelineDestination", entity_id=pipeline_destination_id
             )
 
-        # Perform Left Join: TableMetadata (Source Tables) LEFT JOIN PipelineDestinationTableSync (Sync Config)
-        # on table_name and pipeline_destination_id
-        results = (
-            self.db.query(TableMetadata, PipelineDestinationTableSync)
-            .outerjoin(
-                PipelineDestinationTableSync,
-                and_(
-                    TableMetadata.table_name == PipelineDestinationTableSync.table_name,
-                    PipelineDestinationTableSync.pipeline_destination_id == pipeline_destination_id
-                )
-            )
-            .filter(TableMetadata.source_id == pipeline.source_id)
+        # 1. Get List of all tables from source metadata
+        tm_repo = TableMetadataRepository(self.db)
+        all_tables_meta = tm_repo.get_by_source_id(pipeline.source_id)
+        
+        # 2. Get existing sync configurations for this destination
+        syncs = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(pipeline_destination_id=pipeline_destination_id)
             .all()
         )
+        from collections import defaultdict
+        syncs_map = defaultdict(list)
+        for s in syncs:
+            syncs_map[s.table_name].append(s)
 
         response_list = []
-        for table_meta, sync_config_row in results:
-            # Parse columns from schema_table
+        for table_meta in all_tables_meta:
+            # Parse schema
             columns = []
             if table_meta.schema_table:
                 # Handle both list (older format) and dict (newer format) schemas
@@ -1022,15 +1023,16 @@ class PipelineService:
                             is_primary_key=False,
                         ))
 
-            # Convert sync config if it exists
-            sync_config = None
-            if sync_config_row:
-                sync_config = PipelineDestinationTableSyncResponse.from_orm(sync_config_row)
+            # Convert sync configs (list)
+            current_syncs = syncs_map[table_meta.table_name]
+            sync_configs_response = [
+                PipelineDestinationTableSyncResponse.from_orm(s) for s in current_syncs
+            ]
 
             response_list.append(TableWithSyncInfoResponse(
                 table_name=table_meta.table_name,
                 columns=columns,
-                sync_config=sync_config,
+                sync_configs=sync_configs_response,
                 is_exists_table_landing=table_meta.is_exists_table_landing,
                 is_exists_stream=table_meta.is_exists_stream,
                 is_exists_task=table_meta.is_exists_task,
@@ -1067,29 +1069,43 @@ class PipelineService:
                 entity_type="PipelineDestination", entity_id=pipeline_destination_id
             )
 
-        # Check if sync already exists for this table
-        existing = (
-            self.db.query(PipelineDestinationTableSync)
-            .filter_by(
-                pipeline_destination_id=pipeline_destination_id,
-                table_name=table_sync_data.table_name,
+        if table_sync_data.id:
+            # Update specific existing sync
+            existing = (
+                self.db.query(PipelineDestinationTableSync)
+                .filter_by(
+                    id=table_sync_data.id,
+                    pipeline_destination_id=pipeline_destination_id
+                )
+                .first()
             )
-            .first()
-        )
+            if not existing:
+                 raise EntityNotFoundError(
+                    entity_type="PipelineDestinationTableSync", entity_id=table_sync_data.id
+                )
+            
+            # Verify table name matches (optional safety check)
+            if existing.table_name != table_sync_data.table_name:
+                # Should we allow changing source table? Probably not for a sync object.
+                pass
 
-        if existing:
-            # Update existing
             existing.custom_sql = table_sync_data.custom_sql
             existing.filter_sql = table_sync_data.filter_sql
-            # Update target table name if provided, otherwise keep existing
             if table_sync_data.table_name_target:
                 existing.table_name_target = table_sync_data.table_name_target
+            
             self.db.commit()
             self.db.refresh(existing)
             return existing
         else:
-            # Create new - default table_name_target to table_name if not provided
+            # Create NEW sync (Branch)
+            # Check if there is already a sync for this table with same target?
+            # Or just allow multiple. We should probably uniqueness on (pipeline_destination_id, table_name, table_name_target)
             target_name = table_sync_data.table_name_target or table_sync_data.table_name
+            
+            # Optional: Check uniqueness of target for this source
+            # ...
+
             new_sync = PipelineDestinationTableSync(
                 pipeline_destination_id=pipeline_destination_id,
                 table_name=table_sync_data.table_name,

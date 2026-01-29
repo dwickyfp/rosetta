@@ -183,6 +183,7 @@ class TableSyncCreateRequest(BaseSchema):
     Schema for creating/updating a table sync configuration.
     """
 
+    id: int | None = Field(default=None, description="Sync ID (optional, for updates)")
     table_name: str = Field(..., min_length=1, max_length=255, description="Source table name")
     table_name_target: str | None = Field(
         default=None, 
@@ -231,14 +232,17 @@ class TableWithSyncInfoResponse(BaseSchema):
 
     table_name: str = Field(..., description="Table name")
     columns: List[ColumnSchemaResponse] = Field(default=[], description="Column schema")
-    sync_config: PipelineDestinationTableSyncResponse | None = Field(
-        default=None, description="Current sync configuration if exists"
+    sync_configs: List[PipelineDestinationTableSyncResponse] = Field(
+        default=[], description="Current sync configurations (branches)"
     )
-    # Snowflake status flags
+    # Snowflake status flags (might need to be per-sync/target in future, but keeping simple for now)
+    # These flags originally tracked landing/stream/task existence. 
+    # With branching, landing/stream are shared (per source table), but Tasks/Target Tables are per branch.
+    # We'll need to think about how these map. For now, let's keep them as indicative of *at least one* path or the landing setup.
     is_exists_table_landing: bool = Field(default=False, description="Landing table exists")
     is_exists_stream: bool = Field(default=False, description="Stream exists")
-    is_exists_task: bool = Field(default=False, description="Task exists")
-    is_exists_table_destination: bool = Field(default=False, description="Target table exists")
+    is_exists_task: bool = Field(default=False, description="Task exists (at least one)")
+    is_exists_table_destination: bool = Field(default=False, description="Target table exists (at least one)")
 
 
 class PipelineDestinationResponse(BaseSchema):

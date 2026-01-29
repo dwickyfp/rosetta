@@ -70,6 +70,7 @@ export default function SourceDetailsPage() {
         try {
             await sourcesRepo.refreshSource(id)
             queryClient.invalidateQueries({ queryKey: ['source-details', id] })
+            queryClient.invalidateQueries({ queryKey: ['source-available-tables', id] })
             toast.success("Source refreshed successfully")
         } catch (err) {
             console.error(err)

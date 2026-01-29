@@ -515,6 +515,13 @@ class SourceService:
         self.db.commit()
         self.db.refresh(source)
 
+        # Invalidate Available Tables Cache
+        try:
+            redis_client = RedisClient.get_instance()
+            redis_client.delete(f"source:{source_id}:tables")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for source {source_id}: {e}")
+
     def create_publication(self, source_id: int, tables: List[str]) -> None:
         source = self.get_source(source_id)
         if not tables:

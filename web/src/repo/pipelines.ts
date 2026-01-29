@@ -138,7 +138,7 @@ export interface TableSyncConfig {
 export interface TableWithSyncInfo {
   table_name: string
   columns: ColumnSchema[]
-  sync_config: TableSyncConfig | null
+  sync_configs: TableSyncConfig[]
   is_exists_table_landing: boolean
   is_exists_stream: boolean
   is_exists_task: boolean
@@ -146,6 +146,7 @@ export interface TableWithSyncInfo {
 }
 
 export interface TableSyncRequest {
+  id?: number | null
   table_name: string
   table_name_target?: string | null
   custom_sql?: string | null

@@ -37,6 +37,7 @@ export function SourceTableDrawer({
 
   // Floating Card State
   const [activeTable, setActiveTable] = useState<TableWithSyncInfo | null>(null)
+  const [activeSyncConfigId, setActiveSyncConfigId] = useState<number | null>(null)
   const [activeMode, setActiveMode] = useState<'filter' | 'custom' | 'target' | null>(null)
 
   // Get destinations
@@ -47,6 +48,7 @@ export function SourceTableDrawer({
     if (!open) {
       setActiveTable(null)
       setActiveMode(null)
+      setActiveSyncConfigId(null)
     }
   }, [open])
 
@@ -85,15 +87,23 @@ export function SourceTableDrawer({
     }
   }
 
+  // Helper to get current sync config
+  const getActiveSyncConfig = () => {
+    if (!activeTable || !activeSyncConfigId) return null
+    return activeTable.sync_configs?.find(s => s.id === activeSyncConfigId)
+  }
+
   const handleSaveFilter = async (filterSql: string) => {
-    if (!activeTable || !selectedDestinationId) return
+    if (!activeTable || !selectedDestinationId || !activeSyncConfigId) return
+    const currentConfig = getActiveSyncConfig()
 
     try {
       await tableSyncRepo.saveTableSync(pipeline.id, selectedDestinationId, {
+        id: activeSyncConfigId,
         table_name: activeTable.table_name,
         filter_sql: filterSql,
-        custom_sql: activeTable.sync_config?.custom_sql,
-        table_name_target: activeTable.sync_config?.table_name_target,
+        custom_sql: currentConfig?.custom_sql,
+        table_name_target: currentConfig?.table_name_target,
       })
       toast.success('Filter saved successfully')
       setActiveMode(null)
@@ -104,14 +114,16 @@ export function SourceTableDrawer({
   }
 
   const handleSaveCustomSql = async (customSql: string) => {
-    if (!activeTable || !selectedDestinationId) return
+    if (!activeTable || !selectedDestinationId || !activeSyncConfigId) return
+    const currentConfig = getActiveSyncConfig()
 
     try {
       await tableSyncRepo.saveTableSync(pipeline.id, selectedDestinationId, {
+        id: activeSyncConfigId,
         table_name: activeTable.table_name,
         custom_sql: customSql,
-        filter_sql: activeTable.sync_config?.filter_sql,
-        table_name_target: activeTable.sync_config?.table_name_target,
+        filter_sql: currentConfig?.filter_sql,
+        table_name_target: currentConfig?.table_name_target,
       })
       toast.success('Custom SQL saved successfully')
       setActiveMode(null)
@@ -122,14 +134,16 @@ export function SourceTableDrawer({
   }
 
   const handleSaveTargetName = async (targetName: string) => {
-    if (!activeTable || !selectedDestinationId) return
+    if (!activeTable || !selectedDestinationId || !activeSyncConfigId) return
+    const currentConfig = getActiveSyncConfig()
 
     try {
       await tableSyncRepo.saveTableSync(pipeline.id, selectedDestinationId, {
+        id: activeSyncConfigId,
         table_name: activeTable.table_name,
         table_name_target: targetName,
-        custom_sql: activeTable.sync_config?.custom_sql,
-        filter_sql: activeTable.sync_config?.filter_sql,
+        custom_sql: currentConfig?.custom_sql,
+        filter_sql: currentConfig?.filter_sql,
       })
       toast.success('Target table name saved successfully')
       setActiveMode(null)
@@ -149,6 +163,8 @@ export function SourceTableDrawer({
   const filteredTables = tables.filter(table =>
     table.table_name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  const activeSyncConfig = getActiveSyncConfig()
 
   return (
     <>
@@ -218,16 +234,19 @@ export function SourceTableDrawer({
                     pipelineId={pipeline.id}
                     pipelineDestinationId={selectedDestinationId!}
                     onRefresh={loadTables}
-                    onEditFilter={(table) => {
+                    onEditFilter={(table, id) => {
                       setActiveTable(table)
+                      setActiveSyncConfigId(id)
                       setActiveMode('filter')
                     }}
-                    onEditCustomSql={(table) => {
+                    onEditCustomSql={(table, id) => {
                       setActiveTable(table)
+                      setActiveSyncConfigId(id)
                       setActiveMode('custom')
                     }}
-                    onEditTargetName={(table) => {
+                    onEditTargetName={(table, id) => {
                       setActiveTable(table)
+                      setActiveSyncConfigId(id)
                       setActiveMode('target')
                     }}
                   />
@@ -240,27 +259,42 @@ export function SourceTableDrawer({
 
       {/* Floating Panels - Rendered as siblings, higher Z-index */}
       {/* Since modal={false}, these are interactive */}
-      {open && activeMode === 'filter' && (
+      {open && activeMode === 'filter' && activeSyncConfig && ( // Pass active config if needed, or component uses table + config
         <TableFilterCard
-          table={activeTable}
+          // Card might expect table, but probably needs specific config now. 
+          // Note: TableFilterCard likely uses table.sync_config? We need to verify TableFilterCard implementation.
+          // If TableFilterCard expects table.sync_config (singular), we might need to mock or pass specific config.
+          // Let's assume for now we might need to adjust TableFilterCard props or mock it.
+          // Actually, let's create a temporary object that looks like TableWithSyncInfo but with ONLY the active sync config
+          // so we don't have to refactor TableFilterCard yet.
+          table={{
+            ...activeTable!,
+            sync_config: activeSyncConfig // Mapping active config to singular property for compatibility
+          } as any}
           open={true}
           onClose={() => setActiveMode(null)}
           onSave={handleSaveFilter}
         />
       )}
 
-      {open && activeMode === 'custom' && (
+      {open && activeMode === 'custom' && activeSyncConfig && (
         <TableCustomSqlCard
-          table={activeTable}
+          table={{
+            ...activeTable!,
+            sync_config: activeSyncConfig
+          } as any}
           open={true}
           onClose={() => setActiveMode(null)}
           onSave={handleSaveCustomSql}
         />
       )}
 
-      {open && activeMode === 'target' && (
+      {open && activeMode === 'target' && activeSyncConfig && (
         <TableTargetNameCard
-          table={activeTable}
+          table={{
+            ...activeTable!,
+            sync_config: activeSyncConfig
+          } as any}
           open={true}
           onClose={() => setActiveMode(null)}
           onSave={handleSaveTargetName}
