@@ -330,6 +330,8 @@ impl PipelineManager {
                             self.db_pool.clone(),
                             source_pool,
                             pd_id,
+                            pipeline_id,
+                            source_id,
                         )?,
                     )
                 }

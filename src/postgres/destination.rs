@@ -144,6 +144,8 @@ pub struct PostgresDuckdbDestination {
     db_pool: Pool<Postgres>,     // Main DB pool for fetching sync config
     source_pool: Pool<Postgres>, // Source DB pool for schema
     pipeline_destination_id: i32,
+    pipeline_id: i32,
+    source_id: i32,
     // Caches
     table_cache: Arc<Mutex<HashMap<TableId, String>>>,
     // Cache stores (name, type) pairs
@@ -157,6 +159,8 @@ impl PostgresDuckdbDestination {
         db_pool: Pool<Postgres>,
         source_pool: Pool<Postgres>,
         pipeline_destination_id: i32,
+        pipeline_id: i32,
+        source_id: i32,
     ) -> Result<Self> {
         Ok(Self {
             name,
@@ -164,6 +168,8 @@ impl PostgresDuckdbDestination {
             db_pool,
             source_pool,
             pipeline_destination_id,
+            pipeline_id,
+            source_id,
             table_cache: Arc::new(Mutex::new(HashMap::new())),
             column_cache: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -646,7 +652,6 @@ impl Destination for PostgresDuckdbDestination {
                         }
                     } else {
                         // Execute as-is (e.g., if user provides CREATE TABLE or other DDL)
-                        info!("Executing custom SQL: {}", safe_custom_sql);
                         if let Err(e) = conn.execute_batch(safe_custom_sql) {
                             return Err(etl_error!(
                                 ErrorKind::Unknown,
@@ -931,6 +936,30 @@ impl Destination for PostgresDuckdbDestination {
             }
                 Ok(())
             })();
+
+            if result.is_ok() {
+                let record_count = (data.upsert_events.len() + data.delete_events.len()) as i64;
+                let now = chrono::Utc::now()
+                    .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+
+                if let Err(e) = sqlx::query(
+                    "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                )
+                .bind(self.pipeline_id)
+                .bind(self.source_id)
+                .bind(&data.table_name)
+                .bind(record_count)
+                .bind(now)
+                .bind(now)
+                .execute(&db_pool)
+                .await
+                {
+                    error!(
+                        "Failed to insert monitoring record for {}: {}",
+                        data.table_name, e
+                    );
+                }
+            }
 
             if let Some(sid) = data.sync_id {
                 let pool = db_pool.clone();
