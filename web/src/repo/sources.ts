@@ -38,10 +38,6 @@ export interface SourceListResponse {
 export interface SourceTableInfo {
     id: number
     table_name: string
-    is_exists_table_landing: boolean
-    is_exists_task: boolean
-    is_exists_table_destination: boolean
-    is_exists_stream: boolean
     version: number
     schema_table?: SchemaColumn[]
 }

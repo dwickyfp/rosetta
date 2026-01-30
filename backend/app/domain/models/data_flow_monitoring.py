@@ -9,6 +9,8 @@ class DataFlowRecordMonitoring(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     pipeline_id = Column(Integer, ForeignKey("pipelines.id", ondelete="CASCADE"), nullable=False)
+    pipeline_destination_id = Column(Integer, ForeignKey("pipelines_destination.id", ondelete="CASCADE"), nullable=True)
+    pipeline_destination_table_sync_id = Column(Integer, ForeignKey("pipelines_destination_table_sync.id", ondelete="CASCADE"), nullable=True)
     source_id = Column(Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
     table_name = Column(String(255), nullable=False)
     record_count = Column(BigInteger, nullable=False)
@@ -18,3 +20,5 @@ class DataFlowRecordMonitoring(Base):
     # Relationships
     pipeline = relationship("Pipeline", back_populates="data_flow_records")
     source = relationship("Source", back_populates="data_flow_records")
+    pipeline_destination = relationship("PipelineDestination")
+    table_sync = relationship("PipelineDestinationTableSync")

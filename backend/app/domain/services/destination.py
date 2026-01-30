@@ -145,6 +145,38 @@ class DestinationService:
             "Destination deleted successfully", extra={"destination_id": destination_id}
         )
 
+    def duplicate_destination(self, destination_id: int) -> Destination:
+        """
+        Duplicate destination.
+
+        Args:
+            destination_id: Destination identifier
+
+        Returns:
+            New destination
+        """
+        logger.info("Duplicating destination", extra={"destination_id": destination_id})
+
+        original_destination = self.get_destination(destination_id)
+        
+        # Create new name
+        base_name = original_destination.name
+        new_name = f"{base_name}_1"
+        counter = 1
+        
+        while self.get_destination_by_name(new_name):
+            counter += 1
+            new_name = f"{base_name}-{counter}"
+        
+        # Create new destination data
+        destination_data = DestinationCreate(
+            name=new_name,
+            type=original_destination.type,
+            config=original_destination.config,
+        )
+
+        return self.create_destination(destination_data)
+
     def test_connection(self, config: DestinationCreate) -> bool:
         """
         Test Snowflake connection for a destination configuration.

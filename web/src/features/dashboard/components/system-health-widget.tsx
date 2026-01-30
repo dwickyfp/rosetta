@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { GlassCard, GlassCardContent, GlassCardHeader, GlassCardTitle } from "./glass-card"
 import { Activity, Database, Server } from "lucide-react"
 import { api } from "@/repo/client"
 
@@ -27,23 +27,23 @@ export function SystemHealthWidget() {
   })
 
   const StatusIndicator = ({ healthy }: { healthy?: boolean }) => (
-    <div className={`h-3 w-3 rounded-full ${healthy ? "bg-green-500" : "bg-red-500"} ring-2 ring-white dark:ring-slate-950`} />
+    <div className={`h-3 w-3 rounded-full ${healthy ? "bg-emerald-500 box-shadow-emerald" : "bg-rose-500 box-shadow-rose"} ring-2 ring-white/10`} />
   )
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">System Status</CardTitle>
+    <GlassCard>
+      <GlassCardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <GlassCardTitle className="text-sm font-medium">System Status</GlassCardTitle>
         <Activity className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
+      </GlassCardHeader>
+      <GlassCardContent>
         {isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading status...</div>
+          <div className="text-sm text-muted-foreground pt-4">Loading status...</div>
         ) : isError || !data ? (
-          <div className="text-sm text-red-500">Failed to fetch status</div>
+          <div className="text-sm text-rose-500 pt-4">Failed to fetch status</div>
         ) : (
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
+          <div className="space-y-4 pt-4">
+            <div className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors">
               <div className="flex items-center space-x-2">
                 <Database className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Postgres Core</span>
@@ -51,7 +51,7 @@ export function SystemHealthWidget() {
               <StatusIndicator healthy={data.checks.database} />
             </div>
             
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors">
               <div className="flex items-center space-x-2">
                 <Server className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Redis Cache</span>
@@ -59,15 +59,15 @@ export function SystemHealthWidget() {
               <StatusIndicator healthy={data.checks.redis} />
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pt-2 px-2 border-t border-white/5">
                <div className="flex items-center space-x-2">
-                 <div className="h-4 w-4" /> {/* Spacer */}
-                 <span className="text-xs text-muted-foreground">Version: {data.version}</span>
+                 <span className="text-xs text-muted-foreground font-mono">v{data.version}</span>
                </div>
+               <span className="text-xs text-muted-foreground">{new Date(data.timestamp).toLocaleTimeString()}</span>
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </GlassCardContent>
+    </GlassCard>
   )
 }

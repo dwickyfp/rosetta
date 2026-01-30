@@ -166,3 +166,28 @@ async def test_connection(
     except Exception as e:
         # Return error message to client
         return {"message": f"Connection failed: {str(e)}", "error": True}
+
+
+@router.post(
+    "/{destination_id}/duplicate",
+    response_model=DestinationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplicate destination",
+    description="Duplicate an existing destination configuration",
+)
+async def duplicate_destination(
+    destination_id: int,
+    service: DestinationService = Depends(get_destination_service),
+) -> DestinationResponse:
+    """
+    Duplicate destination.
+
+    Args:
+        destination_id: Destination identifier
+        service: Destination service instance
+
+    Returns:
+        New destination
+    """
+    destination = service.duplicate_destination(destination_id)
+    return DestinationResponse.from_orm(destination)

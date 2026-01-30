@@ -23,6 +23,7 @@ dependencies = [
     "deepdiff==8.6.1",
     "snowflake-connector-python==4.0.0",
     "redis>=7.1.0",
+    "psutil>=7.2.2",
 ]
 
 [dependency-groups]

@@ -62,7 +62,8 @@ export function WALMonitorList() {
                         key={monitor.id}
                         className={cn(
                             'flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors',
-                            getBorderColor(monitor.wal_threshold_status)
+                            getBorderColor(monitor.wal_threshold_status),
+                            (monitor.wal_threshold_status === 'ERROR' || monitor.status === 'ERROR') && "animate-pulse bg-red-500/5"
                         )}
                     >
                         <div className='flex items-center gap-3'>

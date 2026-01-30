@@ -1,6 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Sheet,
   SheetClose,
@@ -30,14 +31,12 @@ import {
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { sourcesRepo } from '@/repo/sources'
-import { destinationsRepo } from '@/repo/destinations'
 import { toast } from 'sonner'
 import { useEffect } from 'react'
 
 const formSchema = z.object({
   name: z.string().min(1, 'Name is required').regex(/^[a-z0-9-_]+$/, 'Name must be alphanumeric, hyphen, or underscore'),
   source_id: z.string().min(1, 'Source is required'),
-  destination_id: z.string().min(1, 'Destination is required'),
 })
 
 interface PipelineCreateDrawerProps {
@@ -52,14 +51,13 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
     defaultValues: {
       name: '',
       source_id: '',
-      destination_id: '',
     },
   })
 
   // Fetch sources, destinations, and existing pipelines for validation
   const { data: sources } = useQuery({ queryKey: ['sources'], queryFn: sourcesRepo.getAll })
-  const { data: destinations } = useQuery({ queryKey: ['destinations'], queryFn: destinationsRepo.getAll })
   const { data: pipelines } = useQuery({ queryKey: ['pipelines'], queryFn: pipelinesRepo.getAll })
+  const navigate = useNavigate()
 
   const usedSourceIds = new Set(pipelines?.pipelines.map((p) => p.source_id))
 
@@ -68,13 +66,13 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
         pipelinesRepo.create({
             name: values.name,
             source_id: parseInt(values.source_id),
-            destination_id: parseInt(values.destination_id),
         }),
-    onSuccess: async () => {
+    onSuccess: async (data) => {
         await queryClient.invalidateQueries({ queryKey: ['pipelines'] })
         setOpen(false)
         form.reset()
         toast.success('Pipeline created successfully')
+        navigate({ to: '/pipelines/$pipelineId/flow', params: { pipelineId: data.id.toString() } })
     },
     onError: (error: any) => {
         toast.error(error.response?.data?.message || 'Failed to create pipeline')
@@ -116,6 +114,7 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name='source_id'
@@ -136,30 +135,6 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
                             disabled={usedSourceIds.has(source.id)}
                           >
                             {source.name} {usedSourceIds.has(source.id) && '(Already Used)'}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name='destination_id'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Destination</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder='Select a destination' />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {destinations?.destinations.map((dest) => (
-                          <SelectItem key={dest.id} value={dest.id.toString()}>
-                            {dest.name}
                           </SelectItem>
                         ))}
                       </SelectContent>

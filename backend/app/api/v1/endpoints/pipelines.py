@@ -43,9 +43,69 @@ async def create_pipeline(
         Created pipeline with source and destination details
     """
     pipeline = service.create_pipeline(pipeline_data)
-    background_tasks.add_task(service.initialize_pipeline, pipeline.id)
+    # background_tasks.add_task(service.initialize_pipeline, pipeline.id)
     return PipelineResponse.from_orm(pipeline)
 
+
+@router.post(
+    "/{pipeline_id}/destinations",
+    response_model=PipelineResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add destination to pipeline",
+    description="Add a destination to an existing pipeline",
+)
+async def add_pipeline_destination(
+    pipeline_id: int,
+    destination_id: int = Query(..., description="Destination ID to add"),
+    background_tasks: BackgroundTasks = None,
+    service: PipelineService = Depends(get_pipeline_service),
+) -> PipelineResponse:
+    """
+    Add a destination to a pipeline.
+
+    Args:
+        pipeline_id: Pipeline identifier
+        destination_id: Destination identifier
+        service: Pipeline service instance
+
+    Returns:
+        Updated pipeline with new destination
+    """
+    pipeline = service.add_pipeline_destination(pipeline_id, destination_id)
+    
+    # Trigger initialization for the new destination (and others)
+    # Trigger initialization for the new destination (and others)
+    # if background_tasks:
+    #     background_tasks.add_task(service.initialize_pipeline, pipeline.id)
+        
+    return PipelineResponse.from_orm(pipeline)
+
+
+@router.delete(
+    "/{pipeline_id}/destinations/{destination_id}",
+    response_model=PipelineResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Remove destination from pipeline",
+    description="Remove a destination from an existing pipeline",
+)
+async def remove_pipeline_destination(
+    pipeline_id: int,
+    destination_id: int,
+    service: PipelineService = Depends(get_pipeline_service),
+) -> PipelineResponse:
+    """
+    Remove a destination from a pipeline.
+
+    Args:
+        pipeline_id: Pipeline identifier
+        destination_id: Destination identifier
+        service: Pipeline service instance
+
+    Returns:
+        Updated pipeline without the removed destination
+    """
+    pipeline = service.remove_pipeline_destination(pipeline_id, destination_id)
+    return PipelineResponse.from_orm(pipeline)
 
 @router.get(
     "",

@@ -1,10 +1,10 @@
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+  GlassCard,
+  GlassCardContent,
+  GlassCardHeader,
+  GlassCardTitle,
+  GlassCardDescription
+} from './components/glass-card'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -13,6 +13,9 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { WALMonitorList } from './components/wal-monitor-list'
 import { SystemLoadCard } from './components/system-load-card'
 import { SystemHealthWidget } from './components/system-health-widget'
+import { SourceHealthCard } from './components/source-health-card'
+import { TopTablesChart } from './components/top-tables-chart'
+import { ActivityFeed } from './components/activity-feed'
 import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
 import {
@@ -25,8 +28,6 @@ import {
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Legend,
   ResponsiveContainer,
@@ -36,8 +37,6 @@ import {
 } from 'recharts'
 import { cn } from '@/lib/utils'
 
-
-
 export function Dashboard() {
   const { data: summary } = useQuery({
     queryKey: ['dashboard', 'summary'],
@@ -45,15 +44,10 @@ export function Dashboard() {
     refetchInterval: 10000,
   })
 
+  // Keep existing queries for consistency
   const { data: flowChart } = useQuery({
     queryKey: ['dashboard', 'flow-chart'],
     queryFn: () => dashboardRepo.getFlowChart(14),
-    refetchInterval: 60000,
-  })
-
-  const { data: creditChart } = useQuery({
-    queryKey: ['dashboard', 'credit-chart'],
-    queryFn: () => dashboardRepo.getCreditChart(30),
     refetchInterval: 60000,
   })
 
@@ -75,45 +69,47 @@ export function Dashboard() {
         </div>
       </Header>
 
-      <Main>
-        <div className='mb-4 flex items-center justify-between space-y-2'>
-          <h1 className='text-2xl font-bold tracking-tight'>Dashboard</h1>
+      <Main className="bg-gradient-to-br from-background to-muted/20 min-h-screen">
+        <div className='mb-6 flex items-center justify-between space-y-2'>
+          <h1 className='text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60'>
+            Mission Control
+          </h1>
         </div>
 
-        <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-4'>
-          {/* Pipelines Status Card */}
-          <Card>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium'>
+        {/* Top Stats Row */}
+        <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6'>
+          <SourceHealthCard />
+          
+          <GlassCard>
+            <GlassCardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <GlassCardTitle className='text-sm font-medium'>
                 Pipeline Health
-              </CardTitle>
+              </GlassCardTitle>
               <Server className='h-4 w-4 text-muted-foreground' />
-            </CardHeader>
-            <CardContent>
+            </GlassCardHeader>
+            <GlassCardContent>
               <div className='text-2xl font-bold'>
                 {summary?.pipelines?.total || 0}
               </div>
               <div className='mt-1 flex text-xs text-muted-foreground'>
-                <span className='mr-2 text-green-500'>
+                <span className='mr-2 text-emerald-500 font-medium'>
                   {summary?.pipelines?.START || 0} Active
                 </span>
-                <span className='mr-2 text-yellow-500'>
+                <span className='mr-2 text-amber-500 font-medium'>
                   {summary?.pipelines?.PAUSE || 0} Paused
                 </span>
-                {/* Add failed if available in future */}
               </div>
-            </CardContent>
-          </Card>
+            </GlassCardContent>
+          </GlassCard>
 
-          {/* Data Velocity Card */}
-          <Card>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium'>
+          <GlassCard>
+            <GlassCardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <GlassCardTitle className='text-sm font-medium'>
                 Data Velocity
-              </CardTitle>
+              </GlassCardTitle>
               <Activity className='h-4 w-4 text-muted-foreground' />
-            </CardHeader>
-            <CardContent>
+            </GlassCardHeader>
+            <GlassCardContent>
               <div className='text-2xl font-bold'>
                 {summary?.data_flow?.today.toLocaleString() || 0}
               </div>
@@ -122,70 +118,58 @@ export function Dashboard() {
               </p>
               <div className='mt-1 flex items-center text-xs'>
                 {flowTrend > 0 ? (
-                  <TrendingUp className='mr-1 h-3 w-3 text-green-500' />
+                  <TrendingUp className='mr-1 h-3 w-3 text-emerald-500' />
                 ) : (
-                  <TrendingDown className='mr-1 h-3 w-3 text-red-500' />
+                  <TrendingDown className='mr-1 h-3 w-3 text-rose-500' />
                 )}
                 <span
                   className={cn(
-                    flowTrend > 0 ? 'text-green-500' : 'text-red-500'
+                    flowTrend > 0 ? 'text-emerald-500' : 'text-rose-500',
+                    'font-medium ml-1'
                   )}
                 >
                   {Math.abs(flowTrend).toFixed(1)}%
                 </span>
                 <span className='ml-1 text-muted-foreground'>vs yesterday</span>
               </div>
-            </CardContent>
-          </Card>
+            </GlassCardContent>
+          </GlassCard>
 
-          {/* Credit Usage Card */}
-          <Card>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium'>
+          <GlassCard>
+            <GlassCardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+              <GlassCardTitle className='text-sm font-medium'>
                 Est. Cost (Month)
-              </CardTitle>
+              </GlassCardTitle>
               <CreditCard className='h-4 w-4 text-muted-foreground' />
-            </CardHeader>
-            <CardContent>
+            </GlassCardHeader>
+            <GlassCardContent>
               <div className='text-2xl font-bold'>
-                {summary?.credits?.month_total.toFixed(2) || 0}
+                ${summary?.credits?.month_total.toFixed(2) || '0.00'}
               </div>
               <p className='text-xs text-muted-foreground'>Credits used</p>
-            </CardContent>
-          </Card>
-
-          {/* System Load Card */}
-          <SystemLoadCard />
-          
-          {/* System Health Widget */}
-          <SystemHealthWidget />
+            </GlassCardContent>
+          </GlassCard>
         </div>
 
-        {/* Charts Section */}
-        <div className='mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-7'>
-          {/* Main Flow Chart */}
-          <Card className='col-span-4'>
-            <CardHeader>
-              <CardTitle>Data Flow Volume</CardTitle>
-              <CardDescription>
-                Transaction volume over the last 14 days (grouped by pipeline)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='pl-2'>
+        {/* Row 2: Charts Area */}
+        <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-7 mb-6'>
+          {/* Main Flow Chart - Spans 4 cols */}
+          <GlassCard className='col-span-4 h-[400px]'>
+            <GlassCardHeader>
+              <GlassCardTitle>Data Flow Volume</GlassCardTitle>
+              <GlassCardDescription>
+                Transaction volume over the last 14 days
+              </GlassCardDescription>
+            </GlassCardHeader>
+            <GlassCardContent className='pl-2'>
               <div className='h-[300px] w-full'>
                 <ResponsiveContainer width='100%' height={300}>
                   <AreaChart
                     data={flowChart?.history || []}
-                    margin={{
-                      top: 10,
-                      right: 10,
-                      left: 0,
-                      bottom: 0,
-                    }}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                   >
-                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                     <defs>
-                      {/* We can use defined colors or generate them */}
                       <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
                         <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
@@ -210,12 +194,13 @@ export function Dashboard() {
                       tickFormatter={(value) => `${value}`}
                     />
                     <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                        color: '#000',
-                      }}
+                        contentStyle={{
+                          backgroundColor: 'rgba(23, 23, 23, 0.9)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '12px',
+                          color: '#fff',
+                          backdropFilter: 'blur(10px)'
+                        }}
                     />
                     <Legend />
                     {flowChart?.pipelines?.map((pipeline, index) => {
@@ -226,7 +211,7 @@ export function Dashboard() {
                                 key={pipeline}
                                 type='monotone'
                                 dataKey={pipeline}
-                                stackId="1" // Stack them to show total volume visually while separating
+                                stackId="1"
                                 stroke={color}
                                 fill={color}
                              />
@@ -235,77 +220,40 @@ export function Dashboard() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </CardContent>
-          </Card>
+            </GlassCardContent>
+          </GlassCard>
 
-          {/* Credit Usage Bar Chart */}
-          <Card className='col-span-3'>
-            <CardHeader>
-              <CardTitle>Credit Usage</CardTitle>
-              <CardDescription>Daily credit consumption (30d)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className='h-[300px] w-full'>
-                <ResponsiveContainer width='100%' height={300}>
-                  <BarChart data={creditChart?.history || []}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis
-                      dataKey='date'
-                      stroke='#888888'
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => {
-                        const date = new Date(value)
-                        return `${date.getDate()}`
-                      }}
-                    />
-                    <Tooltip
-                      cursor={{ fill: 'transparent' }}
-                      contentStyle={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                        color: '#000',
-                      }}
-                    />
-                    <Legend />
-                    {creditChart?.destinations?.map((dest, index) => {
-                         const colors = ["#0f172a", "#334155", "#475569", "#64748b"];
-                         const color = colors[index % colors.length];
-                         return (
-                            <Bar
-                                key={dest}
-                                dataKey={dest}
-                                stackId="a"
-                                fill={color}
-                                radius={[4, 4, 0, 0]}
-                            />
-                         )
-                    })}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Top Tables - Spans 3 cols (moved here) */}
+          <TopTablesChart />
         </div>
 
-        {/* Existing WAL Monitor Section - nicely integrated */}
-        <div className='mt-4'>
-           <div className='grid grid-cols-1'>
-            <Card>
-              <CardHeader className='flex flex-row items-center justify-between'>
-                 <div>
-                    <CardTitle>WAL Replication Monitor</CardTitle>
-                    <CardDescription>Real-time status of replication slots</CardDescription>
-                 </div>
-                 {/* Optional: Add refresh button or status indicator here */}
-              </CardHeader>
-              <CardContent>
-                 <WALMonitorList />
-              </CardContent>
-            </Card>
+        {/* Row 3: Detail Cards */}
+        <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-7 mb-6'>
+           {/* Activity Feed - Spans 4 cols */}
+           <div className='col-span-4'>
+              <ActivityFeed />
            </div>
+
+           {/* System Stats - Spans 3 cols */}
+           <div className='col-span-3 space-y-6'>
+              <SystemLoadCard />
+              <SystemHealthWidget />
+           </div>
+        </div>
+
+        {/* Existing WAL Monitor Section - Full Width */}
+        <div className='mt-4'>
+            <GlassCard>
+              <GlassCardHeader className='flex flex-row items-center justify-between'>
+                 <div>
+                    <GlassCardTitle>WAL Replication Monitor</GlassCardTitle>
+                    <GlassCardDescription>Real-time status of replication slots</GlassCardDescription>
+                 </div>
+              </GlassCardHeader>
+              <GlassCardContent>
+                 <WALMonitorList />
+              </GlassCardContent>
+            </GlassCard>
         </div>
       </Main>
     </>

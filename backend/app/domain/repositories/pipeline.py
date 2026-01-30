@@ -9,7 +9,7 @@ from typing import List
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineProgress
+from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineProgress, PipelineDestination
 from app.domain.repositories.base import BaseRepository
 
 
@@ -38,9 +38,11 @@ class PipelineRepository(BaseRepository[Pipeline]):
             select(Pipeline)
             .options(
                 selectinload(Pipeline.source),
-                selectinload(Pipeline.destination),
+                selectinload(Pipeline.destinations).selectinload(
+                    PipelineDestination.destination
+                ),
                 selectinload(Pipeline.pipeline_metadata),
-                selectinload(Pipeline.pipeline_progress),
+                # selectinload(Pipeline.pipeline_progress),
             )
             .where(Pipeline.id == pipeline_id)
         )
@@ -68,9 +70,11 @@ class PipelineRepository(BaseRepository[Pipeline]):
             select(Pipeline)
             .options(
                 selectinload(Pipeline.source),
-                selectinload(Pipeline.destination),
+                selectinload(Pipeline.destinations).selectinload(
+                    PipelineDestination.destination
+                ),
                 selectinload(Pipeline.pipeline_metadata),
-                selectinload(Pipeline.pipeline_progress),
+                # selectinload(Pipeline.pipeline_progress),
             )
             .offset(skip)
             .limit(limit)
@@ -116,11 +120,11 @@ class PipelineRepository(BaseRepository[Pipeline]):
         metadata = PipelineMetadata(pipeline_id=pipeline.id, status="RUNNING")
         self.db.add(metadata)
         
-        progress = PipelineProgress(pipeline_id=pipeline.id, status="PENDING")
-        self.db.add(progress)
+        # progress = PipelineProgress(pipeline_id=pipeline.id, status="PENDING")
+        # self.db.add(progress)
 
         self.db.flush()
-        self.db.refresh(pipeline)
+        # self.db.refresh(pipeline)
 
         return pipeline
     def get_by_source_id(self, source_id: int) -> List[Pipeline]:
@@ -135,7 +139,7 @@ class PipelineRepository(BaseRepository[Pipeline]):
         """
         result = self.db.execute(
             select(Pipeline)
-            .options(selectinload(Pipeline.destination))
+            .options(selectinload(Pipeline.destinations))
             .where(Pipeline.source_id == source_id)
         )
         return list(result.scalars().all())

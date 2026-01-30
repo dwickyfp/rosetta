@@ -12,14 +12,20 @@ use tokio::sync::Mutex;
 use tracing::{error, info};
 
 #[derive(Debug, Clone)]
+struct SnowflakeSyncConfig {
+    id: Option<i32>,
+    target_table: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct SnowflakeDestination {
     client: Arc<Mutex<SnowpipeClient>>,
-    current_token: Arc<Mutex<HashMap<TableId, String>>>,
+    current_token: Arc<Mutex<HashMap<String, String>>>, // Key is Target Table Name
     pg_pool: Pool<Postgres>,
     metadata_pool: Pool<Postgres>,
     pipeline_id: i32,
+    pipeline_destination_id: i32,
     source_id: i32,
-    table_cache: Arc<Mutex<HashMap<TableId, String>>>,
     real_table_cache: Arc<Mutex<HashMap<TableId, String>>>,
     column_cache: Arc<Mutex<HashMap<TableId, Vec<String>>>>,
 }
@@ -110,6 +116,7 @@ impl SnowflakeDestination {
         pg_pool: Pool<Postgres>,
         metadata_pool: Pool<Postgres>,
         pipeline_id: i32,
+        pipeline_destination_id: i32,
         source_id: i32,
     ) -> EtlResult<Self> {
         // Init client (akan hitung fingerprint di sini)
@@ -122,45 +129,14 @@ impl SnowflakeDestination {
             pg_pool,
             metadata_pool,
             pipeline_id,
+            pipeline_destination_id,
             source_id,
-            table_cache: Arc::new(Mutex::new(HashMap::new())),
             real_table_cache: Arc::new(Mutex::new(HashMap::new())),
             column_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    async fn resolve_table_name(&self, table_id: TableId) -> String {
-        let mut cache = self.table_cache.lock().await;
-        if let Some(name) = cache.get(&table_id) {
-            return name.clone();
-        }
 
-        // Query Postgres for table name
-        let query = "SELECT cast($1::regclass as text)";
-        let row: Option<String> = sqlx::query_scalar(query)
-            .bind(table_id.0 as i32)
-            .fetch_optional(&self.pg_pool)
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to query table name for TableId {}: {}", table_id, e);
-                None
-            });
-
-        let table_name = if let Some(raw_name) = row {
-            // Handle schema.table format if present, usually regclass returns just name if in search path,
-            // or schema.name if not. We just want the name part for now, or full?
-            // User req: LANDING_<TABLE_NAME_UPPER>
-            // Let's assume we strip schema if present for simplicity or take full.
-            // Usually just taking the last part is safer if we want a flat structure.
-            let name_part = raw_name.split('.').last().unwrap_or(&raw_name);
-            format!("LANDING_{}", name_part.to_uppercase())
-        } else {
-            format!("LANDING_UNKNOWN_{}", table_id)
-        };
-
-        cache.insert(table_id, table_name.clone());
-        table_name
-    }
 
     async fn resolve_real_table_name(&self, table_id: TableId) -> String {
         let mut cache = self.real_table_cache.lock().await;
@@ -217,6 +193,39 @@ impl SnowflakeDestination {
         cache.insert(table_id, column_names.clone());
         column_names
     }
+    pub async fn check_connection(&self) -> EtlResult<()> {
+        // Check metadata pool connectivity as a proxy for health
+        sqlx::query("SELECT 1")
+            .execute(&self.metadata_pool)
+            .await
+            .map(|_| ())
+            .map_err(|e| etl::etl_error!(etl::error::ErrorKind::Unknown, "Metadata pool check failed: {}", e))
+    }
+
+    async fn resolve_syncs(&self, source_table_name: &str) -> Vec<SnowflakeSyncConfig> {
+        let query = "SELECT id, table_name_target FROM pipelines_destination_table_sync WHERE pipeline_destination_id = $1 AND table_name = $2";
+        let rows: Vec<(i32, String)> = sqlx::query_as(query)
+            .bind(self.pipeline_destination_id)
+            .bind(source_table_name)
+            .fetch_all(&self.metadata_pool)
+            .await
+            .unwrap_or_else(|e| {
+                error!("Failed to resolve syncs for source table {}: {}", source_table_name, e);
+                vec![]
+            });
+
+        if rows.is_empty() {
+             vec![]
+        } else {
+            rows.into_iter().map(|(id, target)| {
+                let mut upper_target = target.to_uppercase();
+                if !upper_target.starts_with("LANDING_") {
+                    upper_target = format!("LANDING_{}", upper_target);
+                }
+                SnowflakeSyncConfig { id: Some(id), target_table: upper_target }
+            }).collect()
+        }
+    }
 }
 
 impl Destination for SnowflakeDestination {
@@ -234,61 +243,94 @@ impl Destination for SnowflakeDestination {
             return Ok(());
         }
 
-        let table_name = self.resolve_table_name(table_id).await;
+        // Resolve Source Table Name first
+        let real_source_table_name = self.resolve_real_table_name(table_id).await;
+        // Resolve all destination syncs for this source table
+        let syncs = self.resolve_syncs(&real_source_table_name).await;
+
         let column_names = self.resolve_column_names(table_id).await;
-
-        let mut client = self.client.lock().await;
-        let mut tokens = self.current_token.lock().await;
-
-        let token = tokens.entry(table_id).or_insert_with(String::new);
-
-        if token.is_empty() {
-            *token = client
-                .open_channel(&table_name, "default")
-                .await
-                .map_err(|e| {
-                    error!("Open channel failed for {}: {}", table_name, e);
-                    etl_error!(ErrorKind::Unknown, "Open channel failed: {}", e)
-                })?;
-        }
-
+        
+        // Convert rows to JSON once (assuming same schema for all targets for now)
+        // If we support custom mappings later, this might need to move inside the loop
         let json_rows: Vec<Value> = rows
             .iter()
             .map(|r| row_to_json_object(r, &column_names, "C"))
             .collect();
 
-        let next_token = client
-            .insert_rows(&table_name, "default", json_rows, Some(token.clone()))
+        // Lock client once? No, locking inside loop is safer if client methods hold lock long?
+        // Actually client needs to be locked to call insert_rows.
+        // Let's lock outside loop if possible, or lock short duration inside.
+        // The implementation below locks inside to avoid holding lock across network calls if insert_rows is async slow
+        // But wait, insert_rows IS async. Holding lock across await is bad if Mutex is std::sync::Mutex (not allowed), 
+        // but here it is tokio::sync::Mutex, so it's allowed.
+        // However, better to minimize scope.
+        
+        for sync in syncs {
+            let target_table_name = sync.target_table;
+            let sync_id = sync.id;
+
+            let mut client = self.client.lock().await;
+            let mut tokens = self.current_token.lock().await;
+
+            // Use target_table_name as key for token cache
+            let token = tokens.entry(target_table_name.clone()).or_insert_with(String::new);
+
+            if token.is_empty() {
+                *token = client
+                    .open_channel(&target_table_name, "default")
+                    .await
+                    .map_err(|e| {
+                        error!("Open channel failed for {}: {}", target_table_name, e);
+                        etl_error!(ErrorKind::Unknown, "Open channel failed: {}", e)
+                    })?;
+            }
+
+            // We must clone json_rows if we use it multiple times, or serialize per loop
+            // Since Value is Clone, we can clone the Vec. 
+            // Optimization: if only 1 sync, don't clone? For now, clone is safe.
+            let rows_for_insert = json_rows.clone();
+
+            let next_token = client
+                .insert_rows(&target_table_name, "default", rows_for_insert, Some(token.clone()))
+                .await
+                .map_err(|e| {
+                    error!("Insert rows failed for {}: {}", target_table_name, e);
+                    etl_error!(ErrorKind::Unknown, "Write rows failed: {}", e)
+                })?;
+
+            *token = next_token;
+            
+            // Drop locks before db update to allow other threads??
+            // Inserting rows is the heavy part.
+            drop(client);
+            drop(tokens);
+
+            // Monitor data flow
+            let record_count = rows.len() as i64;
+            let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+
+            if let Err(e) = sqlx::query(
+                "INSERT INTO data_flow_record_monitoring (pipeline_id, pipeline_destination_id, source_id, table_name, record_count, created_at, updated_at, pipeline_destination_table_sync_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            )
+            .bind(self.pipeline_id)
+            .bind(self.pipeline_destination_id)
+            .bind(self.source_id)
+            .bind(&real_source_table_name) // Log under SOURCE name
+            .bind(record_count)
+            .bind(now)
+            .bind(now)
+            .bind(sync_id)
+            .execute(&self.metadata_pool)
             .await
-            .map_err(|e| {
-                error!("Insert rows failed for {}: {}", table_name, e);
-                etl_error!(ErrorKind::Unknown, "Write rows failed: {}", e)
-            })?;
-
-        *token = next_token;
-
-        // Monitor data flow
-        let record_count = rows.len() as i64;
-        let real_table_name = self.resolve_real_table_name(table_id).await;
-        let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
-
-        if let Err(e) = sqlx::query(
-            "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
-        )
-        .bind(self.pipeline_id)
-        .bind(self.source_id)
-        .bind(&real_table_name)
-        .bind(record_count)
-        .bind(now)
-        .bind(now)
-        .execute(&self.metadata_pool)
-        .await
-        {
-            error!("Failed to insert monitoring record for {}: {}", real_table_name, e);
+            {
+                error!("Failed to insert monitoring record for {}: {}", real_source_table_name, e);
+            }
         }
 
         Ok(())
     }
+
+
 
     async fn write_events(&self, events: Vec<Event>) -> EtlResult<()> {
         if events.is_empty() {
@@ -311,23 +353,10 @@ impl Destination for SnowflakeDestination {
         }
 
         for (table_id, events) in events_by_table {
-            let table_name = self.resolve_table_name(table_id).await;
+            let real_source_table_name = self.resolve_real_table_name(table_id).await;
+            let syncs = self.resolve_syncs(&real_source_table_name).await;
+            
             let column_names = self.resolve_column_names(table_id).await;
-
-            let mut client = self.client.lock().await;
-            let mut tokens = self.current_token.lock().await;
-
-            let token = tokens.entry(table_id).or_insert_with(String::new);
-
-            if token.is_empty() {
-                *token = client
-                    .open_channel(&table_name, "default")
-                    .await
-                    .map_err(|e| {
-                        error!("Open channel failed for {}: {}", table_name, e);
-                        etl_error!(ErrorKind::Unknown, "Open channel failed: {}", e)
-                    })?;
-            }
 
             let record_count = events.len() as i64;
             let mut json_rows = Vec::new();
@@ -351,35 +380,63 @@ impl Destination for SnowflakeDestination {
                     json_rows.push(obj);
                 }
             }
-
+            
             if !json_rows.is_empty() {
-                let next_token = client
-                    .insert_rows(&table_name, "default", json_rows, Some(token.clone()))
+                 
+                 for sync in syncs {
+                    let target_table_name = sync.target_table;
+                    let sync_id = sync.id;
+
+                    let mut client = self.client.lock().await;
+                    let mut tokens = self.current_token.lock().await;
+
+                    // Use target_table_name as key
+                    let token = tokens.entry(target_table_name.clone()).or_insert_with(String::new);
+
+                    if token.is_empty() {
+                        *token = client
+                            .open_channel(&target_table_name, "default")
+                            .await
+                            .map_err(|e| {
+                                error!("Open channel failed for {}: {}", target_table_name, e);
+                                etl_error!(ErrorKind::Unknown, "Open channel failed: {}", e)
+                            })?;
+                    }
+                    
+                    let rows_for_insert = json_rows.clone();
+
+                    let next_token = client
+                        .insert_rows(&target_table_name, "default", rows_for_insert, Some(token.clone()))
+                        .await
+                        .map_err(|e| {
+                            error!("Insert events failed for {}: {}", target_table_name, e);
+                            etl_error!(ErrorKind::Unknown, "Write events failed: {}", e)
+                        })?;
+                    *token = next_token;
+                    
+                    drop(client);
+                    drop(tokens);
+
+                    // Monitor data flow
+                    let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+
+                    if let Err(e) = sqlx::query(
+                        "INSERT INTO data_flow_record_monitoring (pipeline_id, pipeline_destination_id, source_id, table_name, record_count, created_at, updated_at, pipeline_destination_table_sync_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    )
+                    .bind(self.pipeline_id)
+                    .bind(self.pipeline_destination_id)
+                    .bind(self.source_id)
+                    .bind(&real_source_table_name)
+                    .bind(record_count)
+                    .bind(now)
+                    .bind(now)
+                    .bind(sync_id)
+                    .execute(&self.metadata_pool)
                     .await
-                    .map_err(|e| {
-                        error!("Insert events failed for {}: {}", table_name, e);
-                        etl_error!(ErrorKind::Unknown, "Write events failed: {}", e)
-                    })?;
-                *token = next_token;
-
-                // Monitor data flow
-                let real_table_name = self.resolve_real_table_name(table_id).await;
-                let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
-
-                if let Err(e) = sqlx::query(
-                    "INSERT INTO data_flow_record_monitoring (pipeline_id, source_id, table_name, record_count, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
-                )
-                .bind(self.pipeline_id)
-                .bind(self.source_id)
-                .bind(&real_table_name)
-                .bind(record_count)
-                .bind(now)
-                .bind(now)
-                .execute(&self.metadata_pool)
-                .await
-                {
-                    error!("Failed to insert monitoring record for {}: {}", real_table_name, e);
-                }
+                    {
+                        error!("Failed to insert monitoring record for {}: {}", real_source_table_name, e);
+                    }
+                 }
             }
         }
 

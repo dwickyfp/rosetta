@@ -14,10 +14,24 @@ from app.domain.models import SystemMetric # Assuming the model exists or will b
 # Wait, `app.domain.models` is a likely place.
 
 from app.domain.models.system_metric import SystemMetric
+from app.domain.schemas.system_metric import SystemMetricCreate
 
 class SystemMetricRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    def create(self, obj_in: SystemMetricCreate) -> SystemMetric:
+        db_obj = SystemMetric(
+            cpu_usage=obj_in.cpu_usage,
+            total_memory=obj_in.total_memory,
+            used_memory=obj_in.used_memory,
+            total_swap=obj_in.total_swap,
+            used_swap=obj_in.used_swap,
+        )
+        self.db.add(db_obj)
+        self.db.commit()
+        self.db.refresh(db_obj)
+        return db_obj
 
     def get_latest(self) -> Optional[SystemMetric]:
         return (

@@ -31,18 +31,6 @@ class TableMetadata(Base):
     table_name: Mapped[str] = mapped_column(String(255), nullable=True)
     schema_table: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     
-    is_exists_table_landing: Mapped[bool] = mapped_column(
-        Boolean, default=False, comment="Table exists in landing (Snowflake)"
-    )
-    is_exists_stream: Mapped[bool] = mapped_column(
-        Boolean, default=False, comment="Stream exists in Snowflake"
-    )
-    is_exists_task: Mapped[bool] = mapped_column(
-        Boolean, default=False, comment="Task exists in Snowflake"
-    )
-    is_exists_table_destination: Mapped[bool] = mapped_column(
-        Boolean, default=False, comment="Table exists in destination (Snowflake)"
-    )
     is_changes_schema: Mapped[bool] = mapped_column(
         Boolean, default=False, comment="Whether schema changes were detected"
     )

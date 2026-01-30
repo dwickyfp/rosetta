@@ -113,6 +113,24 @@ class BackgroundScheduler:
         except Exception as e:
             logger.error("Error running table list refresh task", extra={"error": str(e)})
 
+    def _run_system_metric_collection(self) -> None:
+        """
+        Synchronous wrapper for system metric collection task.
+        """
+        try:
+            from app.core.database import db_manager
+            from app.domain.services.system_metric import SystemMetricService
+
+            session_factory = db_manager.session_factory
+            db = session_factory()
+            try:
+                service = SystemMetricService(db)
+                service.collect_and_save_metrics()
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error("Error running system metric collection task", extra={"error": str(e)})
+
     def start(self) -> None:
         """
         Start the background scheduler.
@@ -213,7 +231,20 @@ class BackgroundScheduler:
             coalesce=True,
         )
 
-        logger.info("Replication, Credit and Table Refresh monitoring scheduled")
+        # Schedule System Metric Collection (every 5 seconds)
+        self.scheduler.add_job(
+            self._run_system_metric_collection,
+            trigger=IntervalTrigger(
+                seconds=5
+            ),
+            id="system_metric_collection",
+            name="System Metric Collection",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+
+        logger.info("Replication, Credit, Table Refresh, and System Metrics monitoring scheduled")
 
         # Start scheduler
         self.scheduler.start()

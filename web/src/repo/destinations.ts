@@ -59,5 +59,9 @@ export const destinationsRepo = {
     testConnection: async (destination: DestinationCreate) => {
         const { data } = await api.post<{ message: string, error?: boolean }>('/destinations/test-connection', destination)
         return data
+    },
+    duplicate: async (id: number) => {
+        const { data } = await api.post<Destination>(`/destinations/${id}/duplicate`)
+        return data
     }
 }

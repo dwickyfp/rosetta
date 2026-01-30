@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { GlassCard, GlassCardContent, GlassCardHeader, GlassCardTitle } from './glass-card'
 import { cn, formatBytes } from '@/lib/utils'
 import { Activity, Cpu, Zap } from 'lucide-react'
 import { systemMetricsRepo } from '@/repo/system-metrics'
@@ -34,7 +34,7 @@ function CircularProgress({
           stroke='currentColor'
           strokeWidth={strokeWidth}
           fill='transparent'
-          className='text-muted/20'
+          className='text-white/10'
         />
         <circle
           cx={size / 2}
@@ -70,9 +70,11 @@ function MetricItem({
   details?: React.ReactNode
 }) {
   return (
-    <div className='flex items-center justify-between p-1 py-0 rounded-lg hover:bg-muted/50 transition-colors'>
+    <div className='flex items-center justify-between p-1 py-0 rounded-lg hover:bg-white/5 transition-colors'>
       <div className='flex items-center gap-3'>
-        <div className={cn('p-2 rounded-full bg-opacity-10', color.replace('text-', 'bg-'))}>
+        <div className={cn('p-2 rounded-full bg-opacity-10', color.replace('text-', 'bg-'), 
+             (color.includes('rose') || color.includes('red')) && "animate-pulse"
+        )}>
           <Icon className={cn('w-4 h-4', color)} />
         </div>
         <div className='flex flex-col'>
@@ -110,18 +112,18 @@ export function SystemLoadCard() {
     : { val: 0, color: 'text-muted-foreground' }
 
   return (
-    <Card className='overflow-hidden bg-gradient-to-br from-card to-card/50'>
-      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2 border-b border-border/50 bg-muted/20'>
-        <CardTitle className='text-sm font-semibold flex items-center gap-2'>
+    <GlassCard className='overflow-hidden'>
+      <GlassCardHeader className='flex flex-row items-center justify-between space-y-0 pb-2 border-b border-white/5 bg-white/5'>
+        <GlassCardTitle className='text-sm font-semibold flex items-center gap-2'>
           <Activity className='w-4 h-4 text-primary' />
           System Load
-        </CardTitle>
+        </GlassCardTitle>
         <div className='flex items-center space-x-1'>
             <div className='w-2 h-2 rounded-full bg-emerald-500 animate-pulse' />
             <span className='text-[10px] text-muted-foreground font-medium uppercase tracking-wider'>Live</span>
         </div>
-      </CardHeader>
-      <CardContent className='p-2 pt-0 grid gap-1'>
+      </GlassCardHeader>
+      <GlassCardContent className='p-2 pt-4 grid gap-4'>
         <MetricItem
           label="CPU Usage"
           value={cpuParams.val}
@@ -137,7 +139,7 @@ export function SystemLoadCard() {
           label="Memory"
           value={memParams.val}
           color={memParams.color}
-          icon={Zap} // Using Zap as a generic power/active icon, or hardcode something else
+          icon={Zap} // Using Zap as a generic power/active icon
           details={
             <div className='flex gap-1'>
                <span>{formatBytes(metrics?.used_memory || 0)}</span>
@@ -146,7 +148,7 @@ export function SystemLoadCard() {
             </div>
           }
         />
-      </CardContent>
-    </Card>
+      </GlassCardContent>
+    </GlassCard>
   )
 }

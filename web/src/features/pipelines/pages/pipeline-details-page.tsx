@@ -8,9 +8,11 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PipelineDetailsTable } from '@/features/pipelines/components/pipeline-details-table'
+import { PipelineFlowTab } from '@/features/pipelines/components/pipeline-flow-tab'
+import { PipelineDataFlow } from '@/features/pipelines/components/pipeline-data-flow'
 import { Button } from '@/components/ui/button'
-import { RefreshCcw } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { RefreshCcw, GitBranch, Table2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -24,28 +26,14 @@ import {
 } from '@/components/ui/breadcrumb'
 
 export default function PipelineDetailsPage() {
-    // Correctly accessing params using the route ID from routeTree.gen.ts
     const { pipelineId } = useParams({ from: '/_authenticated/pipelines/$pipelineId' })
     const id = parseInt(pipelineId)
     const [isRefreshing, setIsRefreshing] = useState(false)
 
-    // 1. Fetch Pipeline to get source_id
+    // 1. Fetch Pipeline
     const { data: pipeline, isLoading: isPipelineLoading, error: pipelineError } = useQuery({
         queryKey: ['pipeline', id],
         queryFn: async () => {
-            // We might need a direct get endpoint or filter from list if get isn't available
-            // Assuming pipelinesRepo has a get or we can implement it.
-            // If strictly following existing repo, we might need to use getAll and find?
-            // Let's check pipelinesRepo again. It has pipelinesRepo.getAll but usually we need get one.
-            // Wait, I recall seeing get_pipeline in backend but checking repo file again is safer.
-            // For now assuming we can add or it exists.
-            // Actually, the backend HAS get_pipeline. I should verify if frontend repo has it.
-            // If not, I'll add it to the repo file in next step or now?
-            // I'll assume I can add it if missing.
-            // But to be safe, I'll check repo content in previous turns...
-            // Previous turns show pipelinesRepo has: getAll, create, delete, start, pause.
-            // It does NOT have get(id). I need to add it.
-            // For now I will write this component assuming I will update repo.
             return (await pipelinesRepo.get(id))
         },
         retry: false
@@ -62,9 +50,6 @@ export default function PipelineDetailsPage() {
         if (!pipeline) return
         setIsRefreshing(true)
         try {
-            // Maybe refresh pipeline status too?
-            // await pipelinesRepo.refresh(id) 
-            // Backend has refresh_pipeline endpoint.
             await pipelinesRepo.refresh(id)
             await sourcesRepo.refreshSource(pipeline.source_id)
             toast.success("Pipeline and Source refreshed")
@@ -81,6 +66,14 @@ export default function PipelineDetailsPage() {
     }
 
     const isLoading = isPipelineLoading || (!!pipeline && isSourceLoading)
+
+    // Build destinations summary for header
+    const destinationNames = pipeline?.destinations?.map(d => d.destination?.name).filter(Boolean) || []
+    const destinationsSummary = destinationNames.length > 0 
+        ? destinationNames.length === 1 
+            ? destinationNames[0] 
+            : `${destinationNames.length} destinations`
+        : 'No destinations'
 
     return (
         <>
@@ -106,6 +99,8 @@ export default function PipelineDetailsPage() {
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb>
+
+                {/* Header Section */}
                 <div className="flex items-center gap-4">
                     <div className="space-y-1">
                         <h2 className='text-2xl font-bold tracking-tight'>
@@ -116,7 +111,7 @@ export default function PipelineDetailsPage() {
                                 <>
                                     <span>{pipeline?.source?.name}</span>
                                     <span>→</span>
-                                    <span>{pipeline?.destination?.name}</span>
+                                    <span>{destinationsSummary}</span>
                                 </>
                             )}
                         </div>
@@ -133,22 +128,51 @@ export default function PipelineDetailsPage() {
                         </Button>
                     </div>
                 </div>
-                <div>
-                    {isLoading ? (
-                        <div className="space-y-2">
-                            <Skeleton className="h-10 w-full" />
-                            <Skeleton className="h-10 w-full" />
-                            <Skeleton className="h-10 w-full" />
-                        </div>
-                    ) : sourceDetails ? (
-                        <PipelineDetailsTable
-                            pipelineId={pipeline!.id}
-                            tables={sourceDetails.tables}
-                        />
-                    ) : (
-                        <div className="p-4 text-muted-foreground">No source details available.</div>
-                    )}
-                </div>
+
+                {/* Tabbed Content */}
+                <Tabs defaultValue="flow-destination" className="flex-1">
+                    <TabsList>
+                        <TabsTrigger value="flow-destination">
+                            <GitBranch className="h-4 w-4 mr-2" />
+                            Flow Destination
+                        </TabsTrigger>
+                        <TabsTrigger value="flow-data">
+                            <Table2 className="h-4 w-4 mr-2" />
+                            Flow Data
+                        </TabsTrigger>
+                    </TabsList>
+
+                    {/* Flow Destination Tab */}
+                    <TabsContent value="flow-destination" className="mt-4">
+                        {isPipelineLoading ? (
+                            <div className="h-[500px] flex items-center justify-center">
+                                <Skeleton className="h-full w-full rounded-lg" />
+                            </div>
+                        ) : pipeline ? (
+                            <PipelineFlowTab pipeline={pipeline} />
+                        ) : (
+                            <div className="p-4 text-muted-foreground">Pipeline not found.</div>
+                        )}
+                    </TabsContent>
+
+                    {/* Flow Data Tab */}
+                    <TabsContent value="flow-data" className="mt-4">
+                        {isLoading ? (
+                            <div className="space-y-2">
+                                <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
+                            </div>
+                        ) : sourceDetails && pipeline ? (
+                            <PipelineDataFlow
+                                pipeline={pipeline}
+                                sourceDetails={sourceDetails}
+                            />
+                        ) : (
+                            <div className="p-4 text-muted-foreground">No source details available.</div>
+                        )}
+                    </TabsContent>
+                </Tabs>
             </Main>
         </>
     )

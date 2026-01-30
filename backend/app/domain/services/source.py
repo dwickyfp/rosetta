@@ -289,10 +289,6 @@ class SourceService:
                 SourceTableInfo(
                     id=table.id,
                     table_name=table.table_name or "Unknown",
-                    is_exists_table_landing=table.is_exists_table_landing,
-                    is_exists_stream=table.is_exists_stream,
-                    is_exists_task=table.is_exists_task,
-                    is_exists_table_destination=table.is_exists_table_destination,
                     version=version,
                     schema_table=list(table.schema_table.values()) if isinstance(table.schema_table, dict) else (table.schema_table if isinstance(table.schema_table, list) else [])
                 )
@@ -302,10 +298,12 @@ class SourceService:
         pipeline_repo = PipelineRepository(self.db)
         pipelines = pipeline_repo.get_by_source_id(source_id)
         
-        # Extract unique destination names
+        # Extract unique destination names from all pipelines' destinations
         destination_names = list(set(
-            p.destination.name for p in pipelines 
-            if p.destination
+            pd.destination.name 
+            for p in pipelines 
+            for pd in p.destinations 
+            if pd.destination
         ))
 
         return SourceDetailResponse(
@@ -513,6 +511,13 @@ class SourceService:
         self.db.commit()
         self.db.refresh(source)
 
+        # Invalidate Available Tables Cache
+        try:
+            redis_client = RedisClient.get_instance()
+            redis_client.delete(f"source:{source_id}:tables")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for source {source_id}: {e}")
+
     def create_publication(self, source_id: int, tables: List[str]) -> None:
         source = self.get_source(source_id)
         if not tables:
@@ -620,10 +625,12 @@ class SourceService:
                     if table_meta:
                         pipeline_service = PipelineService(self.db)
                         for pipeline in pipelines:
-                             try:
-                                 pipeline_service.provision_table(pipeline, table_meta)
-                             except Exception as exc:
-                                 logger.error(f"Failed to auto-provision table {table_name} for pipeline {pipeline.id}: {exc}")
+                             for pd in pipeline.destinations:
+                                 if pd.destination.type == "SNOWFLAKE":
+                                     try:
+                                         pipeline_service.provision_table(pipeline, pd.destination, table_meta)
+                                     except Exception as exc:
+                                         logger.error(f"Failed to auto-provision table {table_name} for pipeline {pipeline.id} destination {pd.destination.name}: {exc}")
                     else:
                         logger.warning(f"Metadata for table {table_name} not found after refresh, skipping provisioning")
 

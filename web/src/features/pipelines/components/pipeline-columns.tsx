@@ -36,45 +36,18 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
     header: 'Pipelines',
     cell: ({ row }) => {
       const sourceName = row.original.source?.name || 'Unknown Source'
-      const destName = row.original.destination?.name || 'Unknown Destination'
+      const destCount = row.original.destinations?.length || 0
       return (
         <div className='flex items-center space-x-2'>
           <span className='font-medium'>{sourceName}</span>
           <PipelineAnimatedArrow />
-          <span className='font-medium'>{destName}</span>
+          <span className='font-medium'>{destCount} Destination</span>
         </div>
       )
     },
     meta: { title: 'Pipelines' },
   },
-  {
-    accessorKey: 'progress',
-    header: 'Initialization',
-    cell: ({ row }) => {
-      const progress = row.original.pipeline_progress
-      if (progress?.status === 'COMPLETED') return <span className='text-muted-foreground font-medium text-xs'>FINISH</span>
-      if (!progress) return <span className='text-muted-foreground'>-</span>
 
-      return (
-        <div className='flex flex-col space-y-1 w-[140px]'>
-          <div className='flex justify-between text-xs'>
-            <span>{progress.status === 'FAILED' ? 'Failed' : `${progress.progress}%`}</span>
-          </div>
-          {progress.status !== 'FAILED' && (
-            <div className='h-2 w-full bg-secondary rounded-full overflow-hidden'>
-              <div
-                className='h-full bg-primary transition-all duration-500 ease-in-out'
-                style={{ width: `${progress.progress}%` }}
-              />
-            </div>
-          )}
-          {progress.step && <span className='text-[10px] text-muted-foreground truncate' title={progress.step}>{progress.step}</span>}
-          {progress.status === 'FAILED' && <span className='text-[10px] text-destructive truncate' title={progress.details}>{progress.details}</span>}
-        </div>
-      )
-    },
-    meta: { title: 'Initialization' },
-  },
   {
     accessorKey: 'status',
     header: 'Status',

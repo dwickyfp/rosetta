@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from typing import Generator
 import threading
 
+from fastapi import HTTPException
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
@@ -194,6 +196,9 @@ def get_db_session() -> Generator[Session, None, None]:
     try:
         yield session
         session.commit()
+    except HTTPException:
+        session.rollback()
+        raise
     except SQLAlchemyError as e:
         session.rollback()
         logger.error("Database error during session", extra={"error": str(e)})

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Eye } from 'lucide-react'
-import { cn } from '@/lib/utils'
+
 
 export const getSourceDetailsTablesColumns = (
     onUnregister: ((tableName: string) => void) | undefined,
@@ -26,47 +26,7 @@ export const getSourceDetailsTablesColumns = (
             enableHiding: false,
             meta: { title: 'Table Name' },
         },
-        {
-            id: 'status',
-            header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Pipeline Status' />
-            ),
-            cell: ({ row }) => {
-                const table = row.original
 
-                const Step = ({ label, active }: { label: string, active: boolean }) => (
-                    <div className="flex flex-col items-center gap-1">
-                        <div
-                            className={cn(
-                                "h-2 w-2 rounded-full ring-2 ring-offset-2",
-                                active
-                                    ? "bg-green-500 ring-green-500"
-                                    : "bg-muted ring-muted"
-                            )}
-                            title={active ? `${label} Exists` : `${label} Missing`}
-                        />
-                        <span className={cn("text-[10px] font-medium uppercase", active ? "text-foreground" : "text-muted-foreground")}>{label}</span>
-                    </div>
-                )
-
-                const Connector = ({ active }: { active: boolean }) => (
-                    <div className={cn("h-[2px] w-4 mb-3.5", active ? "bg-green-500/50" : "bg-muted")} />
-                )
-
-                return (
-                    <div className="flex items-end gap-0.5 py-2">
-                        <Step label="Landing" active={table.is_exists_table_landing} />
-                        <Connector active={table.is_exists_table_landing && table.is_exists_stream} />
-                        <Step label="Stream" active={table.is_exists_stream} />
-                        <Connector active={table.is_exists_stream && table.is_exists_task} />
-                        <Step label="Task" active={table.is_exists_task} />
-                        <Connector active={table.is_exists_task && table.is_exists_table_destination} />
-                        <Step label="Target" active={table.is_exists_table_destination} />
-                    </div>
-                )
-            },
-            meta: { title: 'Pipeline Status' },
-        },
         {
             id: 'schema_version',
             header: ({ column }) => (

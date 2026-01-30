@@ -35,3 +35,6 @@ dist-ssr
 *.sw?
 
 /backend/logs/app.log
+
+# Ignore all files in the dlq directory
+/dlq/*

@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -52,3 +52,46 @@ def get_credit_chart_data(
     """
     service = DashboardService(db)
     return service.get_total_credit_usage(days=days)
+
+@router.get("/health/sources", response_model=Dict[str, int])
+def get_source_health_summary(
+    db: Session = Depends(get_db),
+):
+    """
+    Get source health summary.
+    """
+    service = DashboardService(db)
+    return service.get_source_health_summary()
+
+@router.get("/charts/replication-lag", response_model=Dict[str, Any])
+def get_replication_lag_chart(
+    days: int = 1,
+    db: Session = Depends(get_db),
+):
+    """
+    Get replication lag chart data.
+    """
+    service = DashboardService(db)
+    return service.get_replication_lag_history(days=days)
+
+@router.get("/charts/top-tables", response_model=List[Dict[str, Any]])
+def get_top_tables_chart(
+    limit: int = 5,
+    db: Session = Depends(get_db),
+):
+    """
+    Get top tables by volume.
+    """
+    service = DashboardService(db)
+    return service.get_top_tables_by_volume(limit=limit)
+
+@router.get("/activity-feed", response_model=List[Dict[str, Any]])
+def get_activity_feed(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    """
+    Get recent activity feed.
+    """
+    service = DashboardService(db)
+    return service.get_recent_activities(limit=limit)

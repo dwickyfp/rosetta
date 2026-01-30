@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateEntityError
 from app.core.logging import get_logger
-from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus
+from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineDestination, PipelineDestinationTableSync
 from app.domain.repositories.pipeline import PipelineRepository
-from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate
+from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate, PipelineDestinationResponse, PipelineDestinationTableSyncResponse
 from app.domain.services.source import SourceService
 from app.domain.models.data_flow_monitoring import DataFlowRecordMonitoring
 from sqlalchemy import func, desc, and_
@@ -63,6 +64,7 @@ class PipelineService:
         pipeline_data.status = PipelineStatus.PAUSE
         
         # Create pipeline with metadata using repository method
+        # Note: PipelineCreate no longer has destination_id
         pipeline = self.repository.create_with_metadata(**pipeline_data.dict())
 
         logger.info(
@@ -71,6 +73,88 @@ class PipelineService:
         )
 
         return pipeline
+
+    def add_pipeline_destination(self, pipeline_id: int, destination_id: int) -> Pipeline:
+        """
+        Add a destination to an existing pipeline.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            destination_id: Destination identifier
+
+        Returns:
+            Updated pipeline
+        """
+        logger.info(
+            "Adding destination to pipeline",
+            extra={"pipeline_id": pipeline_id, "destination_id": destination_id},
+        )
+
+        pipeline = self.repository.get_by_id(pipeline_id)
+        
+        # Check if destination already exists
+        existing = (
+            self.db.query(PipelineDestination)
+            .filter_by(pipeline_id=pipeline_id, destination_id=destination_id)
+            .first()
+        )
+        if existing:
+            raise DuplicateEntityError(
+                entity_type="PipelineDestination",
+                field="destination_id",
+                value=destination_id,
+                details={"message": "Destination is already added to this pipeline"},
+            )
+
+        # Add destination
+        new_dest = PipelineDestination(
+            pipeline_id=pipeline_id, destination_id=destination_id
+        )
+        self.db.add(new_dest)
+        self.db.commit()
+        self.db.refresh(pipeline)
+
+        return self.repository.get_by_id_with_relations(pipeline_id)
+
+    def remove_pipeline_destination(self, pipeline_id: int, destination_id: int) -> Pipeline:
+        """
+        Remove a destination from an existing pipeline.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            destination_id: Destination identifier
+
+        Returns:
+            Updated pipeline
+        """
+        logger.info(
+            "Removing destination from pipeline",
+            extra={"pipeline_id": pipeline_id, "destination_id": destination_id},
+        )
+
+        pipeline = self.repository.get_by_id(pipeline_id)
+
+        # Check if destination exists
+        existing = (
+            self.db.query(PipelineDestination)
+            .filter_by(pipeline_id=pipeline_id, destination_id=destination_id)
+            .first()
+        )
+        if not existing:
+             # If not found, just return current pipeline (idempotent) or raise error?
+             # For idempotency, let's log and return.
+             logger.warning(
+                 "Destination not found in pipeline",
+                 extra={"pipeline_id": pipeline_id, "destination_id": destination_id}
+             )
+             return self.repository.get_by_id_with_relations(pipeline_id)
+
+        # Remove destination
+        self.db.delete(existing)
+        self.db.commit()
+        self.db.refresh(pipeline)
+
+        return self.repository.get_by_id_with_relations(pipeline_id)
 
     def get_pipeline(self, pipeline_id: int) -> Pipeline:
         """
@@ -335,52 +419,62 @@ class PipelineService:
             
             if not tables:
                 self._update_progress(progress, 100, "No tables to process", "COMPLETED")
-                pipeline.status = PipelineStatus.START.value
+                pipeline.status = PipelineStatus.PAUSE.value
                 self.db.commit()
                 return
 
-            # 3. Connect to Snowflake
-            self._update_progress(progress, 20, "Connecting to Snowflake", "IN_PROGRESS")
-            conn = self._get_snowflake_connection(pipeline.destination)
-            cursor = conn.cursor()
+            # 3. Connect to Snowflake (Iterate over destinations)
+            self._update_progress(progress, 20, "Initializing destinations", "IN_PROGRESS")
             
-            try:
-                # Set context
-                config = pipeline.destination.config
-                landing_db = config.get("landing_database")
-                landing_schema = config.get("landing_schema")
-                target_db = config.get("database")
-                target_schema = config.get("schema")
+            for index, p_dest in enumerate(pipeline.destinations):
+                destination = p_dest.destination
+                # Only support Snowflake for now in this provisioner? 
+                # User asked for Postgres later. 
+                if destination.type != 'SNOWFLAKE':
+                    logger.info(f"Skipping provisioning for non-Snowflake destination: {destination.name}")
+                    continue
 
-                # Validate configuration
-                if not all([landing_db, landing_schema, target_db, target_schema]):
-                    raise ValueError(
-                        f"Destination configuration incomplete for pipeline {pipeline.name}. "
-                        "Ensure landing_database, landing_schema, database, and schema are set."
-                    )
+                conn = self._get_snowflake_connection(destination)
+                cursor = conn.cursor()
                 
-                # Check Databases/Schemas existence? usually assumed or created.
-                # Just use them.
-                
-                # Need TableMetadataRepository to update flags
-                from app.domain.repositories.table_metadata_repo import TableMetadataRepository
-                tm_repo = TableMetadataRepository(self.db)
-                
-                total_tables = len(tables)
-                for index, table in enumerate(tables):
-                    current_percent = 20 + int((index / total_tables) * 70) 
-                    self._update_progress(progress, current_percent, f"Processing table: {table.table_name}", "IN_PROGRESS")
+                try:
+                    # Set context
+                    config = destination.config
+                    landing_db = config.get("landing_database")
+                    landing_schema = config.get("landing_schema")
+                    target_db = config.get("database")
+                    target_schema = config.get("schema")
+
+                    # Validate configuration
+                    if not all([landing_db, landing_schema, target_db, target_schema]):
+                        raise ValueError(
+                            f"Destination configuration incomplete for pipeline {pipeline.name}. "
+                            "Ensure landing_database, landing_schema, database, and schema are set."
+                        )
                     
-                    # Process single table using reusable method
-                    self.provision_table(pipeline, table, cursor, close_cursor=False)
-                # 5. Finalize
-                self._update_progress(progress, 100, "Initialization completed", "COMPLETED")
-                pipeline.status = PipelineStatus.START.value
-                self.db.commit()
+                    # Check Databases/Schemas existence? usually assumed or created.
+                    # Just use them.
+                    
+                    # Need TableMetadataRepository to update flags
+                    from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+                    tm_repo = TableMetadataRepository(self.db)
+                    
+                    total_tables = len(tables)
+                    for index, table in enumerate(tables):
+                        current_percent = 20 + int((index / total_tables) * 70) 
+                        self._update_progress(progress, current_percent, f"Processing table: {table.table_name}", "IN_PROGRESS")
+                        
+                        # Process single table using reusable method
+                        self.provision_table(pipeline, destination, table, cursor, close_cursor=False)
                 
-            finally:
-                cursor.close()
-                conn.close()
+                finally:
+                    cursor.close()
+                    conn.close()
+
+            # 5. Finalize
+            self._update_progress(progress, 100, "Initialization completed", "COMPLETED")
+            pipeline.status = PipelineStatus.PAUSE.value
+            self.db.commit()
                 
         except Exception as e:
             logger.error(f"Pipeline initialization failed: {e}", exc_info=True)
@@ -391,54 +485,69 @@ class PipelineService:
             except:
                  pass
 
-    def provision_table(self, pipeline: Pipeline, table_info, cursor=None, close_cursor=False) -> None:
+    def provision_table(self, pipeline: Pipeline, destination, table_info, cursor=None, close_cursor=False) -> None:
         """
         Provision Snowflake resources for a single table.
         
         Args:
             pipeline: Pipeline entity
+            destination: Destination entity (Snowflake)
             table_info: SourceTableInfo object or similar struct with table_name, schema_definition, id
             cursor: Optional existing Snowflake cursor
             close_cursor: Whether to close the cursor if it was created internally
         """
-        logger.info(f"Provisioning table {table_info.table_name} for pipeline {pipeline.name}")
+        logger.info(f"Provisioning table {table_info.table_name} for pipeline {pipeline.name} to destination {destination.name}")
         
-        # Need TableMetadataRepository to update flags
-        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
-        tm_repo = TableMetadataRepository(self.db)
+        # Find PipelineDestination
+        pipeline_dest = next((pd for pd in pipeline.destinations if pd.destination_id == destination.id), None)
+        if not pipeline_dest:
+             logger.error(f"PipelineDestination not found for pipeline {pipeline.id} and destination {destination.id}")
+             return
+
+        # Get or Create PipelineDestinationTableSync
+        table_name = table_info.table_name
+        
+        # Check if exists
+        sync_record = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(pipeline_destination_id=pipeline_dest.id, table_name=table_name)
+            .first()
+        )
+        
+        if not sync_record:
+            sync_record = PipelineDestinationTableSync(
+                pipeline_destination_id=pipeline_dest.id,
+                table_name=table_name,
+                table_name_target=table_name, # Default target name same as source
+                is_exists_table_landing=False,
+                is_exists_stream=False,
+                is_exists_task=False,
+                is_exists_table_destination=False
+            )
+            self.db.add(sync_record)
+            self.db.flush() # Flush to get ID if needed, though we operate on object
         
         conn = None
         if cursor is None:
-            conn = self._get_snowflake_connection(pipeline.destination)
+            conn = self._get_snowflake_connection(destination)
             cursor = conn.cursor()
             close_cursor = True
             
         try:
-            config = pipeline.destination.config
+            config = destination.config
             target_db = config.get("database")
             target_schema = config.get("schema")
             landing_db = config.get("landing_database")
             landing_schema = config.get("landing_schema")
             
-            table_name = table_info.table_name
             # Handle different object structures (SourceTableInfo vs Pydantic model)
-            # If coming from SourceService, it might be SourceTableInfo pydantic model or internal obj
-            # Let's assume consistent attribute access or dict
             if isinstance(table_info, dict):
                  columns = table_info['schema_definition']
                  table_id = table_info['id']
             else:
-                 # Check if attributes exist, otherwise try dict access
-                 columns = getattr(table_info, 'schema_definition', None) 
-                 # Wait, SourceTableInfo in initialize_pipeline came from source_detail.tables which has schema_definition 
-                 # But SourceTableInfo schema in source.py is different.
-                 # Let's look at initialize_pipeline usage:
-                 # tables = source_details.tables -> these are SourceTableInfo schemas
-                 # But let's check what source_details.tables actually contains.
-                 pass
-                 
+                 columns = getattr(table_info, 'schema_definition', None)
+
             # Ensure we get the columns correctly, handling potential alias or missing fields
-            columns = getattr(table_info, 'schema_definition', None)
             if not columns and hasattr(table_info, 'schema_table'):
                 # Fallback to schema_table if schema_definition is missing/empty
                 st = getattr(table_info, 'schema_table')
@@ -450,49 +559,55 @@ class PipelineService:
             # Final validation
             if not columns:
                 logger.error(f"Table {table_name} has no schema definition (columns). Skipping provisioning.")
-                # We can either raise an error or skip. Skipping is safer for partial failures, 
-                # but might leave pipeline incomplete. For now, let's Raise to alert user/logs clearly why it failed before SQL error.
                 raise ValueError(f"Table {table_name} has no columns defined. Please refresh source metadata.")
 
-            table_id = table_info.id
-
             # A. Landing Table
-            landing_table = f"LANDING_{table_name}"
-            landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
-            cursor.execute(landing_ddl)
-            tm_repo.update_status(table_id, is_exists_table_landing=True)
+            if not sync_record.is_exists_table_landing:
+                landing_table = f"LANDING_{table_name}"
+                landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
+                cursor.execute(landing_ddl)
+                sync_record.is_exists_table_landing = True
             
             # B. Stream
-            stream_name = f"STREAM_{landing_table}"
-            stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
-            cursor.execute(stream_ddl)
-            tm_repo.update_status(table_id, is_exists_stream=True)
+            if not sync_record.is_exists_stream:
+                landing_table = f"LANDING_{table_name}" # Reconstruct name just in case
+                stream_name = f"STREAM_{landing_table}"
+                stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
+                cursor.execute(stream_ddl)
+                sync_record.is_exists_stream = True
             
             # C. Destination Table
             target_table = table_name
-            
-            # Check if table already exists
-            if self._check_table_exists(cursor, target_db, target_schema, target_table):
-                logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
-                tm_repo.update_status(table_id, is_exists_table_destination=True)
-            else:
-                logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
-                target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
-                cursor.execute(target_ddl)
-                tm_repo.update_status(table_id, is_exists_table_destination=True)
+            # Check if table already exists (if flag is false, double check DB)
+            if not sync_record.is_exists_table_destination:
+                if self._check_table_exists(cursor, target_db, target_schema, target_table):
+                    logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
+                    sync_record.is_exists_table_destination = True
+                else:
+                    logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
+                    target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
+                    cursor.execute(target_ddl)
+                    sync_record.is_exists_table_destination = True
             
             # D. Merge Task
-            task_name = f"TASK_MERGE_{table_name}"
-            task_ddl = self._generate_merge_task_ddl(
-                pipeline,
-                landing_db, landing_schema, landing_table,
-                stream_name,
-                target_db, target_schema, target_table,
-                columns
-            )
-            cursor.execute(task_ddl)
-            cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
-            tm_repo.update_status(table_id, is_exists_task=True)
+            if not sync_record.is_exists_task:
+                landing_table = f"LANDING_{table_name}"
+                stream_name = f"STREAM_{landing_table}"
+                target_table = table_name
+                
+                task_name = f"TASK_MERGE_{table_name}"
+                task_ddl = self._generate_merge_task_ddl(
+                    pipeline, destination,
+                    landing_db, landing_schema, landing_table,
+                    stream_name,
+                    target_db, target_schema, target_table,
+                    columns
+                )
+                cursor.execute(task_ddl)
+                cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
+                sync_record.is_exists_task = True
+
+            self.db.commit()
 
         finally:
             if close_cursor:
@@ -656,7 +771,7 @@ class PipelineService:
         """
         return ddl
 
-    def _generate_merge_task_ddl(self, pipeline, l_db, l_schema, l_table, stream, t_db, t_schema, t_table, columns):
+    def _generate_merge_task_ddl(self, pipeline, destination, l_db, l_schema, l_table, stream, t_db, t_schema, t_table, columns):
         # 1. Try to find explicit PK
         pk_cols = []
         for col in columns:
@@ -718,7 +833,7 @@ class PipelineService:
         # Use Snowflake scripting block to run MERGE then DELETE from landing table
         task_ddl = f"""
         CREATE OR REPLACE TASK {l_db}.{l_schema}.TASK_MERGE_{t_table}
-        WAREHOUSE = {pipeline.destination.config.get("warehouse")}
+        WAREHOUSE = {destination.config.get("warehouse")}
         SCHEDULE = '60 MINUTE'
         WHEN SYSTEM$STREAM_HAS_DATA('{l_db}.{l_schema}.{stream}')
         AS
@@ -751,24 +866,45 @@ class PipelineService:
 
     def get_pipeline_data_flow_stats(self, pipeline_id: int, days: int = 7) -> List[dict]:
         """
-        Get data flow statistics for a pipeline, grouped by table and day.
+        Get data flow statistics for a pipeline, grouped by destination, source table, and target table.
         
         Args:
             pipeline_id: Pipeline identifier
             days: Number of days to look back
             
         Returns:
-            List of stats per table
+            List of stats per table lineage
         """
-        # 1. Get Source ID for pipeline
-        pipeline = self.repository.get_by_id(pipeline_id)
-        source_id = pipeline.source_id
+        # 1. Get Pipeline and Sync Configuration
+        pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+        
+        # Pre-fetch sync configs for mapping
+        # Map: (pipeline_destination_id, source_table_name) -> { target_table: str, dest_name: str }
+        sync_map = {}
+        if pipeline.destinations:
+            for dest in pipeline.destinations:
+                for sync in dest.table_syncs:
+                    # Map by sync_id if available (future), or fallback to (dest_id, table_name)
+                    # For now, let's map by sync.id directly
+                    sync_map[sync.id] = {
+                        "target_table": sync.table_name_target,
+                        "destination_name": dest.destination.name
+                    }
+                    # Also keep legacy map for backward compatibility or when sync_id is null
+                    key = (dest.id, sync.table_name)
+                    if key not in sync_map:
+                         sync_map[key] = {
+                            "target_table": sync.table_name_target,
+                            "destination_name": dest.destination.name
+                        }
         
         # 2. Daily Stats Query
         start_date = datetime.now(ZoneInfo('Asia/Jakarta')) - timedelta(days=days)
         
         daily_query = (
             self.db.query(
+                DataFlowRecordMonitoring.pipeline_destination_id,
+                DataFlowRecordMonitoring.pipeline_destination_table_sync_id,
                 DataFlowRecordMonitoring.table_name,
                 func.date_trunc('day', DataFlowRecordMonitoring.created_at).label('day'),
                 func.sum(DataFlowRecordMonitoring.record_count).label('total_count')
@@ -778,6 +914,8 @@ class PipelineService:
                 DataFlowRecordMonitoring.created_at >= start_date
             )
             .group_by(
+                DataFlowRecordMonitoring.pipeline_destination_id,
+                DataFlowRecordMonitoring.pipeline_destination_table_sync_id,
                 DataFlowRecordMonitoring.table_name,
                 func.date_trunc('day', DataFlowRecordMonitoring.created_at)
             )
@@ -789,11 +927,13 @@ class PipelineService:
         
         daily_results = daily_query.all()
         
-        # 3. Recent 5 Minutes Stats Query (for Monitoring chart)
+        # 3. Recent 5 Minutes Stats Query
         five_min_ago = datetime.now(ZoneInfo('Asia/Jakarta')) - timedelta(minutes=5)
         
         recent_query = (
             self.db.query(
+                DataFlowRecordMonitoring.pipeline_destination_id,
+                DataFlowRecordMonitoring.pipeline_destination_table_sync_id,
                 DataFlowRecordMonitoring.table_name,
                 DataFlowRecordMonitoring.created_at,
                 DataFlowRecordMonitoring.record_count
@@ -807,30 +947,67 @@ class PipelineService:
         
         recent_results = recent_query.all()
         
-        # 4. Aggregating results by table
-        stats_by_table = {}
+        # 4. Aggregating results
+        stats_map = {}
         
+        # Helper to get meta info using sync_id or fallback
+        def get_meta(dest_id, sync_id, table_name):
+            # 1. Try sync_id first
+            if sync_id and sync_id in sync_map:
+                return sync_map[sync_id]
+            
+            # 2. Try (dest_id, table)
+            if dest_id:
+                info = sync_map.get((dest_id, table_name))
+                if info:
+                     # Check if this info is a specific dict or just one of them?
+                     # The tuple key map might be ambiguous if multiple syncs same source-dest-table (rare but possible with custom sql?)
+                     # But for general case it works.
+                    return info
+
+            # Fallback
+            return {
+                "target_table": table_name, 
+                "destination_name": "Unknown Destination"
+            }
+
+        # Unique Key generator
+        def get_key(dest_id, sync_id, table):
+            if sync_id:
+                return f"sync_{sync_id}"
+            return f"{dest_id or 'none'}_{table}"
+
         # Process Daily Stats
         for row in daily_results:
-            table_name = row.table_name
-            if table_name not in stats_by_table:
-                stats_by_table[table_name] = {
-                    "table_name": table_name,
+            key = get_key(row.pipeline_destination_id, row.pipeline_destination_table_sync_id, row.table_name)
+            if key not in stats_map:
+                meta = get_meta(row.pipeline_destination_id, row.pipeline_destination_table_sync_id, row.table_name)
+                stats_map[key] = {
+                    "pipeline_destination_id": row.pipeline_destination_id,
+                    "pipeline_destination_table_sync_id": row.pipeline_destination_table_sync_id,
+                    "table_name": row.table_name,
+                    "target_table_name": meta["target_table"],
+                    "destination_name": meta["destination_name"],
                     "daily_stats": [],
                     "recent_stats": []
                 }
             
-            stats_by_table[table_name]["daily_stats"].append({
+            stats_map[key]["daily_stats"].append({
                 "date": row.day.isoformat(),
-                "count": row.total_count
+                "count": int(row.total_count) if row.total_count else 0
             })
 
         # Process Recent Stats
         for row in recent_results:
-            table_name = row.table_name
-            if table_name not in stats_by_table:
-                 stats_by_table[table_name] = {
-                    "table_name": table_name,
+            key = get_key(row.pipeline_destination_id, row.pipeline_destination_table_sync_id, row.table_name)
+            if key not in stats_map:
+                 meta = get_meta(row.pipeline_destination_id, row.pipeline_destination_table_sync_id, row.table_name)
+                 stats_map[key] = {
+                    "pipeline_destination_id": row.pipeline_destination_id,
+                    "pipeline_destination_table_sync_id": row.pipeline_destination_table_sync_id,
+                    "table_name": row.table_name,
+                    "target_table_name": meta["target_table"],
+                    "destination_name": meta["destination_name"],
                     "daily_stats": [],
                     "recent_stats": []
                 }
@@ -840,10 +1017,320 @@ class PipelineService:
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=ZoneInfo('Asia/Jakarta'))
                 
-            stats_by_table[table_name]["recent_stats"].append({
+            stats_map[key]["recent_stats"].append({
                 "timestamp": timestamp.isoformat(),
                 "count": row.record_count
             })
             
-        return list(stats_by_table.values())
+        return list(stats_map.values())
+
+    def get_destination_tables(self, pipeline_id: int, pipeline_destination_id: int) -> List[dict]:
+        """
+        Get tables available for sync with current configuration using Left Join.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+
+        Returns:
+            List of tables with sync info
+        """
+        from app.domain.models.table_metadata import TableMetadata
+        from app.domain.models.pipeline import PipelineDestination, PipelineDestinationTableSync
+        from app.domain.schemas.pipeline import (
+            TableWithSyncInfoResponse,
+            ColumnSchemaResponse,
+            PipelineDestinationTableSyncResponse,
+        )
+        from app.core.exceptions import EntityNotFoundError
+
+        # Get pipeline to verify it exists and get source_id
+        pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+
+        # Verify destination exists for this pipeline
+        pipeline_dest_exists = (
+            self.db.query(PipelineDestination)
+            .filter_by(id=pipeline_destination_id, pipeline_id=pipeline_id)
+            .first()
+        )
+        if not pipeline_dest_exists:
+             raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        # 1. Get List of all tables from source metadata
+        tm_repo = TableMetadataRepository(self.db)
+        all_tables_meta = tm_repo.get_by_source_id(pipeline.source_id)
+        
+        # 2. Get existing sync configurations for this destination
+        syncs = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(pipeline_destination_id=pipeline_destination_id)
+            .all()
+        )
+        from collections import defaultdict
+        syncs_map = defaultdict(list)
+        for s in syncs:
+            syncs_map[s.table_name].append(s)
+
+        response_list = []
+        for table_meta in all_tables_meta:
+            # Parse schema
+            columns = []
+            if table_meta.schema_table:
+                # Handle both list (older format) and dict (newer format) schemas
+                schema_items = table_meta.schema_table
+                if isinstance(schema_items, dict):
+                    schema_items = schema_items.values()
+                
+                for col in schema_items:
+                    if isinstance(col, dict):
+                        columns.append(ColumnSchemaResponse(
+                            column_name=col.get("column_name", ""),
+                            data_type=col.get("real_data_type") or col.get("data_type", ""),
+                            real_data_type=col.get("real_data_type"),
+                            is_nullable=col.get("is_nullable") in [True, "YES"],
+                            is_primary_key=col.get("is_primary_key", False),
+                            has_default=col.get("has_default", False),
+                            default_value=str(col.get("default_value")) if col.get("default_value") is not None else None,
+                            numeric_scale=col.get("numeric_scale"),
+                            numeric_precision=col.get("numeric_precision"),
+                        ))
+                    elif isinstance(col, str):
+                        # Handle case where schema might be list of strings logic
+                        columns.append(ColumnSchemaResponse(
+                            column_name=col,
+                            data_type="UNKNOWN",
+                            is_nullable=True,
+                            is_primary_key=False,
+                        ))
+
+            # Convert sync configs (list)
+            current_syncs = syncs_map[table_meta.table_name]
+            sync_configs_response = [
+                PipelineDestinationTableSyncResponse.from_orm(s) for s in current_syncs
+            ]
+
+            response_list.append(TableWithSyncInfoResponse(
+                table_name=table_meta.table_name,
+                columns=columns,
+                sync_configs=sync_configs_response,
+                is_exists_table_landing=any(s.is_exists_table_landing for s in current_syncs),
+                is_exists_stream=any(s.is_exists_stream for s in current_syncs),
+                is_exists_task=any(s.is_exists_task for s in current_syncs),
+                is_exists_table_destination=any(s.is_exists_table_destination for s in current_syncs),
+            ))
+
+        return [r.dict() for r in response_list]
+
+    def save_table_sync(
+        self, pipeline_id: int, pipeline_destination_id: int, table_sync_data
+    ) -> "PipelineDestinationTableSync":
+        """
+        Create or update table sync configuration.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            table_sync_data: Table sync configuration
+
+        Returns:
+            Created/updated table sync
+        """
+        from app.domain.models.pipeline import PipelineDestinationTableSync
+        from app.core.exceptions import EntityNotFoundError
+
+        # Validate pipeline destination exists
+        pipeline_dest = (
+            self.db.query(PipelineDestination)
+            .filter_by(id=pipeline_destination_id, pipeline_id=pipeline_id)
+            .first()
+        )
+        if not pipeline_dest:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        if table_sync_data.id:
+            # Update specific existing sync
+            existing = (
+                self.db.query(PipelineDestinationTableSync)
+                .filter_by(
+                    id=table_sync_data.id,
+                    pipeline_destination_id=pipeline_destination_id
+                )
+                .first()
+            )
+            if not existing:
+                 raise EntityNotFoundError(
+                    entity_type="PipelineDestinationTableSync", entity_id=table_sync_data.id
+                )
+            
+            # Verify table name matches (optional safety check)
+            if existing.table_name != table_sync_data.table_name:
+                # Should we allow changing source table? Probably not for a sync object.
+                pass
+
+            existing.custom_sql = table_sync_data.custom_sql
+            existing.filter_sql = table_sync_data.filter_sql
+            if table_sync_data.table_name_target:
+                existing.table_name_target = table_sync_data.table_name_target
+            
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+        else:
+            # Create NEW sync (Branch)
+            # Check if there is already a sync for this table with same target?
+            # Or just allow multiple. We should probably uniqueness on (pipeline_destination_id, table_name, table_name_target)
+            target_name = table_sync_data.table_name_target or table_sync_data.table_name
+            
+            # Optional: Check uniqueness of target for this source
+            # ...
+
+            new_sync = PipelineDestinationTableSync(
+                pipeline_destination_id=pipeline_destination_id,
+                table_name=table_sync_data.table_name,
+                table_name_target=target_name,
+                custom_sql=table_sync_data.custom_sql,
+                filter_sql=table_sync_data.filter_sql,
+            )
+            self.db.add(new_sync)
+            self.db.commit()
+            self.db.refresh(new_sync)
+            return new_sync
+
+    def save_table_syncs_bulk(
+        self, pipeline_id: int, pipeline_destination_id: int, bulk_request
+    ) -> List["PipelineDestinationTableSync"]:
+        """
+        Bulk create or update table sync configurations.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            bulk_request: Bulk table sync configurations
+
+        Returns:
+            List of created/updated table syncs
+        """
+        results = []
+        for table_sync_data in bulk_request.tables:
+            result = self.save_table_sync(
+                pipeline_id, pipeline_destination_id, table_sync_data
+            )
+            results.append(result)
+        return results
+
+    def delete_table_sync(
+        self, pipeline_id: int, pipeline_destination_id: int, table_name: str
+    ) -> None:
+        """
+        Remove table from sync configuration.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            table_name: Table name to remove
+        """
+        from app.domain.models.pipeline import PipelineDestinationTableSync
+        from app.core.exceptions import EntityNotFoundError
+
+        # Validate pipeline destination exists
+        pipeline_dest = (
+            self.db.query(PipelineDestination)
+            .filter_by(id=pipeline_destination_id, pipeline_id=pipeline_id)
+            .first()
+        )
+        if not pipeline_dest:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        # Find and delete
+        sync = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(
+                pipeline_destination_id=pipeline_destination_id, table_name=table_name
+            )
+            .first()
+        )
+
+        if sync:
+            self.db.delete(sync)
+            self.db.commit()
+
+    def init_snowflake_table(
+        self, pipeline_id: int, pipeline_destination_id: int, table_name: str
+    ) -> dict:
+        """
+        Initialize Snowflake objects for a single table.
+
+        Creates landing table, stream, task, and target table if they don't exist.
+
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline destination identifier
+            table_name: Table name to initialize
+
+        Returns:
+            Status of initialization
+        """
+        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
+        from app.core.exceptions import EntityNotFoundError
+
+        logger.info(
+            f"Initializing Snowflake table",
+            extra={
+                "pipeline_id": pipeline_id,
+                "pipeline_destination_id": pipeline_destination_id,
+                "table_name": table_name,
+            },
+        )
+
+        # Get pipeline and destination
+        pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+
+        # Find the specific pipeline destination
+        pipeline_dest = None
+        destination = None
+        for pd in pipeline.destinations:
+            if pd.id == pipeline_destination_id:
+                pipeline_dest = pd
+                destination = pd.destination
+                break
+
+        if not pipeline_dest or not destination:
+            raise EntityNotFoundError(
+                entity_type="PipelineDestination", entity_id=pipeline_destination_id
+            )
+
+        if destination.type != "SNOWFLAKE":
+            return {"status": "skipped", "message": "Not a Snowflake destination"}
+
+        # Get table metadata
+        tm_repo = TableMetadataRepository(self.db)
+        table_meta = tm_repo.get_by_source_and_name(pipeline.source_id, table_name)
+
+        if not table_meta:
+            raise EntityNotFoundError(entity_type="TableMetadata", entity_id=table_name)
+
+        # Create a simple object to pass to provision_table
+        class TableInfo:
+            def __init__(self, meta):
+                self.id = meta.id
+                self.table_name = meta.table_name
+                self.schema_table = meta.schema_table
+
+        table_info = TableInfo(table_meta)
+
+        try:
+            self.provision_table(pipeline, destination, table_info)
+            return {
+                "status": "success",
+                "message": f"Snowflake objects created for {table_name}",
+            }
+        except Exception as e:
+            logger.error(f"Failed to initialize Snowflake table: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
 
