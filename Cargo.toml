@@ -38,4 +38,5 @@ sysinfo = "0.37.2"
 fjall = "3.0.1"
 uuid = { version = "1.20.0", features = ["v4"] }
 
-
+[patch.crates-io]
+flate2 = { path = "C:/rust-deps/flate2-1.1.8" }

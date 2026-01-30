@@ -27,6 +27,7 @@ services:
       BATCH_MAX_FILL_MS: 10000
       MAX_TABLE_SYNC_WORKERS: 8
       TABLE_ERROR_RETRY_DELAY_MS: 600000
+      CREDENTIAL_ENCRYPTION_KEY: Wn5x7y9z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8=
       TZ: Asia/Jakarta
     depends_on:
       rosetta-postgres:
@@ -72,6 +73,7 @@ services:
       TZ: Asia/Jakarta
       # Worker Configuration
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      CREDENTIAL_ENCRYPTION_KEY: Wn5x7y9z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8=
       REDIS_URL: ${REDIS_URL:-redis://rosetta-redis:6379/0}
     depends_on:
       rosetta-postgres:
