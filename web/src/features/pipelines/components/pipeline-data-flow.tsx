@@ -18,7 +18,7 @@ const CustomNode = ({ data }: { data: any }) => {
       return (
         <div className="relative">
           <Handle type="target" position={Position.Left} className="!bg-slate-400 !w-3 !h-3" />
-          <Card className="min-w-[280px] max-w-[400px] shadow-sm hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
+          <Card className="min-w-[280px] max-w-[400px] shadow-sm border-l-4 border-l-blue-500">
             <CardHeader className="p-3 pb-2">
                 <div className="flex items-center gap-2">
                     <Database className="w-4 h-4 text-blue-500 shrink-0" />
@@ -142,6 +142,7 @@ export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowPr
           isSource: true
       },
       sourcePosition: Position.Right,
+      selectable: false, // Disable selection
     })
 
     // Track Root Y center for "Source DB" edge connections if we wanted to center root.
@@ -178,7 +179,8 @@ export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowPr
                 isSource: true
             },
             sourcePosition: Position.Right,
-            targetPosition: Position.Left
+            targetPosition: Position.Left,
+            selectable: false, // Disable selection
         })
 
         // Edge Root -> Source

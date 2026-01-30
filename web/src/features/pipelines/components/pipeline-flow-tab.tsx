@@ -29,11 +29,11 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
     return ids
   }, [pipeline])
 
-  // Handle node click - open drawer when source or destination node is clicked
+  // Handle node click - open drawer when destination node is clicked
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node<PipelineNodeData>) => {
     if (node.data.isSource) {
-      setSelectedDestId(null)
-      setDrawerOpen(true)
+      // Disabled click on source node
+      return
     } else if (node.id.startsWith('dest-')) {
       const destId = parseInt(node.id.replace('dest-', ''))
       // Find the pipeline_destination ID from the destination ID
@@ -66,6 +66,7 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
           status: pipeline.status
         },
         sourcePosition: Position.Right,
+        selectable: false, // Disable selection visual
       })
     }
 
@@ -116,7 +117,6 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="text-sm text-muted-foreground">
           Source to destination data flow
-          <span className="ml-2 text-xs opacity-75">(Click source node to configure tables)</span>
         </div>
         <Button size="sm" onClick={() => setOpenAddDest(true)}>
           <Plus className="mr-2 h-4 w-4" />
