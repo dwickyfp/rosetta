@@ -516,10 +516,11 @@ class SchemaEvolutionService:
 
     def _get_snowflake_connection(self, destination: Destination):
         """Create a Snowflake connection using destination credentials."""
-        private_key_str = destination.snowflake_private_key.strip()
+        from app.core.security import decrypt_value
+        private_key_str = decrypt_value(destination.snowflake_private_key.strip())
         passphrase = None
         if destination.snowflake_private_key_passphrase:
-            passphrase = destination.snowflake_private_key_passphrase.encode()
+            passphrase = decrypt_value(destination.snowflake_private_key_passphrase).encode()
 
         p_key = serialization.load_pem_private_key(
             private_key_str.encode(),

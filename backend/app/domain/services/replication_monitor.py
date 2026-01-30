@@ -226,7 +226,7 @@ class ReplicationMonitorService:
         logger.info("Starting replication monitor")
         self._task = asyncio.create_task(self._monitoring_loop())
 
-    async def stop(self) -> None:
+    def stop(self) -> None:
         """Stop the background task."""
         if not self._running:
             return
@@ -234,10 +234,8 @@ class ReplicationMonitorService:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            # Cannot await in sync method
+            self._task = None
         logger.info("Replication monitor stopped")
 
     async def _monitoring_loop(self) -> None:

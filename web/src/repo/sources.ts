@@ -46,6 +46,7 @@ export interface SchemaColumn {
     column_name: string
     is_nullable: string
     real_data_type: string
+    data_type?: string // Fallback for legacy data
     is_primary_key: boolean
     has_default: boolean
     default_value: string | null

@@ -40,6 +40,7 @@ interface SourceDetailsSchemaDrawerProps {
 
 function TypeBadge({ type, changed }: { type: string, changed?: boolean }) {
     // Simple color mapping based on type
+    if (!type) return <Badge variant="outline" className="text-muted-foreground">Unknown</Badge>
     const lowerType = type.toLowerCase()
 
     if (changed) {
@@ -77,7 +78,7 @@ export function SourceDetailsSchemaDrawer({
         if (!searchQuery) return schema
         return schema.filter(col =>
             col.column_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            col.real_data_type.toLowerCase().includes(searchQuery.toLowerCase())
+            (col.real_data_type || col.data_type || '').toLowerCase().includes(searchQuery.toLowerCase())
         )
     }, [schema, searchQuery])
 
@@ -182,7 +183,7 @@ export function SourceDetailsSchemaDrawer({
                                                             </TableCell>
                                                             <TableCell>
                                                                 <div className="flex items-center gap-2">
-                                                                    <TypeBadge type={col.real_data_type} changed={!!diff?.type_changes?.[col.column_name]} />
+                                                                    <TypeBadge type={col.real_data_type || col.data_type || 'Unknown'} changed={!!diff?.type_changes?.[col.column_name]} />
                                                                 </div>
                                                             </TableCell>
                                                             <TableCell className="text-center">

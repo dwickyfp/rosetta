@@ -227,6 +227,15 @@ CREATE INDEX IF NOT EXISTS idx_credit_snowflake_monitoring_usage_date ON credit_
 ALTER TABLE table_metadata_list DROP CONSTRAINT IF EXISTS uq_table_metadata_source_table;
 ALTER TABLE table_metadata_list ADD CONSTRAINT uq_table_metadata_source_table UNIQUE (source_id, table_name);
 
+CREATE TABLE IF NOT EXISTS job_metrics_monitoring(
+    id SERIAL PRIMARY KEY,
+    key_job_scheduler VARCHAR(255) NOT NULL ,
+    last_run_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE job_metrics_monitoring ADD CONSTRAINT uq_job_metrics_monitoring_key_job_scheduler UNIQUE (key_job_scheduler);
+
 
 
 

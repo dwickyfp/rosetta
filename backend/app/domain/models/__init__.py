@@ -14,6 +14,7 @@ from app.domain.models.system_metric import SystemMetric
 from app.domain.models.rosetta_setting_configuration import RosettaSettingConfiguration
 from app.domain.models.credit_snowflake_monitoring import CreditSnowflakeMonitoring
 from app.domain.models.table_metadata import TableMetadata
+from app.domain.models.job_metric import JobMetric
 
 __all__ = [
     "Base",
@@ -27,4 +28,5 @@ __all__ = [
     "RosettaSettingConfiguration",
     "CreditSnowflakeMonitoring",
     "TableMetadata",
+    "JobMetric",
 ]

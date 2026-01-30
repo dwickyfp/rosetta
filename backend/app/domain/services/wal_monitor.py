@@ -322,7 +322,7 @@ class WALMonitorService:
         # Start monitoring loop
         self._task = asyncio.create_task(self._monitoring_loop())
 
-    async def stop(self) -> None:
+    def stop(self) -> None:
         """Stop the WAL monitoring background task."""
         if not self._running:
             return
@@ -332,10 +332,9 @@ class WALMonitorService:
 
         if self._task:
             self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            # Cannot await in sync method, and scheduler calls this synchronously.
+            # The task will be cleaned up by the event loop.
+            self._task = None
 
         logger.info("WAL monitor stopped")
 

@@ -95,6 +95,12 @@ export function SourceReplicationTable({ sourceId, tables }: SourceReplicationTa
         queryKey: ['table-schema', selectedTableId, selectedVersion],
         queryFn: () => selectedTableId ? sourcesRepo.getTableSchema(selectedTableId, selectedVersion) : Promise.resolve(null),
         enabled: schemaDrawerOpen && !!selectedTableId,
+        initialData: () => {
+             if (selectedTable && selectedTableId && selectedTable.id === selectedTableId && selectedTable.version === selectedVersion && selectedTable.schema_table) {
+                 return { columns: selectedTable.schema_table, diff: undefined }
+             }
+             return undefined
+        }
     })
 
     const columns = useMemo(() => getSourceDetailsTablesColumns(

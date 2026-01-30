@@ -13,6 +13,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { WALMonitorList } from './components/wal-monitor-list'
 import { SystemLoadCard } from './components/system-load-card'
 import { SystemHealthWidget } from './components/system-health-widget'
+import { JobStatusCard } from './components/job-status-card'
 import { SourceHealthCard } from './components/source-health-card'
 import { TopTablesChart } from './components/top-tables-chart'
 import { ActivityFeed } from './components/activity-feed'
@@ -238,6 +239,7 @@ export function Dashboard() {
            <div className='col-span-3 space-y-6'>
               <SystemLoadCard />
               <SystemHealthWidget />
+              <JobStatusCard />
            </div>
         </div>
 

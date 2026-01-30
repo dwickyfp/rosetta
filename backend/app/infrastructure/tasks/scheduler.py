@@ -38,15 +38,38 @@ class BackgroundScheduler:
         self.schema_monitor: Optional[SchemaMonitorService] = None
         self.credit_monitor: Optional[CreditMonitorService] = None
 
+    def _record_job_metric(self, key: str) -> None:
+        """
+        Record job execution time.
+        """
+        try:
+            from app.core.database import db_manager
+            from app.domain.repositories.job_metric import JobMetricRepository
+            
+            session_factory = db_manager.session_factory
+            db = session_factory()
+            try:
+                repo = JobMetricRepository(db)
+                from datetime import datetime, timezone, timedelta
+                # User requested Asia/Jakarta (UTC+7)
+                jakarta_tz = timezone(timedelta(hours=7))
+                repo.upsert_metric(key, datetime.now(jakarta_tz))
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to record job metric for {key}: {e}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error in metric recording wrapper for {key}: {e}")
+
     def _run_wal_monitor(self) -> None:
         """
         Synchronous wrapper for async WAL monitor task.
-        
-        This is needed because APScheduler BackgroundScheduler 
-        expects synchronous functions.
         """
         try:
             asyncio.run(self.wal_monitor.monitor_all_sources())
+            self._record_job_metric("wal_monitor")
         except Exception as e:
             logger.error("Error running WAL monitor task", extra={"error": str(e)})
 
@@ -57,6 +80,7 @@ class BackgroundScheduler:
         try:
             if self.replication_monitor:
                 asyncio.run(self.replication_monitor.monitor_all_sources())
+                self._record_job_metric("replication_monitor")
         except Exception as e:
             logger.error("Error running replication monitor task", extra={"error": str(e)})
 
@@ -67,6 +91,7 @@ class BackgroundScheduler:
         try:
             if self.schema_monitor:
                 asyncio.run(self.schema_monitor.monitor_all_sources())
+                self._record_job_metric("schema_monitor")
         except Exception as e:
             logger.error("Error running schema monitor task", extra={"error": str(e)})
 
@@ -77,6 +102,7 @@ class BackgroundScheduler:
         try:
             if self.credit_monitor:
                 asyncio.run(self.credit_monitor.monitor_all_destinations())
+                self._record_job_metric("credit_monitor")
         except Exception as e:
             logger.error("Error running credit monitor task", extra={"error": str(e)})
 
@@ -85,28 +111,20 @@ class BackgroundScheduler:
         Synchronous wrapper for table list refresh task.
         """
         try:
-            # We need to run this in a way that doesn't block, 
-            # but since it's IO bound and we are in a thread (APScheduler default), 
-            # we can just run it or use asyncio.run if we make the service method async.
-            # But the service method is sync (using psycopg2).
-            # So we can just call it.
-            
-            # However, we need a DB session. 
-            # Best practice is to create a new session here.
             from app.core.database import db_manager
             from app.domain.services.source import SourceService
             
-            # Use session factory directly from db_manager
             session_factory = db_manager.session_factory
             db = session_factory()
             try:
                 service = SourceService(db)
-                sources = service.list_sources(limit=1000) # Assuming reasonable count
+                sources = service.list_sources(limit=1000)
                 for source in sources:
                     try:
                         service.refresh_available_tables(source.id)
                     except Exception as e:
                         logger.error(f"Failed to auto-refresh tables for source {source.id}: {e}")
+                self._record_job_metric("table_list_refresh")
             finally:
                 db.close()
                 
@@ -126,6 +144,7 @@ class BackgroundScheduler:
             try:
                 service = SystemMetricService(db)
                 service.collect_and_save_metrics()
+                self._record_job_metric("system_metric_collection")
             finally:
                 db.close()
         except Exception as e:

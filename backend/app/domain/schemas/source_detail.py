@@ -16,6 +16,7 @@ class SourceTableInfo(BaseModel):
     """
     Schema for table information in source details.
     """
+    id: int
     table_name: str
     version: int = Field(default=1, description="Table schema version")
     schema_definition: Optional[List[dict]] = Field(default=None, alias="schema_table")

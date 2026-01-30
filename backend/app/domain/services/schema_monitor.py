@@ -74,12 +74,29 @@ class SchemaMonitorService:
         # Connect to source database
         conn = None
         try:
+            password = source.pg_password
+            if password:
+                try:
+                    password = decrypt_value(password)
+                except Exception:
+                    logger.warning(
+                        f"Failed to decrypt password for source {source.name}, attempting raw value",
+                        extra={"source_id": source.id}
+                    )
+                    # Use raw value as fallback
+                    password = source.pg_password
+
+            logger.info(
+                f"Connecting to source {source.name} ({source.pg_host}:{source.pg_port}/{source.pg_database})",
+                extra={"source_id": source.id}
+            )
+
             conn = psycopg2.connect(
                 host=source.pg_host,
                 port=source.pg_port,
                 dbname=source.pg_database,
                 user=source.pg_username,
-                password=decrypt_value(source.pg_password) if source.pg_password else None,
+                password=password,
                 connect_timeout=settings.wal_monitor_timeout_seconds,
             )
             
@@ -170,11 +187,22 @@ class SchemaMonitorService:
         old_schema_dict = table.schema_table or {}
         
         # If first run (old is None/Empty), just update
+        # If first run (old is None/Empty), record as Version 1
         if not old_schema_dict:
+            # Create History Record for Initial Load
+            history = HistorySchemaEvolution(
+                table_metadata_list_id=table.id,
+                schema_table_old={}, # Nothing before
+                schema_table_new=new_schema_dict,
+                changes_type="INITIAL_LOAD",
+                version_schema=1
+            )
+            db.add(history)
+            
             table.schema_table = new_schema_dict
-            table.is_changes_schema = False # Initial load is not a "change" per se, or maybe it is?
+            table.is_changes_schema = False 
             db.commit()
-            logger.info(f"Initial schema loaded for {table.table_name}")
+            logger.info(f"Initial schema loaded and history recorded for {table.table_name}")
             return
 
         # Compare
