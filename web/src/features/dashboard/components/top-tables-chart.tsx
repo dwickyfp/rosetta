@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
 import { GlassCard, GlassCardContent, GlassCardDescription, GlassCardHeader, GlassCardTitle } from './glass-card'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { formatBytes } from '@/lib/utils'
 
 export function TopTablesChart() {
   const { data: topTables } = useQuery({
@@ -46,7 +45,7 @@ export function TopTablesChart() {
                   color: '#fff',
                   backdropFilter: 'blur(10px)'
                 }}
-                formatter={(value: number) => [value.toLocaleString(), 'Records']}
+                formatter={(value: number | undefined) => [(value || 0).toLocaleString(), 'Records']}
               />
               <Bar
                 dataKey="record_count"

@@ -85,8 +85,8 @@ export function FilterModal({
 
   // Parse existing filters when modal opens
   useEffect(() => {
-    if (open && table?.sync_config?.filter_sql) {
-      const parsed = parseFilterSql(table.sync_config.filter_sql)
+    if (open && table?.sync_configs?.[0]?.filter_sql) {
+      const parsed = parseFilterSql(table.sync_configs[0].filter_sql)
       setFilters(parsed)
     } else if (open) {
       setFilters([{ id: generateId(), column: '', operator: '', value: '' }])
@@ -135,7 +135,7 @@ export function FilterModal({
     const column = table.columns.find((c) => c.column_name === columnName)
     if (!column) return OPERATORS.string
     
-    const type = getColumnType(column.data_type)
+    const type = getColumnType(column.data_type || '')
     return OPERATORS[type]
   }
 

@@ -149,6 +149,33 @@ class DestinationResponse(DestinationBase, TimestampSchema):
         description="Indicates if destination is used in any active pipeline"
     )
 
+    @validator("config", pre=True, always=True)
+    def mask_sensitive_config(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Mask sensitive configuration values."""
+        if not v:
+            return v
+        
+        SENSITIVE_KEYS = {
+            "password",
+            "private_key",
+            "private_key_passphrase",
+            "aws_secret_access_key",
+            "access_key",
+            "secret_key"
+        }
+        
+        # Create a new dict to avoid modifying the original
+        masked = v.copy()
+        for key in list(masked.keys()):
+            key_lower = key.lower()
+            if key_lower in SENSITIVE_KEYS or "password" in key_lower or "key" in key_lower or "secret" in key_lower:
+                 # Remove entirely or mask? User said "exclude".
+                 # "exclude the passkey and private key"
+                 # Safer to remove entirely from the response
+                 masked.pop(key, None)
+                 
+        return masked
+
     class Config:
         orm_mode = True
         fields = {}

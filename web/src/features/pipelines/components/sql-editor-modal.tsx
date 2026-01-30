@@ -26,8 +26,8 @@ export function SqlEditorModal({
 
   // Load existing SQL when modal opens
   useEffect(() => {
-    if (open && table?.sync_config?.custom_sql) {
-      setSql(table.sync_config.custom_sql)
+    if (open && table?.sync_configs?.[0]?.custom_sql) {
+      setSql(table.sync_configs[0].custom_sql)
     } else if (open) {
       // Default template
       setSql(

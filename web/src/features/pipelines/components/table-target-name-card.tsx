@@ -25,12 +25,12 @@ export function TableTargetNameCard({
 
     // Load target name from sync_config when table changes
     useEffect(() => {
-        if (open && table?.sync_config) {
-            setTargetName(table.sync_config.table_name_target || table.table_name)
+        if (open && table?.sync_configs?.[0]) {
+            setTargetName(table.sync_configs[0].table_name_target || table.table_name)
         } else if (open && table) {
             setTargetName(table.table_name)
         }
-    }, [table?.table_name, table?.sync_config?.table_name_target, open])
+    }, [table?.table_name, table?.sync_configs, open])
 
     const handleSave = async (e: React.MouseEvent) => {
         e.preventDefault()
@@ -58,7 +58,7 @@ export function TableTargetNameCard({
 
     if (!open || !table) return null
 
-    const hasChanged = targetName !== (table.sync_config?.table_name_target || table.table_name)
+    const hasChanged = targetName !== (table.sync_configs?.[0]?.table_name_target || table.table_name)
 
     return (
         <div
