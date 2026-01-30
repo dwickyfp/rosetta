@@ -129,6 +129,12 @@ export interface TableSyncConfig {
   table_name_target: string
   custom_sql: string | null
   filter_sql: string | null
+  
+  is_exists_table_landing: boolean
+  is_exists_stream: boolean
+  is_exists_task: boolean
+  is_exists_table_destination: boolean
+
   is_error: boolean
   error_message: string | null
   created_at: string

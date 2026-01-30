@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS pipelines_destination_table_sync(
     table_name_target VARCHAR(255) NOT NULL,
     custom_sql TEXT NULL,
     filter_sql TEXT NULL,
+    is_exists_table_landing BOOLEAN DEFAULT FALSE, -- table landing in snowflake
+    is_exists_stream BOOLEAN DEFAULT FALSE, -- stream in snowflake
+    is_exists_task BOOLEAN DEFAULT FALSE, -- task in snowflake
+    is_exists_table_destination BOOLEAN DEFAULT FALSE, -- table destination in snowflake
     is_error BOOLEAN NOT NULL DEFAULT FALSE,
     error_message TEXT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -121,10 +125,6 @@ CREATE TABLE IF NOT EXISTS table_metadata_list (
     source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
     table_name VARCHAR(255),
     schema_table JSONB NULL,
-    is_exists_table_landing BOOLEAN DEFAULT FALSE, -- table landing in snowflake
-    is_exists_stream BOOLEAN DEFAULT FALSE, -- stream in snowflake
-    is_exists_task BOOLEAN DEFAULT FALSE, -- task in snowflake
-    is_exists_table_destination BOOLEAN DEFAULT FALSE, -- table destination in snowflake
     is_changes_schema BOOLEAN DEFAULT FALSE, -- track changes schema
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

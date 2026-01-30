@@ -24,8 +24,10 @@ export function SnowflakeTableConfig({
 
   const handleToggleSync = async (table: TableWithSyncInfo) => {
     setSavingTable(table.table_name)
+    const syncConfig = table.sync_configs?.[0]
+    
     try {
-      if (table.sync_config) {
+      if (syncConfig) {
         await tableSyncRepo.deleteTableSync(
           pipelineId,
           pipelineDestinationId,
@@ -111,7 +113,7 @@ export function SnowflakeTableConfig({
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   ) : (
                     <Switch
-                      checked={!!table.sync_config}
+                      checked={!!table.sync_configs?.[0]}
                       onCheckedChange={() => handleToggleSync(table)}
                     />
                   )}
@@ -121,7 +123,7 @@ export function SnowflakeTableConfig({
                     {table.table_name}
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                    {!table.sync_config ? 'Not Synced' : 'Ready to Sync'}
+                    {!table.sync_configs?.[0] ? 'Not Synced' : 'Ready to Sync'}
                   </div>
                 </div>
               </div>
@@ -130,7 +132,7 @@ export function SnowflakeTableConfig({
                 variant="outline"
                 size="sm"
                 onClick={() => handleInitTable(table)}
-                disabled={initializingTable === table.table_name || !table.sync_config}
+                disabled={initializingTable === table.table_name || !table.sync_configs?.[0]}
                 className="h-8 text-xs shrink-0"
               >
                 {initializingTable === table.table_name ? (

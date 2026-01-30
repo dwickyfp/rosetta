@@ -35,7 +35,8 @@ export function TableCustomSqlCard({
         } else {
             setSql(`SELECT * FROM ${table?.table_name || 'table_name'}`)
         }
-    }, [table])
+    }, [table, destinationName])
+
 
     const handleSave = async (e: React.MouseEvent) => {
         e.preventDefault()

@@ -160,7 +160,7 @@ export function SourcesMutateDrawer({
                                 <FormItem>
                                     <FormLabel>Name</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder='production-db' />
+                                        <Input {...field} placeholder='production_db' />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>

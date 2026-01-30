@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from zoneinfo import ZoneInfo
 from app.domain.models.base import Base, TimestampMixin
@@ -273,6 +273,20 @@ class PipelineDestinationTableSync(Base, TimestampMixin):
         Text,
         nullable=True,
         comment="SQL filter condition",
+    )
+
+    # Snowflake Status Flags
+    is_exists_table_landing: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Table exists in landing (Snowflake)"
+    )
+    is_exists_stream: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Stream exists in Snowflake"
+    )
+    is_exists_task: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Task exists in Snowflake"
+    )
+    is_exists_table_destination: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Table exists in destination (Snowflake)"
     )
 
     # Error Log

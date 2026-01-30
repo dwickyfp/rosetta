@@ -289,10 +289,6 @@ class SourceService:
                 SourceTableInfo(
                     id=table.id,
                     table_name=table.table_name or "Unknown",
-                    is_exists_table_landing=table.is_exists_table_landing,
-                    is_exists_stream=table.is_exists_stream,
-                    is_exists_task=table.is_exists_task,
-                    is_exists_table_destination=table.is_exists_table_destination,
                     version=version,
                     schema_table=list(table.schema_table.values()) if isinstance(table.schema_table, dict) else (table.schema_table if isinstance(table.schema_table, list) else [])
                 )

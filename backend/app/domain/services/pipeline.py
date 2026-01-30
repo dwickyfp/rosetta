@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateEntityError
 from app.core.logging import get_logger
-from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineDestination
+from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineDestination, PipelineDestinationTableSync
 from app.domain.repositories.pipeline import PipelineRepository
 from app.domain.repositories.table_metadata_repo import TableMetadataRepository
 from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate, PipelineDestinationResponse, PipelineDestinationTableSyncResponse
@@ -498,9 +498,34 @@ class PipelineService:
         """
         logger.info(f"Provisioning table {table_info.table_name} for pipeline {pipeline.name} to destination {destination.name}")
         
-        # Need TableMetadataRepository to update flags
-        from app.domain.repositories.table_metadata_repo import TableMetadataRepository
-        tm_repo = TableMetadataRepository(self.db)
+        # Find PipelineDestination
+        pipeline_dest = next((pd for pd in pipeline.destinations if pd.destination_id == destination.id), None)
+        if not pipeline_dest:
+             logger.error(f"PipelineDestination not found for pipeline {pipeline.id} and destination {destination.id}")
+             return
+
+        # Get or Create PipelineDestinationTableSync
+        table_name = table_info.table_name
+        
+        # Check if exists
+        sync_record = (
+            self.db.query(PipelineDestinationTableSync)
+            .filter_by(pipeline_destination_id=pipeline_dest.id, table_name=table_name)
+            .first()
+        )
+        
+        if not sync_record:
+            sync_record = PipelineDestinationTableSync(
+                pipeline_destination_id=pipeline_dest.id,
+                table_name=table_name,
+                table_name_target=table_name, # Default target name same as source
+                is_exists_table_landing=False,
+                is_exists_stream=False,
+                is_exists_task=False,
+                is_exists_table_destination=False
+            )
+            self.db.add(sync_record)
+            self.db.flush() # Flush to get ID if needed, though we operate on object
         
         conn = None
         if cursor is None:
@@ -515,25 +540,14 @@ class PipelineService:
             landing_db = config.get("landing_database")
             landing_schema = config.get("landing_schema")
             
-            table_name = table_info.table_name
             # Handle different object structures (SourceTableInfo vs Pydantic model)
-            # If coming from SourceService, it might be SourceTableInfo pydantic model or internal obj
-            # Let's assume consistent attribute access or dict
             if isinstance(table_info, dict):
                  columns = table_info['schema_definition']
                  table_id = table_info['id']
             else:
-                 # Check if attributes exist, otherwise try dict access
-                 columns = getattr(table_info, 'schema_definition', None) 
-                 # Wait, SourceTableInfo in initialize_pipeline came from source_detail.tables which has schema_definition 
-                 # But SourceTableInfo schema in source.py is different.
-                 # Let's look at initialize_pipeline usage:
-                 # tables = source_details.tables -> these are SourceTableInfo schemas
-                 # But let's check what source_details.tables actually contains.
-                 pass
-                 
+                 columns = getattr(table_info, 'schema_definition', None)
+
             # Ensure we get the columns correctly, handling potential alias or missing fields
-            columns = getattr(table_info, 'schema_definition', None)
             if not columns and hasattr(table_info, 'schema_table'):
                 # Fallback to schema_table if schema_definition is missing/empty
                 st = getattr(table_info, 'schema_table')
@@ -545,49 +559,55 @@ class PipelineService:
             # Final validation
             if not columns:
                 logger.error(f"Table {table_name} has no schema definition (columns). Skipping provisioning.")
-                # We can either raise an error or skip. Skipping is safer for partial failures, 
-                # but might leave pipeline incomplete. For now, let's Raise to alert user/logs clearly why it failed before SQL error.
                 raise ValueError(f"Table {table_name} has no columns defined. Please refresh source metadata.")
 
-            table_id = table_info.id
-
             # A. Landing Table
-            landing_table = f"LANDING_{table_name}"
-            landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
-            cursor.execute(landing_ddl)
-            tm_repo.update_status(table_id, is_exists_table_landing=True)
+            if not sync_record.is_exists_table_landing:
+                landing_table = f"LANDING_{table_name}"
+                landing_ddl = self._generate_landing_ddl(landing_db, landing_schema, landing_table, columns)
+                cursor.execute(landing_ddl)
+                sync_record.is_exists_table_landing = True
             
             # B. Stream
-            stream_name = f"STREAM_{landing_table}"
-            stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
-            cursor.execute(stream_ddl)
-            tm_repo.update_status(table_id, is_exists_stream=True)
+            if not sync_record.is_exists_stream:
+                landing_table = f"LANDING_{table_name}" # Reconstruct name just in case
+                stream_name = f"STREAM_{landing_table}"
+                stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
+                cursor.execute(stream_ddl)
+                sync_record.is_exists_stream = True
             
             # C. Destination Table
             target_table = table_name
-            
-            # Check if table already exists
-            if self._check_table_exists(cursor, target_db, target_schema, target_table):
-                logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
-                tm_repo.update_status(table_id, is_exists_table_destination=True)
-            else:
-                logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
-                target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
-                cursor.execute(target_ddl)
-                tm_repo.update_status(table_id, is_exists_table_destination=True)
+            # Check if table already exists (if flag is false, double check DB)
+            if not sync_record.is_exists_table_destination:
+                if self._check_table_exists(cursor, target_db, target_schema, target_table):
+                    logger.info(f"Target table {target_db}.{target_schema}.{target_table} already exists, skipping creation.")
+                    sync_record.is_exists_table_destination = True
+                else:
+                    logger.info(f"Creating target table {target_db}.{target_schema}.{target_table}")
+                    target_ddl = self._generate_target_ddl(target_db, target_schema, target_table, columns)
+                    cursor.execute(target_ddl)
+                    sync_record.is_exists_table_destination = True
             
             # D. Merge Task
-            task_name = f"TASK_MERGE_{table_name}"
-            task_ddl = self._generate_merge_task_ddl(
-                pipeline, destination,
-                landing_db, landing_schema, landing_table,
-                stream_name,
-                target_db, target_schema, target_table,
-                columns
-            )
-            cursor.execute(task_ddl)
-            cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
-            tm_repo.update_status(table_id, is_exists_task=True)
+            if not sync_record.is_exists_task:
+                landing_table = f"LANDING_{table_name}"
+                stream_name = f"STREAM_{landing_table}"
+                target_table = table_name
+                
+                task_name = f"TASK_MERGE_{table_name}"
+                task_ddl = self._generate_merge_task_ddl(
+                    pipeline, destination,
+                    landing_db, landing_schema, landing_table,
+                    stream_name,
+                    target_db, target_schema, target_table,
+                    columns
+                )
+                cursor.execute(task_ddl)
+                cursor.execute(f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME")
+                sync_record.is_exists_task = True
+
+            self.db.commit()
 
         finally:
             if close_cursor:
@@ -1033,10 +1053,10 @@ class PipelineService:
                 table_name=table_meta.table_name,
                 columns=columns,
                 sync_configs=sync_configs_response,
-                is_exists_table_landing=table_meta.is_exists_table_landing,
-                is_exists_stream=table_meta.is_exists_stream,
-                is_exists_task=table_meta.is_exists_task,
-                is_exists_table_destination=table_meta.is_exists_table_destination,
+                is_exists_table_landing=any(s.is_exists_table_landing for s in current_syncs),
+                is_exists_stream=any(s.is_exists_stream for s in current_syncs),
+                is_exists_task=any(s.is_exists_task for s in current_syncs),
+                is_exists_table_destination=any(s.is_exists_table_destination for s in current_syncs),
             ))
 
         return [r.dict() for r in response_list]

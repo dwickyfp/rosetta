@@ -169,6 +169,13 @@ class PipelineDestinationTableSyncResponse(BaseSchema):
     table_name_target: str = Field(..., description="Target table name")
     custom_sql: str | None = Field(default=None, description="Custom SQL")
     filter_sql: str | None = Field(default=None, description="Filter SQL")
+    
+    # Snowflake Status Flags
+    is_exists_table_landing: bool = Field(default=False, description="Landing table exists")
+    is_exists_stream: bool = Field(default=False, description="Stream exists")
+    is_exists_task: bool = Field(default=False, description="Task exists")
+    is_exists_table_destination: bool = Field(default=False, description="Target table exists")
+
     is_error: bool = Field(default=False, description="Whether sync is in error state")
     error_message: str | None = Field(default=None, description="Error message if in error state")
     created_at: datetime = Field(..., description="Creation timestamp")
