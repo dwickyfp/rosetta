@@ -93,10 +93,15 @@ export function DestinationsRowActions<TData>({
                         setCurrentRow(destination)
                         setOpen('delete')
                     }}
+                    disabled={destination.is_used_in_active_pipeline}
                 >
                     Delete
                     <DropdownMenuShortcut>
-                        <Trash2 size={16} />
+                        {destination.is_used_in_active_pipeline ? (
+                            <Lock size={16} />
+                        ) : (
+                            <Trash2 size={16} />
+                        )}
                     </DropdownMenuShortcut>
                 </DropdownMenuItem>
             </DropdownMenuContent>

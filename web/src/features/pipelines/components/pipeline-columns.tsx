@@ -5,7 +5,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { PipelineAnimatedArrow } from './pipeline-animated-arrow.tsx'
 import { PipelineRowActions } from './pipeline-row-actions.tsx'
-import { Info } from 'lucide-react'
+import { Workflow } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -84,12 +84,12 @@ function PipelineDetailsButton({ pipelineId }: { pipelineId: number }) {
   const navigate = useNavigate()
   return (
     <Button
-      variant="ghost"
+      variant="outline"
       size="icon"
       className='h-8 w-8 p-0'
       onClick={() => navigate({ to: '/pipelines/$pipelineId', params: { pipelineId: String(pipelineId) } })}
     >
-      <Info className="h-4 w-4" />
+      <Workflow className="h-4 w-4" />
     </Button>
   )
 }
@@ -123,4 +123,3 @@ function PipelineStatusSwitch({ pipeline }: { pipeline: Pipeline }) {
     />
   )
 }
-

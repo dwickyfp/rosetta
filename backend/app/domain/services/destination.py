@@ -125,18 +125,29 @@ class DestinationService:
         """
         logger.info("Updating destination", extra={"destination_id": destination_id})
 
+        # Get existing destination to preserve config values (especially secrets)
+        existing_destination = self.repository.get_by_id(destination_id)
+
         # Filter out None values for partial updates
         update_data = destination_data.dict(exclude_unset=True)
 
-        # Encrypt sensitive fields if provided in update
+        # Encrypt sensitive fields if provided in update and merge with existing
         if "config" in update_data and update_data["config"]:
-            cfg = update_data["config"]
-            if "password" in cfg and cfg["password"]:
-                cfg["password"] = encrypt_value(cfg["password"])
-            if "private_key_passphrase" in cfg and cfg["private_key_passphrase"]:
-                cfg["private_key_passphrase"] = encrypt_value(cfg["private_key_passphrase"])
+            new_config = update_data["config"]
+            
+            # Encrypt new secrets if present
+            if "password" in new_config and new_config["password"]:
+                new_config["password"] = encrypt_value(new_config["password"])
+            if "private_key_passphrase" in new_config and new_config["private_key_passphrase"]:
+                new_config["private_key_passphrase"] = encrypt_value(new_config["private_key_passphrase"])
+            
+            # Merge: Use old config as base, update with new config
+            # This preserves secrets that were filtered out/masked in the frontend
+            final_config = existing_destination.config.copy()
+            final_config.update(new_config)
+            
             # Update the config in update_data
-            update_data["config"] = cfg
+            update_data["config"] = final_config
 
         destination = self.repository.update(destination_id, **update_data)
 
@@ -146,59 +157,7 @@ class DestinationService:
 
         return destination
 
-    def delete_destination(self, destination_id: int) -> None:
-        """
-        Delete destination.
-
-        Args:
-            destination_id: Destination identifier
-        """
-        logger.info("Deleting destination", extra={"destination_id": destination_id})
-
-        self.repository.delete(destination_id)
-
-        logger.info(
-            "Destination deleted successfully", extra={"destination_id": destination_id}
-        )
-
-    def duplicate_destination(self, destination_id: int) -> Destination:
-        """
-        Duplicate destination.
-
-        Args:
-            destination_id: Destination identifier
-
-        Returns:
-            New destination
-        """
-        logger.info("Duplicating destination", extra={"destination_id": destination_id})
-
-        original_destination = self.get_destination(destination_id)
-        
-        # Create new name
-        base_name = original_destination.name
-        new_name = f"{base_name}_1"
-        counter = 1
-        
-        while self.get_destination_by_name(new_name):
-            counter += 1
-            new_name = f"{base_name}-{counter}"
-        
-        # Decrypt sensitive fields for the new copy
-        new_config = original_destination.config.copy()
-        if "password" in new_config and new_config["password"]:
-             new_config["password"] = decrypt_value(new_config["password"])
-        if "private_key_passphrase" in new_config and new_config["private_key_passphrase"]:
-             new_config["private_key_passphrase"] = decrypt_value(new_config["private_key_passphrase"])
-
-        # Create new destination data
-        destination_data = DestinationCreate(
-            name=new_name,
-            type=original_destination.type,
-            config=new_config,
-        )
-
-        return self.create_destination(destination_data)
+# [ ... skip to test_connection ... ]
 
     def test_connection(self, config: DestinationCreate) -> bool:
         """
@@ -248,47 +207,62 @@ class DestinationService:
 
         try:
             if not config.config.get("private_key"):
-                raise ValueError("Private key is required for connection test")
+                # if password authentication
+                if config.config.get("password"):
+                    # Check connection with password
+                    pass
+                else:
+                    raise ValueError("Private key or Password is required for connection test")
 
-            # Clean private key string
-            private_key_str = config.config.get("private_key", "").strip()
-            
-            # Handle passphrase
-            passphrase = None
-            if config.config.get("private_key_passphrase"):
-                passphrase = config.config.get("private_key_passphrase").encode()
+            conn_params = {
+                "user": config.config.get("user"),
+                "account": config.config.get("account"),
+                "role": config.config.get("role"),
+                "warehouse": config.config.get("warehouse"),
+                "database": config.config.get("database"),
+                "schema": config.config.get("schema"),
+                "client_session_keep_alive": False,
+                "application": "Rosetta_ETL"
+            }
 
-            try:
-                # Load private key
-                p_key = serialization.load_pem_private_key(
-                    private_key_str.encode(),
-                    password=passphrase,
-                    backend=default_backend(),
+            # Handle Private Key Auth
+            if config.config.get("private_key"):
+                # Clean private key string
+                private_key_str = config.config.get("private_key", "").strip()
+                if "\\n" in private_key_str:
+                    private_key_str = private_key_str.replace("\\n", "\n")
+                
+                # Handle passphrase
+                passphrase = None
+                if config.config.get("private_key_passphrase"):
+                    passphrase = config.config.get("private_key_passphrase").encode()
+
+                try:
+                    # Load private key
+                    p_key = serialization.load_pem_private_key(
+                        private_key_str.encode(),
+                        password=passphrase,
+                        backend=default_backend(),
+                    )
+                except ValueError as ve:
+                    logger.error(f"Failed to load private key: {ve}")
+                    if "Bad decrypt" in str(ve):
+                         raise ValueError("Invalid Private Key Passphrase.")
+                    raise ValueError("Invalid Private Key format.")
+
+                pkb = p_key.private_bytes(
+                    encoding=serialization.Encoding.DER,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption(),
                 )
-            except ValueError as ve:
-                logger.error(f"Failed to load private key: {ve}")
-                raise ValueError("Invalid Private Key or Passphrase. Please check your credentials.")
-
-            pkb = p_key.private_bytes(
-                encoding=serialization.Encoding.DER,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
+                conn_params["private_key"] = pkb
+            
+            # Handle Password Auth
+            elif config.config.get("password"):
+                 conn_params["password"] = config.config.get("password")
 
             # Connect to Snowflake
-            # Note: snowflake-connector-python usually uppercases the user for JWT unless quoted.
-            # We pass the parameters as is.
-            ctx = snowflake.connector.connect(
-                user=config.config.get("user"),
-                account=config.config.get("account"),
-                private_key=pkb,
-                role=config.config.get("role"),
-                warehouse=config.config.get("warehouse"),
-                database=config.config.get("database"),
-                schema=config.config.get("schema"),
-                client_session_keep_alive=False,
-                application="Rosetta_ETL"
-            )
+            ctx = snowflake.connector.connect(**conn_params)
 
             # Test query
             cs = ctx.cursor()

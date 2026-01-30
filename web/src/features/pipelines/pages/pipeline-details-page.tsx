@@ -1,6 +1,6 @@
 import { useParams, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { pipelinesRepo } from '@/repo/pipelines'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { sourcesRepo } from '@/repo/sources'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -16,6 +16,7 @@ import { RefreshCcw, GitBranch, Table2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { Switch } from '@/components/ui/switch'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -24,6 +25,40 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
+
+function PipelineStatusSwitch({ pipeline }: { pipeline: Pipeline }) {
+    const queryClient = useQueryClient()
+    const isRunning = pipeline.status === 'START' || pipeline.status === 'REFRESH'
+  
+    const { mutate, isPending } = useMutation({
+      mutationFn: async (checked: boolean) => {
+        if (checked) {
+          return pipelinesRepo.start(pipeline.id)
+        } else {
+          return pipelinesRepo.pause(pipeline.id)
+        }
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['pipelines'] })
+        queryClient.invalidateQueries({ queryKey: ['pipeline', pipeline.id] })
+        toast.success('Pipeline status updated')
+      },
+      onError: (error) => {
+        toast.error(`Failed to update status: ${error}`)
+      }
+    })
+  
+    return (
+      <div className="flex items-center space-x-2">
+           <span className="text-sm font-medium">{isRunning ? 'Running' : 'Paused'}</span>
+          <Switch
+            checked={isRunning}
+            onCheckedChange={(checked) => mutate(checked)}
+            disabled={isPending}
+          />
+      </div>
+    )
+  }
 
 export default function PipelineDetailsPage() {
     const { pipelineId } = useParams({ from: '/_authenticated/pipelines/$pipelineId' })
@@ -116,7 +151,8 @@ export default function PipelineDetailsPage() {
                             )}
                         </div>
                     </div>
-                    <div className="ml-auto">
+                    <div className="ml-auto flex items-center gap-2">
+                        {pipeline && <PipelineStatusSwitch pipeline={pipeline} />}
                         <Button
                             variant="outline"
                             size="sm"

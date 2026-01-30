@@ -154,10 +154,11 @@ class CreditMonitorService:
             # Assuming it's PEM string
             from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives import serialization
+            from app.core.security import decrypt_value
             
             p_key = serialization.load_pem_private_key(
                 config["private_key"].encode(),
-                password=config.get("private_key_passphrase", "").encode() if config.get("private_key_passphrase") else None,
+                password=decrypt_value(config.get("private_key_passphrase", "")).encode() if config.get("private_key_passphrase") else None,
                 backend=default_backend()
             )
             
