@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 // Custom Node Component for consistent styling
 const CustomNode = ({ data }: { data: any }) => {
   const isSource = data.isSource;
+  const isDestGroup = data.isDestGroup;
   
   if (isSource) {
       return (
@@ -32,6 +33,25 @@ const CustomNode = ({ data }: { data: any }) => {
       )
   }
 
+  if (isDestGroup) {
+      return (
+        <div className="relative">
+          <Handle type="target" position={Position.Left} className="!bg-slate-400 !w-2 !h-2" />
+          <Card className="min-w-[200px] max-w-[300px] shadow-sm hover:shadow-md transition-shadow border-l-4 border-l-purple-500 bg-white">
+            <CardHeader className="p-3 pb-2">
+                <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-purple-500 shrink-0" />
+                    <div className="font-semibold text-sm leading-tight truncate" title={data.label}>
+                        {data.label}
+                    </div>
+                </div>
+            </CardHeader>
+          </Card>
+          <Handle type="source" position={Position.Right} className="!bg-slate-400 !w-2 !h-2" />
+        </div>
+      )
+  }
+
   // Compact Target Node
   return (
     <div className="relative">
@@ -40,7 +60,7 @@ const CustomNode = ({ data }: { data: any }) => {
       <Card className="min-w-[180px] max-w-[250px] shadow-sm hover:shadow-md transition-shadow border-l-2 border-l-emerald-500">
         <CardContent className="p-2 flex flex-col gap-1">
             <div className="flex items-center gap-2">
-                <Layers className="w-3 h-3 text-emerald-500 shrink-0" />
+                <Database className="w-3 h-3 text-emerald-500 shrink-0" />
                 <div className="font-semibold text-xs leading-tight truncate" title={data.label}>
                     {data.label}
                 </div>
@@ -98,11 +118,11 @@ export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowPr
      if (!pipeline || !stats) return { nodes, edges }
 
      // Constants
-     // const NODE_HEIGHT = 100 // Approximate
-     // const ROW_HEIGHT = 120
      const X_ROOT = 50
      const X_SOURCE = 400
-     const X_TARGET = 900
+     const X_DEST_GROUP = 800
+     const X_TARGET = 1200
+     const ROW_HEIGHT = 150
 
      // Group stats by Source Table
      const flowMap = new Map<string, typeof stats>()
@@ -134,13 +154,24 @@ export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowPr
 
     // Iterate through each Source Table Group
     flowMap.forEach((targets, sourceTableName) => {
-        const targetCount = targets.length
-        // Calculate height needed for this group
-        // Compact rows for target
-        const groupHeight = Math.max(1, targetCount) * 80 // Reduced row height for compact look
-        
-        // Source Node Position (Vertically centered in its group space)
-        const sourceY = currentY + (groupHeight / 2) - (40) // Adjust center
+        // Group targets by Destination ID
+        const destGroups = new Map<number, typeof targets>()
+        targets.forEach(t => {
+            if (!t.pipeline_destination_id) return
+            const list = destGroups.get(t.pipeline_destination_id) || []
+            list.push(t)
+            destGroups.set(t.pipeline_destination_id, list)
+        })
+
+        // Calculate total height for this Source Group based on all destinations
+        let groupTotalRows = 0
+        destGroups.forEach(groupTargets => {
+            groupTotalRows += Math.max(1, groupTargets.length)
+        })
+        const sourceGroupHeight = groupTotalRows * ROW_HEIGHT
+
+        // Source Node Position (Vertically centered for this entire group)
+        const sourceY = currentY + (sourceGroupHeight / 2) - (ROW_HEIGHT / 2)
         
         const sourceNodeId = `src-tbl-${sourceTableName}`
         nodes.push({
@@ -165,59 +196,90 @@ export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowPr
             animated: true,
         })
 
-        // Place Target Nodes
-        targets.forEach((stat, idx) => {
-             if (!stat.pipeline_destination_id) return
+        // Iterate through Destination Groups to place Dest Nodes & Target Nodes
+        let currentDestY = currentY
+        destGroups.forEach((groupTargets, destId) => {
+             const destRowCount = Math.max(1, groupTargets.length)
+             const destGroupHeight = destRowCount * ROW_HEIGHT
 
-             const targetTableName = stat.target_table_name || stat.table_name
-             const destName = stat.destination_name || `Dest ${stat.pipeline_destination_id}`
-             
-             // Unique ID for target node: Use sync_id if available, otherwise fallback to dest-table
-             const uniqueIdSuffix = stat.pipeline_destination_table_sync_id 
-                ? `sync-${stat.pipeline_destination_table_sync_id}` 
-                : `${stat.pipeline_destination_id}-${targetTableName}`
-
-             const targetNodeId = `dst-tbl-${uniqueIdSuffix}`
-             
-             // Target Y position (Distributed evenly in the group space)
-             const targetY = currentY + (idx * 80) // 80px per row
+             // Destination Node Position (Centered for its targets)
+             const destY = currentDestY + (destGroupHeight / 2) - (ROW_HEIGHT / 2)
+             const destName = groupTargets[0].destination_name || `Dest ${destId}`
+             const destNodeId = `dst-group-${sourceTableName}-${destId}`
 
              nodes.push({
-                id: targetNodeId,
+                id: destNodeId,
                 type: 'custom',
-                position: { x: X_TARGET, y: targetY },
-                data: { 
-                    label: targetTableName, // Main label is table name
-                    subLabel: destName,      // Sub label is Destination
-                    isSource: false,
-                    totalCount: calcTotal(stat.daily_stats), 
-                    destId: stat.pipeline_destination_id
+                position: { x: X_DEST_GROUP, y: destY },
+                data: {
+                    label: destName,
+                    isDestGroup: true,
+                    isSource: false 
                 },
-                targetPosition: Position.Left,
-            })
+                sourcePosition: Position.Right,
+                targetPosition: Position.Left
+             })
 
-             // Edge Source -> Target
+             // Edge Source -> Destination
              edges.push({
-                id: `e-${sourceTableName}-${targetNodeId}`,
+                id: `e-${sourceTableName}-${destNodeId}`,
                 source: sourceNodeId,
-                target: targetNodeId,
+                target: destNodeId,
                 type: 'smoothstep',
                 animated: true,
-                style: { stroke: '#64748b', strokeWidth: 1.5 },
-                label: `${calcTotal(stat.daily_stats).toLocaleString()}`,
-                labelStyle: { fill: '#475569', fontWeight: 600, fontSize: 10 },
-                labelBgStyle: { fill: '#f8fafc', fillOpacity: 0.9 },
-                markerEnd: { type: MarkerType.ArrowClosed, color: '#64748b', width: 15, height: 15 },
+                style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '4,4' },
+                markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
             })
+
+            // Place Target Nodes for this Destination
+            groupTargets.forEach((stat, idx) => {
+                const targetTableName = stat.target_table_name || stat.table_name
+                // Unique ID for target node
+                const uniqueIdSuffix = stat.pipeline_destination_table_sync_id 
+                   ? `sync-${stat.pipeline_destination_table_sync_id}` 
+                   : `${stat.pipeline_destination_id}-${targetTableName}`
+
+                const targetNodeId = `dst-tbl-${uniqueIdSuffix}`
+                
+                // Target Y position 
+                const targetY = currentDestY + (idx * ROW_HEIGHT)
+
+                nodes.push({
+                   id: targetNodeId,
+                   type: 'custom',
+                   position: { x: X_TARGET, y: targetY },
+                   data: { 
+                       label: targetTableName, 
+                       subLabel: destName, 
+                       isSource: false,
+                       totalCount: calcTotal(stat.daily_stats), 
+                       destId: stat.pipeline_destination_id
+                   },
+                   targetPosition: Position.Left,
+               })
+
+               // Edge Destination -> Target
+               edges.push({
+                   id: `e-${destNodeId}-${targetNodeId}`,
+                   source: destNodeId,
+                   target: targetNodeId,
+                   type: 'smoothstep',
+                   animated: true,
+                   style: { stroke: '#64748b', strokeWidth: 1.5 },
+                   label: `${calcTotal(stat.daily_stats).toLocaleString()}`,
+                   labelStyle: { fill: '#475569', fontWeight: 600, fontSize: 10 },
+                   labelBgStyle: { fill: '#f8fafc', fillOpacity: 0.9 },
+                   markerEnd: { type: MarkerType.ArrowClosed, color: '#64748b', width: 15, height: 15 },
+               })
+            })
+
+            // Move Y cursor for next destination group
+            currentDestY += destGroupHeight
         })
 
-        // Advance Y for next group
-        currentY += groupHeight + 40 // + padding
+        // Advance Main Y for next Source Group + padding
+        currentY += sourceGroupHeight + 40 
     })
-
-    // Adjust Root Y to be vertically centered relative to all sources?
-    // Actually, visually it's fine if it's at the top or we can calculate centroid.
-    // Let's leave it simple for now.
 
      return { nodes, edges }
   }, [pipeline, stats])
