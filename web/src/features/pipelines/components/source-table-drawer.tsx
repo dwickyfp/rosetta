@@ -153,6 +153,16 @@ export function SourceTableDrawer({
     }
   }
 
+  const handleValidateTargetName = async (targetName: string) => {
+    if (!selectedDestinationId) throw new Error('No destination selected')
+    
+    return await tableSyncRepo.validateTargetTable(
+      pipeline.id,
+      selectedDestinationId,
+      targetName
+    )
+  }
+
   const getCurrentDestination = () => {
     return destinations.find((d) => d.id === selectedDestinationId)
   }
@@ -299,6 +309,7 @@ export function SourceTableDrawer({
           open={true}
           onClose={() => setActiveMode(null)}
           onSave={handleSaveTargetName}
+          onValidate={handleValidateTargetName}
         />
       )}
     </>

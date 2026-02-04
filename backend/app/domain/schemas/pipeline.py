@@ -216,6 +216,22 @@ class TableSyncBulkRequest(BaseSchema):
     )
 
 
+class TableValidationRequest(BaseSchema):
+    """
+    Schema for table name validation request.
+    """
+    table_name: str = Field(..., description="Target table name to validate")
+
+
+class TableValidationResponse(BaseSchema):
+    """
+    Schema for table name validation response.
+    """
+    valid: bool = Field(..., description="Whether the table name is valid")
+    exists: bool = Field(..., description="Whether the table already exists in destination")
+    message: str | None = Field(default=None, description="Validation message or error details")
+
+
 class ColumnSchemaResponse(BaseSchema):
     """
     Schema for table column information.

@@ -164,6 +164,13 @@ export interface TableSyncRequest {
   enabled?: boolean
 }
 
+export interface TableValidationResponse {
+  valid: boolean
+  exists: boolean
+  message: string | null
+}
+
+
 export const tableSyncRepo = {
   getDestinationTables: async (
     pipelineId: number,
@@ -206,6 +213,18 @@ export const tableSyncRepo = {
       await api.post(
         `/pipelines/${pipelineId}/destinations/${pipelineDestinationId}/tables/${tableName}/init`
       )
+    return response.data
+  },
+
+  validateTargetTable: async (
+    pipelineId: number,
+    pipelineDestinationId: number,
+    tableName: string
+  ): Promise<TableValidationResponse> => {
+    const response: AxiosResponse<TableValidationResponse> = await api.post(
+      `/pipelines/${pipelineId}/destinations/${pipelineDestinationId}/tables/validate`,
+      { table_name: tableName }
+    )
     return response.data
   },
 }

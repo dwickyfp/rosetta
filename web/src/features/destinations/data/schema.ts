@@ -31,6 +31,44 @@ export const destinationFormSchema = z.object({
         port: z.number().optional(),
         password: z.string().optional(),
     }).optional(),
+}).superRefine((data, ctx) => {
+    if (data.type === 'POSTGRES') {
+        if (!data.config?.host) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Host is required',
+                path: ['config', 'host'],
+            })
+        }
+        if (!data.config?.port) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Port is required',
+                path: ['config', 'port'],
+            })
+        }
+        if (!data.config?.database) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Database is required',
+                path: ['config', 'database'],
+            })
+        }
+        if (!data.config?.user) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'User is required',
+                path: ['config', 'user'],
+            })
+        }
+        if (!data.config?.password) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Password is required',
+                path: ['config', 'password'],
+            })
+        }
+    }
 })
 
 export type DestinationForm = z.infer<typeof destinationFormSchema>

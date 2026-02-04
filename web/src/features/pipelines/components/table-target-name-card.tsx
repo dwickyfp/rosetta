@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Save, X, Database } from 'lucide-react'
-import { TableWithSyncInfo } from '@/repo/pipelines'
+import { Loader2, Save, X, Database, Check, AlertCircle } from 'lucide-react'
+import { TableWithSyncInfo, TableValidationResponse } from '@/repo/pipelines'
 import { cn } from '@/lib/utils'
 
 interface TableTargetNameCardProps {
@@ -10,6 +10,7 @@ interface TableTargetNameCardProps {
     open: boolean
     onClose: () => void
     onSave: (targetName: string) => Promise<void>
+    onValidate: (targetName: string) => Promise<TableValidationResponse>
     className?: string
 }
 
@@ -18,10 +19,16 @@ export function TableTargetNameCard({
     open,
     onClose,
     onSave,
+    onValidate,
     className
 }: TableTargetNameCardProps) {
     const [targetName, setTargetName] = useState('')
     const [isSaving, setIsSaving] = useState(false)
+    
+    // Validation state
+    const [isValidated, setIsValidated] = useState(false)
+    const [isValidating, setIsValidating] = useState(false)
+    const [validationInfo, setValidationInfo] = useState<TableValidationResponse | null>(null)
 
     // Load target name from sync_config when table changes
     useEffect(() => {
@@ -30,7 +37,16 @@ export function TableTargetNameCard({
         } else if (open && table) {
             setTargetName(table.table_name)
         }
+        // Reset validation on open
+        setIsValidated(false)
+        setValidationInfo(null)
     }, [table?.table_name, table?.sync_configs, open])
+    
+    // Reset validation when target name changes
+    useEffect(() => {
+        setIsValidated(false)
+        setValidationInfo(null)
+    }, [targetName])
 
     const handleSave = async (e: React.MouseEvent) => {
         e.preventDefault()
@@ -41,6 +57,22 @@ export function TableTargetNameCard({
             await onSave(targetName.trim() || table?.table_name || '')
         } finally {
             setIsSaving(false)
+        }
+    }
+    
+    const handleValidate = async (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        
+        setIsValidating(true)
+        try {
+            const result = await onValidate(targetName.trim() || table?.table_name || '')
+            setValidationInfo(result)
+            setIsValidated(result.valid)
+        } catch (error) {
+            console.error("Validation error", error)
+        } finally {
+            setIsValidating(false)
         }
     }
 
@@ -59,6 +91,7 @@ export function TableTargetNameCard({
     if (!open || !table) return null
 
     const hasChanged = targetName !== (table.sync_configs?.[0]?.table_name_target || table.table_name)
+    const currentTargetName = targetName.trim() || table.table_name
 
     return (
         <div
@@ -98,23 +131,58 @@ export function TableTargetNameCard({
                 {/* Target Name Input */}
                 <div className="space-y-2">
                     <label className="text-sm font-medium">Target Table Name</label>
-                    <Input
-                        value={targetName}
-                        onChange={(e) => setTargetName(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        placeholder={table.table_name}
-                        className="font-mono"
-                    />
+                    <div className="flex gap-2">
+                        <Input
+                            value={targetName}
+                            onChange={(e) => setTargetName(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder={table.table_name}
+                            className={cn(
+                                "font-mono flex-1",
+                                isValidated && "border-green-500 ring-green-500/20",
+                                validationInfo && !validationInfo.valid && "border-red-500 ring-red-500/20"
+                            )}
+                        />
+                        <Button 
+                            variant="secondary" 
+                            onClick={handleValidate}
+                            disabled={isValidating}
+                        >
+                            {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Validate"}
+                        </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                         This is the name of the table in the destination database. Leave empty to use the source table name.
                     </p>
+                    
+                    {/* Validation Status */}
+                    {validationInfo && (
+                        <div className={cn(
+                            "text-xs p-2 rounded flex items-start gap-2",
+                            validationInfo.valid ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                        )}>
+                            {validationInfo.valid ? (
+                                <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                            ) : (
+                                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                            )}
+                            <span>{validationInfo.message}</span>
+                        </div>
+                    )}
+                    
+                    {!isValidated && !validationInfo && (
+                         <div className="text-xs p-2 rounded bg-amber-50 text-amber-700 flex items-start gap-2">
+                             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                             <span>You must validate the table name before saving.</span>
+                         </div>
+                    )}
                 </div>
 
                 {/* Changed indicator */}
                 {hasChanged && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                        <p className="text-xs text-amber-700">
-                            <span className="font-medium">Preview:</span> Data from <code className="bg-amber-100 px-1 rounded">{table.table_name}</code> will be synced to <code className="bg-amber-100 px-1 rounded">{targetName}</code>
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-xs text-blue-700">
+                            <span className="font-medium">Preview:</span> Data from <code className="bg-blue-100 px-1 rounded">{table.table_name}</code> will be synced to <code className="bg-blue-100 px-1 rounded">{currentTargetName}</code>
                         </p>
                     </div>
                 )}
@@ -136,7 +204,7 @@ export function TableTargetNameCard({
                     </Button>
                     <Button
                         onClick={handleSave}
-                        disabled={isSaving}
+                        disabled={isSaving || !isValidated}
                         size="sm"
                     >
                         {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

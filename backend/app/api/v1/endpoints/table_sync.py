@@ -15,6 +15,8 @@ from app.domain.schemas.pipeline import (
     TableSyncBulkRequest,
     TableWithSyncInfoResponse,
     PipelineDestinationTableSyncResponse,
+    TableValidationRequest,
+    TableValidationResponse,
 )
 from app.domain.services.pipeline import PipelineService
 from app.domain.models.pipeline import PipelineDestination, PipelineDestinationTableSync
@@ -158,3 +160,32 @@ async def init_snowflake_table(
         Status of initialization
     """
     return service.init_snowflake_table(pipeline_id, pipeline_destination_id, table_name)
+
+
+@router.post(
+    "/{pipeline_id}/destinations/{pipeline_destination_id}/tables/validate",
+    response_model=TableValidationResponse,
+    summary="Validate target table name",
+    description="Validate target table name against destination database",
+)
+async def validate_target_table(
+    pipeline_id: int = Path(..., description="Pipeline ID"),
+    pipeline_destination_id: int = Path(..., description="Pipeline Destination ID"),
+    validation_request: TableValidationRequest = ...,
+    service: PipelineService = Depends(get_pipeline_service),
+) -> TableValidationResponse:
+    """
+    Validate table name.
+
+    Args:
+        pipeline_id: Pipeline identifier
+        pipeline_destination_id: Pipeline destination identifier
+        validation_request: Validation request containing table name
+        service: Pipeline service instance
+
+    Returns:
+        Validation response
+    """
+    return service.validate_target_table(
+        pipeline_id, pipeline_destination_id, validation_request.table_name
+    )

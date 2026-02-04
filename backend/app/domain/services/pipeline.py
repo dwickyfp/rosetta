@@ -13,7 +13,7 @@ from app.core.logging import get_logger
 from app.domain.models.pipeline import Pipeline, PipelineMetadata, PipelineStatus, PipelineDestination, PipelineDestinationTableSync
 from app.domain.repositories.pipeline import PipelineRepository
 from app.domain.repositories.table_metadata_repo import TableMetadataRepository
-from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate, PipelineDestinationResponse, PipelineDestinationTableSyncResponse
+from app.domain.schemas.pipeline import PipelineCreate, PipelineUpdate, PipelineDestinationResponse, PipelineDestinationTableSyncResponse, TableValidationResponse
 from app.domain.services.source import SourceService
 from app.domain.models.data_flow_monitoring import DataFlowRecordMonitoring
 from app.core.security import decrypt_value
@@ -156,6 +156,135 @@ class PipelineService:
         self.db.refresh(pipeline)
 
         return self.repository.get_by_id_with_relations(pipeline_id)
+
+    def validate_target_table(self, pipeline_id: int, pipeline_destination_id: int, table_name: str) -> TableValidationResponse:
+        """
+        Validate table name for a destination.
+        
+        Args:
+            pipeline_id: Pipeline identifier
+            pipeline_destination_id: Pipeline Destination identifier
+            table_name: Table name to validate
+            
+        Returns:
+            Validation response
+        """
+        # 1. Basic format validation
+        import re
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table_name):
+             return TableValidationResponse(
+                 valid=False,
+                 exists=False,
+                 message="Table name must start with a letter or underscore and contain only alphanumeric characters and underscores."
+             )
+             
+        # 2. Get destination
+        pipeline = self.repository.get_by_id_with_relations(pipeline_id)
+        pipeline_dest = next((pd for pd in pipeline.destinations if pd.id == pipeline_destination_id), None)
+        
+        if not pipeline_dest:
+             # Try to find by destination_id directly if not found by pipeline_destination_id (sometimes frontend sends one or the other)
+             # But the API arg is pipeline_destination_id. 
+             # Let's double check logic. The method signature says pipeline_destination_id.
+             # If checking fails, raise error.
+             from app.core.exceptions import EntityNotFoundError
+             raise EntityNotFoundError(entity_type="PipelineDestination", entity_id=pipeline_destination_id)
+        
+        destination = pipeline_dest.destination
+        
+        if destination.type == 'POSTGRES':
+             try:
+                 import psycopg2
+                 # Connect to Postgres
+                 conn = psycopg2.connect(
+                    host=destination.config.get("host"),
+                    port=destination.config.get("port"),
+                    dbname=destination.config.get("database"),
+                    user=destination.config.get("user"),
+                    password=decrypt_value(destination.config.get("password")),
+                    connect_timeout=5
+                 )
+                 cursor = conn.cursor()
+                 
+                 try:
+                     # Check existence
+                     # Postgres doesn't have a simple "SHOW TABLES LIKE" that works exactly the same across all versions/schemas easily
+                     # querying information_schema is standard.
+                     # Default schema is usually public if not specified, but let's check config
+                     pg_schema = destination.config.get("schema") or "public"
+                     
+                     # Use SELECT 1 for better compatibility
+                     query = "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)"
+                     cursor.execute(query, (pg_schema, table_name))
+                     result = cursor.fetchone()
+                     logger.error(f"Table '{table_name}' exists: {result}")
+                     exists = result[0] if result else False
+                     logger.error(f"Table '{table_name}' exists: {exists}")
+                     if exists:
+                         return TableValidationResponse(
+                             valid=True,
+                             exists=True,
+                             message=f"Table '{table_name}' already exists in schema '{pg_schema}'. It will be used as target."
+                         )
+                     else:
+                         return TableValidationResponse(
+                             valid=False,
+                             exists=False,
+                             message=f"Table '{table_name}' does not exist in schema '{pg_schema}' and will be created."
+                         )
+                 finally:
+                     cursor.close()
+                     conn.close()
+             except Exception as e:
+                 logger.error(f"Failed to validate Postgres table: {e}")
+                 return TableValidationResponse(
+                     valid=False, # If we can't connect, can we validate? Maybe allow it if it's just connectivity issue? 
+                                  # Ideally we fail validation if we can't check.
+                     exists=False,
+                     message=f"Failed to validate against Postgres destination: {str(e)}"
+                 )
+
+        if destination.type != 'SNOWFLAKE':
+             # For others, we might just check regex for now
+              return TableValidationResponse(
+                 valid=True,
+                 exists=False,
+                 message="Validation only fully supported for Snowflake and Postgres currently. Basic syntax check passed."
+             )
+
+        # 3. Check existence in destination (Snowflake)
+        try:
+             conn = self._get_snowflake_connection(destination)
+             cursor = conn.cursor()
+             try:
+                 config = destination.config
+                 db = config.get("database")
+                 schema = config.get("schema")
+                 
+                 exists = self._check_table_exists(cursor, db, schema, table_name)
+                 
+                 if exists:
+                     return TableValidationResponse(
+                         valid=True,
+                         exists=True,
+                         message=f"Table '{table_name}' already exists in {db}.{schema}. It will be used as target."
+                     )
+                 else:
+                     return TableValidationResponse(
+                         valid=True,
+                         exists=False,
+                         message=f"Table '{table_name}' is valid and will be created in {db}.{schema}."
+                     )
+             finally:
+                 cursor.close()
+                 conn.close()
+        except Exception as e:
+             logger.error(f"Failed to validate table name: {e}")
+             return TableValidationResponse(
+                 valid=False,
+                 exists=False,
+                 message=f"Failed to validate against destination: {str(e)}"
+             )
 
     def get_pipeline(self, pipeline_id: int) -> Pipeline:
         """

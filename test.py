@@ -1,51 +1,120 @@
-import duckdb
+import os
+import shutil
+from datetime import timedelta
+from airflow import DAG
+from airflow.providers.standard.operators.python import PythonOperator
+import pendulum
 
-# 1. Initialize DuckDB and load the Postgres extension
-con = duckdb.connect()
-con.sql("INSTALL postgres; LOAD postgres;")
+default_args = {
+    "owner": "airflow",
+    "depends_on_past": False,
+    "retries": 1,
+    "retry_delay": timedelta(minutes=5),
+}
 
-# 2. Attach the Postgres database
-# REPLACE this string with your actual Postgres connection details
-pg_connection = "dbname=postgres user=postgres host=172.16.62.98 port=5455 password=postgres"
-con.sql(f"ATTACH '{pg_connection}' AS pg (TYPE POSTGRES);")
 
-# 3. Create Dummy Data in DuckDB (The Source)
-# We create two rows:
-# - ID 101: Exists in Postgres (Stock 10 -> will update to 50)
-# - ID 102: New item (will insert)
-con.sql("""
-    CREATE OR REPLACE TABLE duckdb_updates AS 
-    SELECT * FROM (VALUES 
-        (101, 'Malvin Gamtemg', 50),
-        (103, 'New Gadget', 20)
-    ) AS t(product_id, product_name, stock_count);
-""")
+def cleanup_logs_except_dag_processor(**kwargs):
+    log_folder = "/opt/airflow/logs"  # Your path
+    excluded_folder = "dag_processor"  # Exact folder name to preserve
 
-print("--- Data in DuckDB (Source) ---")
-con.sql("SELECT * FROM duckdb_updates").show()
+    if not os.path.exists(log_folder):
+        print(f"Log folder not found: {log_folder}")
+        return
 
-# 4. Execute the MERGE Command
-# This pushes changes from DuckDB -> Postgres
-con.sql("""
-    MERGE INTO pg.public.inventory AS target
-    USING duckdb_updates AS source
-    ON target.product_id = source.product_id
-    
-    -- Update existing records (ID 101)
-    WHEN MATCHED THEN
-        UPDATE SET 
-            stock_count = source.stock_count,
-            product_name = source.product_name,
-            last_updated = NOW()
-            
-    -- Insert new records (ID 102)
-    WHEN NOT MATCHED THEN
-        INSERT (product_id, product_name, stock_count, last_updated)
-        VALUES (source.product_id, source.product_name, source.stock_count, NOW());
-""")
+    deleted_count = 0
+    skipped_count = 0
 
-print("--- Merge Complete! ---")
+    def cleanup_dag_processor_folder(dag_processor_path):
+        """Clean up dag_processor folder, keeping only 'latest' and most recent date folder"""
+        if not os.path.exists(dag_processor_path):
+            return 0
 
-# 5. Verify results by querying Postgres through DuckDB
-print("--- Final Data in Postgres (Target) ---")
-con.sql("SELECT * FROM pg.public.inventory ORDER BY product_id").show()
+        items = os.listdir(dag_processor_path)
+        date_folders = []
+
+        # Identify date folders (format: YYYY-MM-DD)
+        for item in items:
+            item_path = os.path.join(dag_processor_path, item)
+            if os.path.isdir(item_path) and item != "latest":
+                # Check if it looks like a date folder
+                if len(item) == 10 and item.count("-") == 2:
+                    try:
+                        # Validate it's a proper date
+                        parts = item.split("-")
+                        if (
+                            len(parts[0]) == 4
+                            and len(parts[1]) == 2
+                            and len(parts[2]) == 2
+                        ):
+                            date_folders.append(item)
+                    except:
+                        pass
+
+        # Sort date folders to find the most recent
+        date_folders.sort(reverse=True)
+        most_recent_date = date_folders[0] if date_folders else None
+
+        # Delete everything except 'latest' and most recent date folder
+        deleted = 0
+        for item in items:
+            item_path = os.path.join(dag_processor_path, item)
+            if item == "latest":
+                print(f"Keeping 'latest' folder: {item_path}")
+                continue
+            if item == most_recent_date:
+                print(f"Keeping most recent date folder: {item_path}")
+                continue
+
+            try:
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                    print(f"Deleted file in dag_processor: {item_path}")
+                    deleted += 1
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                    print(f"Deleted old date folder in dag_processor: {item_path}")
+                    deleted += 1
+            except OSError as e:
+                print(f"Error deleting {item_path}: {e}")
+
+        return deleted
+
+    for item in os.listdir(log_folder):
+        item_path = os.path.join(log_folder, item)
+        item_name = os.path.basename(item_path)
+        if item_name == excluded_folder:
+            print(f"Cleaning up dag_processor folder: {item_path}")
+            deleted_count += cleanup_dag_processor_folder(item_path)
+            skipped_count += 1
+            continue
+        try:
+            if os.path.isfile(item_path):
+                os.remove(item_path)
+                print(f"Deleted file: {item_path}")
+                deleted_count += 1
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+                print(f"Deleted directory: {item_path}")
+                deleted_count += 1
+        except OSError as e:
+            print(f"Error deleting {item_path}: {e}")
+    print(
+        f"Cleanup complete: deleted {deleted_count} items, preserved {skipped_count} (dag_processor)"
+    )
+
+
+with DAG(
+    dag_id="log_cleanup_aggressive_except_dag_processor",
+    default_args=default_args,
+    description="Delete ALL logs except dag_processor folder",
+    schedule="*/5 * * * *",  # Run daily; change to '@hourly' if you want even more aggressive
+    start_date=pendulum.datetime(2021, 1, 1, tz="Asia/Jakarta"),
+    catchup=False,
+    max_active_runs=1,
+    tags=["maintenance"],
+) as dag:
+    cleanup_task = PythonOperator(
+        task_id="delete_all_except_dag_processor",
+        python_callable=cleanup_logs_except_dag_processor,
+    )
+    cleanup_task
