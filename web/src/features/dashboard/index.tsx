@@ -16,6 +16,7 @@ import { dashboardRepo } from '@/repo/dashboard'
 import {
   Activity,
   CreditCard,
+  Minus,
   Server,
   TrendingDown,
   TrendingUp,
@@ -121,12 +122,14 @@ export function Dashboard() {
             <div className='mt-4 flex items-center text-xs'>
               {flowTrend > 0 ? (
                 <TrendingUp className='mr-1 h-3 w-3 text-emerald-500' />
-              ) : (
+              ) : flowTrend < 0 ? (
                 <TrendingDown className='mr-1 h-3 w-3 text-rose-500' />
+              ) : (
+                <Minus className='mr-1 h-3 w-3 text-muted-foreground' />
               )}
               <span
                 className={cn(
-                  flowTrend > 0 ? 'text-emerald-500' : 'text-rose-500',
+                  flowTrend > 0 ? 'text-emerald-500' : flowTrend < 0 ? 'text-rose-500' : 'text-muted-foreground',
                   'font-medium ml-1'
                 )}
               >
