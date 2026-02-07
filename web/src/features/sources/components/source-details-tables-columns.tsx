@@ -17,20 +17,26 @@ export const getSourceDetailsTablesColumns = (
         {
             accessorKey: 'table_name',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Table Name' />
+                <DataTableColumnHeader column={column} title='Table Name' className="justify-start" />
             ),
             cell: ({ row }) => (
-                <span className='font-medium'>{row.getValue('table_name')}</span>
+                <div className="font-medium text-sm text-foreground">
+                    {row.getValue('table_name')}
+                </div>
             ),
             enableSorting: true,
             enableHiding: false,
-            meta: { title: 'Table Name' },
+            meta: {
+                title: 'Table Name',
+                className: 'w-[35%] min-w-[180px]',
+            },
         },
 
         {
             id: 'schema_version',
+            accessorKey: 'version',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Schema Version' />
+                <DataTableColumnHeader column={column} title='Schema Version' className="justify-center w-full" />
             ),
             cell: ({ row }) => {
                 const table = row.original
@@ -38,51 +44,63 @@ export const getSourceDetailsTablesColumns = (
                 const versions = Array.from({ length: table.version }, (_, i) => i + 1)
 
                 return (
-                    <Select
-                        value={table.version.toString()}
-                        onValueChange={(value) => onViewSchema?.(table.id, parseInt(value))}
-                    >
-                        <SelectTrigger className="w-[120px]">
-                            <SelectValue placeholder="Version" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {versions.map((v) => (
-                                <SelectItem key={v} value={v.toString()}>
-                                    <div className="flex items-center gap-2">
-                                        <span>Version {v}</span>
-                                        {v === table.version && (
-                                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 h-5 px-1.5">
-                                                Active
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <div className="flex items-center justify-center">
+                        <Select
+                            value={table.version.toString()}
+                            onValueChange={(value) => onViewSchema?.(table.id, parseInt(value))}
+                        >
+                            <SelectTrigger className="w-[160px] h-8 text-xs bg-muted/40 border-border/50 focus:ring-0 focus:ring-offset-0">
+                                <SelectValue placeholder="Version" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {versions.map((v) => (
+                                    <SelectItem key={v} value={v.toString()} className="text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <span>Version {v}</span>
+                                            {v === table.version && (
+                                                <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-medium bg-emerald-500/15 text-emerald-500 border-emerald-500/30">
+                                                    Active
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 )
             },
-            meta: { title: 'Schema Version' },
+            enableSorting: true,
+            meta: {
+                title: 'Schema Version',
+                className: 'w-[22%] min-w-[160px] text-center',
+            },
         },
         {
             id: 'view_schema',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Schema Details' />
+                <DataTableColumnHeader column={column} title='Schema Details' className="justify-center w-full" />
             ),
             cell: ({ row }) => {
                 const table = row.original
                 return (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onViewSchema?.(table.id, table.version)}
-                    >
-                        <Eye className="h-4 w-4 mr-2" />
-                        View Schema
-                    </Button>
+                    <div className="flex items-center justify-center">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-3 text-xs hover:bg-muted/60 text-muted-foreground hover:text-foreground gap-1.5"
+                            onClick={() => onViewSchema?.(table.id, table.version)}
+                        >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>View Schema</span>
+                        </Button>
+                    </div>
                 )
             },
-            meta: { title: 'Schema Details' },
+            meta: {
+                title: 'Schema Details',
+                className: 'w-[22%] min-w-[140px] text-center',
+            },
         }
     ]
 
@@ -90,22 +108,27 @@ export const getSourceDetailsTablesColumns = (
         columns.push({
             id: 'actions',
             header: ({ column }) => (
-                <DataTableColumnHeader column={column} title='Action' className='w-full justify-center' />
+                <DataTableColumnHeader column={column} title='Action' className='justify-center w-full' />
             ),
             cell: ({ row }) => (
-                <div className='flex justify-center'>
+                <div className='flex items-center justify-center'>
                     <Button
                         variant='destructive'
                         size='sm'
+                        className="h-7 w-16 text-xs font-medium shadow-none"
                         onClick={() => onUnregister(row.original.table_name)}
                     >
                         Drop
                     </Button>
                 </div>
             ),
-            meta: { title: 'Action' },
+            meta: {
+                title: 'Action',
+                className: 'w-[21%] min-w-[100px] text-center',
+            },
         })
     }
 
     return columns
 }
+

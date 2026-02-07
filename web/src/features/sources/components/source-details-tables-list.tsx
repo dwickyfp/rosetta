@@ -111,18 +111,18 @@ export function SourceDetailsTablesList({ sourceId, tables, readOnly = false }: 
     })
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Tables</CardTitle>
+        <Card className="bg-card/50 border-border/60 shadow-none">
+            <CardHeader className="px-4 py-3 border-b border-border/40">
+                <CardTitle className="text-sm font-semibold">Monitored Tables</CardTitle>
             </CardHeader>
-            <CardContent>
-                <div className='flex flex-1 flex-col gap-4'>
+            <CardContent className="p-4">
+                <div className='flex flex-1 flex-col gap-3'>
                     <DataTableToolbar
                         table={table}
                         searchPlaceholder='Filter by table name...'
                     />
-                    <div className='rounded-md border'>
-                        <Table>
+                    <div className='rounded-md border border-border/50 overflow-hidden'>
+                        <Table className="table-fixed">
                             <TableHeader>
                                 {table.getHeaderGroups().map((headerGroup) => (
                                     <TableRow key={headerGroup.id}>
