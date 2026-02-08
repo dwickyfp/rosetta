@@ -20,7 +20,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import { type SourceTableInfo, sourcesRepo } from '@/repo/sources'
 import { useQueryClient } from '@tanstack/react-query'
@@ -136,89 +136,90 @@ export function SourceReplicationTable({ sourceId, tables }: SourceReplicationTa
     })
 
     return (
-        <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold tracking-tight">Tables</h3>
-            </div>
+        <>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Monitored Tables</CardTitle>
+                    <CardDescription>View and manage tables currently being replicated.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-col gap-4">
+                        <DataTableToolbar
+                            table={table}
+                            searchPlaceholder='Filter by table name...'
+                        />
 
-            <div className="rounded-md border border-border/60 bg-card/50">
-                <div className="p-2 border-b border-border/40">
-                    <DataTableToolbar
-                        table={table}
-                        searchPlaceholder='Filter by table name...'
-                    />
-                </div>
-
-                <Table>
-                    <TableHeader className="bg-muted/30">
-                        {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id} className="hover:bg-transparent border-border/40">
-                                {headerGroup.headers.map((header) => {
-                                    return (
-                                        <TableHead
-                                            key={header.id}
-                                            colSpan={header.colSpan}
-                                            className={cn(
-                                                "h-9 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
-                                                header.column.columnDef.meta?.className,
-                                                header.column.columnDef.meta?.thClassName
-                                            )}
-                                        >
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                    header.column.columnDef.header,
-                                                    header.getContext()
-                                                )}
-                                        </TableHead>
-                                    )
-                                })}
-                            </TableRow>
-                        ))}
-                    </TableHeader>
-                    <TableBody>
-                        {table.getRowModel().rows?.length ? (
-                            table.getRowModel().rows.map((row) => (
-                                <TableRow
-                                    key={row.id}
-                                    data-state={row.getIsSelected() && 'selected'}
-                                    className="h-10 border-border/40 hover:bg-muted/50 odd:bg-transparent even:bg-muted/20"
-                                >
-                                    {row.getVisibleCells().map((cell) => (
-                                        <TableCell
-                                            key={cell.id}
-                                            className={cn(
-                                                "py-2",
-                                                cell.column.columnDef.meta?.className,
-                                                cell.column.columnDef.meta?.tdClassName
-                                            )}
-                                        >
-                                            {flexRender(
-                                                cell.column.columnDef.cell,
-                                                cell.getContext()
-                                            )}
-                                        </TableCell>
+                        <div className="rounded-md border">
+                            <Table>
+                                <TableHeader className="bg-muted/30">
+                                    {table.getHeaderGroups().map((headerGroup) => (
+                                        <TableRow key={headerGroup.id} className="hover:bg-transparent border-border/40">
+                                            {headerGroup.headers.map((header) => {
+                                                return (
+                                                    <TableHead
+                                                        key={header.id}
+                                                        colSpan={header.colSpan}
+                                                        className={cn(
+                                                            "h-9 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                                                            header.column.columnDef.meta?.className,
+                                                            header.column.columnDef.meta?.thClassName
+                                                        )}
+                                                    >
+                                                        {header.isPlaceholder
+                                                            ? null
+                                                            : flexRender(
+                                                                header.column.columnDef.header,
+                                                                header.getContext()
+                                                            )}
+                                                    </TableHead>
+                                                )
+                                            })}
+                                        </TableRow>
                                     ))}
-                                </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell
-                                    colSpan={columns.length}
-                                    className='h-24 text-center text-muted-foreground'
-                                >
-                                    No tables found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                                </TableHeader>
+                                <TableBody>
+                                    {table.getRowModel().rows?.length ? (
+                                        table.getRowModel().rows.map((row) => (
+                                            <TableRow
+                                                key={row.id}
+                                                data-state={row.getIsSelected() && 'selected'}
+                                                className="h-10 border-border/40 hover:bg-muted/50 odd:bg-transparent even:bg-muted/20"
+                                            >
+                                                {row.getVisibleCells().map((cell) => (
+                                                    <TableCell
+                                                        key={cell.id}
+                                                        className={cn(
+                                                            "py-2",
+                                                            cell.column.columnDef.meta?.className,
+                                                            cell.column.columnDef.meta?.tdClassName
+                                                        )}
+                                                    >
+                                                        {flexRender(
+                                                            cell.column.columnDef.cell,
+                                                            cell.getContext()
+                                                        )}
+                                                    </TableCell>
+                                                ))}
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell
+                                                colSpan={columns.length}
+                                                className='h-24 text-center text-muted-foreground'
+                                            >
+                                                No tables found.
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
 
-                <div className="p-2 border-t border-border/40">
-                    <DataTablePagination table={table} />
-                </div>
-            </div>
-
+                        <DataTablePagination table={table} />
+                    </div>
+                </CardContent>
+            </Card>
             <AlertDialog open={!!tableToDrop} onOpenChange={(open) => !open && setTableToDrop(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -242,7 +243,7 @@ export function SourceReplicationTable({ sourceId, tables }: SourceReplicationTa
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
-            </AlertDialog>
+            </AlertDialog >
 
             <SourceDetailsSchemaDrawer
                 open={schemaDrawerOpen}
@@ -253,6 +254,6 @@ export function SourceReplicationTable({ sourceId, tables }: SourceReplicationTa
                 isLoading={isLoadingSchema}
                 version={selectedVersion}
             />
-        </div>
+        </>
     )
 }
