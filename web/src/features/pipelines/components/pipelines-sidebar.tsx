@@ -13,7 +13,7 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { sourcesRepo, SourceDetailResponse } from '@/repo/sources'
 import { Link, useParams, useNavigate } from '@tanstack/react-router'
-import { Database, Folder, Table, Layers, Workflow, Loader2, Search, RefreshCw, X } from "lucide-react"
+import { Database, Table, Layers, Workflow, Loader2, Search, RefreshCw, X, FolderInput, FolderSync } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useMemo, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -155,7 +155,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                 <AccordionItem value="sources" className="border-none">
                     <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium dark:text-[#bec4d6]">
                         <div className="flex items-center gap-2">
-                            <Folder className="h-4 w-4" />
+                            <FolderInput className="h-4 w-4" />
                             <span>Sources</span>
                         </div>
                     </AccordionTrigger>
@@ -183,7 +183,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                 <AccordionItem value="destinations" className="border-none">
                     <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium dark:text-[#bec4d6]">
                         <div className="flex items-center gap-2">
-                            <Folder className="h-4 w-4" />
+                            <FolderSync className="h-4 w-4" />
                             <span>Destinations</span>
                         </div>
                     </AccordionTrigger>
