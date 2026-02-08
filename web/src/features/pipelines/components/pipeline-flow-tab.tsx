@@ -4,6 +4,7 @@ import { ReactFlow, Background, Controls, Node, Edge, Position } from '@xyflow/r
 import '@xyflow/react/dist/style.css'
 import { Plus } from 'lucide-react'
 import { useState, useMemo, useCallback } from 'react'
+import { useTheme } from '@/context/theme-provider'
 import { AddDestinationModal } from './add-destination-modal'
 import { PipelineNode, PipelineNodeData } from './pipeline-node'
 import { SourceTableDrawer } from './source-table-drawer'
@@ -18,6 +19,7 @@ const nodeTypes = {
 }
 
 export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
+  const { theme } = useTheme()
   const [openAddDest, setOpenAddDest] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedDestId, setSelectedDestId] = useState<number | null>(null)
@@ -131,6 +133,7 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
           edges={edges}
           nodeTypes={nodeTypes} // Register custom types
           onNodeClick={onNodeClick}
+          colorMode={theme}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           attributionPosition="bottom-right"

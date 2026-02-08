@@ -3,6 +3,7 @@ import { ReactFlow, Background, Controls, Node, Edge, Position, MarkerType, Hand
 import '@xyflow/react/dist/style.css'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { useTheme } from '@/context/theme-provider'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { PipelineDetailsTable } from './pipeline-details-table'
 import { SourceTableInfo } from '@/repo/sources'
@@ -87,6 +88,7 @@ interface PipelineDataFlowProps {
 }
 
 export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowProps) {
+    const { theme } = useTheme()
     const [selectedDestId, setSelectedDestId] = useState<number | null>(null)
     const [isSheetOpen, setIsSheetOpen] = useState(false)
 
@@ -299,6 +301,7 @@ export function PipelineDataFlow({ pipeline, sourceDetails }: PipelineDataFlowPr
                 nodes={nodes}
                 edges={edges}
                 nodeTypes={nodeTypes}
+                colorMode={theme}
                 onNodeClick={onNodeClick}
                 fitView
             >
