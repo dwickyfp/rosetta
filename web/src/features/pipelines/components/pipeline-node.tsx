@@ -57,7 +57,7 @@ export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
 
   return (
     <div className={cn(
-      "relative min-w-[200px] rounded-xl border-2 bg-background transition-all hover:shadow-lg group",
+      "relative min-w-[200px] rounded-xl border-2 bg-background dark:bg-[#1d252f] transition-all hover:shadow-lg group",
       isSource
         ? "border-blue-500/50 shadow-blue-500/20"
         : isError
@@ -68,7 +68,7 @@ export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
       {isError && !isSource && (
         <div className="absolute inset-0 rounded-xl bg-red-500/10 animate-pulse pointer-events-none" />
       )}
-      
+
       {/* Header with Gradient */}
       <div className={cn(
         "flex items-center justify-between rounded-t-[10px] px-4 py-3 text-white",
@@ -100,7 +100,7 @@ export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
                     <Info className="h-3 w-3" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent 
+                <PopoverContent
                   className="w-80 max-h-60 overflow-auto"
                   onClick={(e) => e.stopPropagation()}
                 >
