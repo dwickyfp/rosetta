@@ -26,7 +26,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Loader2, Save, Search, Download, RefreshCcw } from 'lucide-react'
+import { Loader2, Save, Search, Download, RefreshCcw, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
@@ -55,7 +55,7 @@ interface SourceDetailsListTableProps {
     publishedTableNames: string[]
 }
 
-export function SourceDetailsListTable({ sourceId: propSourceId, isPublicationEnabled: _isPublicationEnabled, publishedTableNames }: SourceDetailsListTableProps) {
+export function SourceDetailsListTable({ sourceId: propSourceId, isPublicationEnabled, publishedTableNames }: SourceDetailsListTableProps) {
     const id = propSourceId
     const queryClient = useQueryClient()
     const [rowSelection, setRowSelection] = useState({})
@@ -225,9 +225,18 @@ export function SourceDetailsListTable({ sourceId: propSourceId, isPublicationEn
                         size="sm"
                         className="h-7 text-xs"
                         onClick={() => registerTableMutation.mutate(tableName)}
-                        disabled={isProcessing}
+                        disabled={isProcessing || !isPublicationEnabled}
                     >
-                        {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
+                        {isProcessing ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : !isPublicationEnabled ? (
+                            <>
+                                <Lock className="mr-1 h-3 w-3" />
+                                Add
+                            </>
+                        ) : (
+                            "Add"
+                        )}
                     </Button>
                 )
             }
@@ -278,7 +287,7 @@ export function SourceDetailsListTable({ sourceId: propSourceId, isPublicationEn
 
     const refreshTablesMutation = useMutation({
         mutationFn: async () => {
-             return sourcesRepo.getAvailableTables(id, true)
+            return sourcesRepo.getAvailableTables(id, true)
         },
         onSuccess: (data) => {
             queryClient.setQueryData(['source-available-tables', id], data)
@@ -301,14 +310,14 @@ export function SourceDetailsListTable({ sourceId: propSourceId, isPublicationEn
                     <CardDescription>Select tables to save as a preset.</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                    <Button 
-                        variant="outline" 
+                    <Button
+                        variant="outline"
                         size="icon"
                         onClick={() => refreshTablesMutation.mutate()}
                         disabled={refreshTablesMutation.isPending}
                         title="Refresh table list from source"
                     >
-                         <RefreshCcw className={cn("h-4 w-4", refreshTablesMutation.isPending && "animate-spin")} />
+                        <RefreshCcw className={cn("h-4 w-4", refreshTablesMutation.isPending && "animate-spin")} />
                     </Button>
                     <Dialog open={isLoadPresetOpen} onOpenChange={setIsLoadPresetOpen}>
                         <DialogTrigger asChild>

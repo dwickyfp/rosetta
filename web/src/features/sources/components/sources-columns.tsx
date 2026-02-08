@@ -2,8 +2,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { type Source } from '../data/schema'
 import { SourcesRowActions } from './sources-row-actions'
-import { Badge } from '@/components/ui/badge'
-import { Logs } from 'lucide-react'
+import { Logs, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export const sourcesColumns: ColumnDef<Source>[] = [
@@ -85,12 +84,11 @@ export const sourcesColumns: ColumnDef<Source>[] = [
             const isActive = row.getValue('is_replication_enabled')
             return (
                 <div className='flex justify-center'>
-                    <Badge
-                        variant={isActive ? 'default' : 'secondary'}
-                        className={isActive ? 'bg-green-500 hover:bg-green-600' : ''}
-                    >
-                        {isActive ? 'Active' : 'Not Active'}
-                    </Badge>
+                    {isActive ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    ) : (
+                        <XCircle className="h-5 w-5 text-gray-400 dark:text-gray-600" />
+                    )}
                 </div>
             )
         },
@@ -105,12 +103,11 @@ export const sourcesColumns: ColumnDef<Source>[] = [
             const isActive = row.getValue('is_publication_enabled')
             return (
                 <div className='flex justify-center'>
-                    <Badge
-                        variant={isActive ? 'default' : 'secondary'}
-                        className={isActive ? 'bg-green-500 hover:bg-green-600' : ''}
-                    >
-                        {isActive ? 'Active' : 'Not Active'}
-                    </Badge>
+                    {isActive ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    ) : (
+                        <XCircle className="h-5 w-5 text-gray-400 dark:text-gray-600" />
+                    )}
                 </div>
             )
         },

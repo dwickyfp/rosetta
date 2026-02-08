@@ -13,7 +13,7 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { sourcesRepo, SourceDetailResponse } from '@/repo/sources'
 import { Link, useParams } from '@tanstack/react-router'
-import { Database, Folder, Table, Layers, Milestone, Loader2, Search, RefreshCw } from "lucide-react"
+import { Database, Folder, Table, Layers, Workflow, Loader2, Search, RefreshCw } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useMemo, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -54,7 +54,7 @@ function TableItem({ name, isActive, highlight, type, sourceTable }: {
     return (
         <div className="relative group/table">
             <div className={cn(
-                "absolute left-0 top-1/2 w-3 h-px bg-border -translate-y-1/2",
+                "absolute left-[-4px] top-1/2 w-4 h-px bg-border -translate-y-1/2",
                 // "group-hover/table:bg-accent-foreground/50 transition-colors"
             )} />
             <HoverCard openDelay={100} closeDelay={200}>
@@ -87,7 +87,7 @@ function TableItem({ name, isActive, highlight, type, sourceTable }: {
                     </div>
                 </HoverCardContent>
             </HoverCard>
-        </div>
+        </div >
     )
 }
 
@@ -104,7 +104,7 @@ function SourceTables({ tables, searchQuery }: { tables: any[], searchQuery: str
     }
 
     return (
-        <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-2 pl-1">
+        <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-[22px] pl-1">
             {filteredTables.map((table) => (
                 <TableItem
                     key={table.id}
@@ -202,7 +202,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                                             </div>
                                         </AccordionTrigger>
                                         <AccordionContent className="pb-0">
-                                            <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-2 pl-1">
+                                            <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-[22px] pl-1">
                                                 {d.table_syncs
                                                     ?.filter(sync => !searchQuery.trim() || (sync.table_name_target || sync.table_name).toLowerCase().includes(searchQuery.toLowerCase()))
                                                     ?.map(sync => (
@@ -448,7 +448,7 @@ export function PipelinesSidebar() {
                                         currentId === pipeline.id && "bg-[#d6e7ff] text-[#065bd8] dark:bg-[#065bd8] dark:text-[#d6e7ff] hover:bg-[#d6e7ff] hover:text-[#065bd8] dark:hover:bg-[#065bd8] dark:hover:text-[#d6e7ff]"
                                     )}>
                                         <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                            <Milestone className={cn("h-4 w-4 shrink-0", currentId === pipeline.id ? "text-[#065bd8] dark:text-[#d6e7ff]" : "text-primary")} />
+                                            <Workflow className={cn("h-4 w-4 shrink-0", currentId === pipeline.id ? "text-[#065bd8] dark:text-[#d6e7ff]" : "text-primary")} />
                                             <HighlightedText text={pipeline.name} highlight={searchQuery} />
                                         </div>
                                     </AccordionTrigger>
@@ -463,7 +463,7 @@ export function PipelinesSidebar() {
                                         )}
                                         title="Go to details"
                                     >
-                                        <Milestone className="h-3 w-3" />
+                                        <Workflow className="h-3 w-3" />
                                     </Link>
                                 </div>
                                 <AccordionContent className="pb-0 pt-1 pl-2">
