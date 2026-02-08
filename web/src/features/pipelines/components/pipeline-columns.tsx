@@ -59,8 +59,8 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
         <Badge
           variant={isStart || isRefresh ? 'default' : 'secondary'}
           className={
-            isStart ? 'bg-green-500 hover:bg-green-600' :
-              isRefresh ? 'bg-blue-500 hover:bg-blue-600' : ''
+            isStart ? 'bg-green-500 hover:bg-green-600 dark:text-white' :
+              isRefresh ? 'bg-blue-500 hover:bg-blue-600 dark:text-white' : ''
           }
         >
           {isStart ? 'RUNNING' : status}
