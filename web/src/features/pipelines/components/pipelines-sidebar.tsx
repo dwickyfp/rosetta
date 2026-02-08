@@ -474,10 +474,10 @@ export function PipelinesSidebar() {
                                 <div className="group relative">
                                     <AccordionTrigger chevronPosition="left" className={cn(
                                         "justify-start py-2 px-2 pr-8 gap-1.5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline rounded-md text-sm font-semibold flex-1",
-                                        currentId === pipeline.id && "bg-[#d6e7ff] text-[#065bd8] dark:bg-[#065bd8] dark:text-[#d6e7ff] hover:bg-[#d6e7ff] hover:text-[#065bd8] dark:hover:bg-[#065bd8] dark:hover:text-[#d6e7ff]"
+                                        currentId === pipeline.id && "bg-[#002c6e] text-[#5999f7] hover:bg-[#002c6e] hover:text-[#5999f7]"
                                     )}>
                                         <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                            <Workflow className={cn("h-4 w-4 shrink-0", currentId === pipeline.id ? "text-[#065bd8] dark:text-[#d6e7ff]" : "text-primary")} />
+                                            <Workflow className={cn("h-4 w-4 shrink-0", currentId === pipeline.id ? "text-[#5999f7]" : "text-primary")} />
                                             <HighlightedText text={pipeline.name} highlight={searchQuery} />
                                         </div>
                                     </AccordionTrigger>
@@ -487,7 +487,7 @@ export function PipelinesSidebar() {
                                         className={cn(
                                             "absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 rounded-md transition-opacity",
                                             currentId === pipeline.id
-                                                ? "text-[#065bd8] dark:text-[#d6e7ff] hover:bg-white/20"
+                                                ? "text-[#5999f7] hover:bg-white/20"
                                                 : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent-foreground/5"
                                         )}
                                         title="Go to details"
