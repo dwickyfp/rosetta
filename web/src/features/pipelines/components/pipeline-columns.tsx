@@ -4,7 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { PipelineAnimatedArrow } from './pipeline-animated-arrow.tsx'
 import { PipelineRowActions } from './pipeline-row-actions.tsx'
-import { Workflow } from 'lucide-react'
+import { Workflow, FolderInput, FolderSync } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -36,12 +36,42 @@ export const pipelineColumns: ColumnDef<Pipeline>[] = [
     header: 'Pipelines',
     cell: ({ row }) => {
       const sourceName = row.original.source?.name || 'Unknown Source'
-      const destCount = row.original.destinations?.length || 0
+      const destinations = row.original.destinations || []
+      const destCount = destinations.length
+      const firstDestName = destinations[0]?.destination?.name
+
       return (
-        <div className='flex items-center space-x-2'>
-          <span className='font-medium'>{sourceName}</span>
-          <PipelineAnimatedArrow />
-          <span className='font-medium'>{destCount} Destination</span>
+        <div className='flex items-center gap-3'>
+          {/* Source */}
+          <div className="flex items-center gap-2 justify-end">
+            <div className="flex flex-col items-end">
+              <span className="font-semibold text-sm leading-none">{sourceName}</span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mt-0.5">Source</span>
+            </div>
+            <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+              <FolderInput className="h-3.5 w-3.5" />
+            </div>
+          </div>
+
+          {/* Connection */}
+          <div className="shrink-0 -mx-1">
+            <PipelineAnimatedArrow />
+          </div>
+
+          {/* Destination */}
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-500/20">
+              <FolderSync className="h-3.5 w-3.5" />
+            </div>
+            <div className="flex flex-col">
+              {destCount > 1 ? (
+                <span className="font-semibold text-sm leading-none">{destCount} Destinations</span>
+              ) : (
+                <span className="font-semibold text-sm leading-none">{firstDestName || 'No Destination'}</span>
+              )}
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mt-0.5">Destination</span>
+            </div>
+          </div>
         </div>
       )
     },
