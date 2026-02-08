@@ -8,6 +8,7 @@ import { DestinationsProvider } from '../components/destinations-provider'
 import { DestinationsTable } from '../components/destinations-table'
 import { destinationsRepo } from '@/repo/destinations'
 import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { ConfigDrawer } from '@/components/config-drawer'
 
 export function DestinationsPage() {
@@ -15,6 +16,13 @@ export function DestinationsPage() {
         queryKey: ['destinations'],
         queryFn: destinationsRepo.getAll,
     })
+
+    useEffect(() => {
+        document.title = 'Destinations'
+        return () => {
+            document.title = 'Rosetta'
+        }
+    }, [])
 
     const destinations = data?.destinations || []
 

@@ -8,6 +8,7 @@ import { SourcesProvider } from './components/sources-provider'
 import { SourcesTable } from './components/sources-table'
 import { sourcesRepo } from '@/repo/sources'
 import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { ConfigDrawer } from '@/components/config-drawer'
 
 export function Sources() {
@@ -16,6 +17,13 @@ export function Sources() {
         queryFn: sourcesRepo.getAll,
         refetchInterval: 5000,
     })
+
+    useEffect(() => {
+        document.title = 'Sources'
+        return () => {
+            document.title = 'Rosetta'
+        }
+    }, [])
 
     const sources = data?.sources || []
 

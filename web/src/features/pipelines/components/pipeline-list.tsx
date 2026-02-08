@@ -9,7 +9,7 @@ import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PipelineCreateDrawer } from './pipeline-create-drawer.tsx'
 
 export default function PipelineList() {
@@ -28,6 +28,13 @@ export default function PipelineList() {
             return hasActiveInitialization ? 2000 : false
         }
     })
+
+    useEffect(() => {
+        document.title = 'Pipelines'
+        return () => {
+            document.title = 'Rosetta'
+        }
+    }, [])
 
     const [open, setOpen] = useState(false)
 
