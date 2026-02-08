@@ -11,54 +11,55 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PipelineFlowTab } from '@/features/pipelines/components/pipeline-flow-tab'
 import { PipelineDataFlow } from '@/features/pipelines/components/pipeline-data-flow'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+// import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs' // Replaced with CustomTabs
+import { CustomTabs, CustomTabsContent, CustomTabsList, CustomTabsTrigger } from '@/components/ui/custom-tabs'
 import { RefreshCcw, GitBranch, Table2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 
 function PipelineStatusSwitch({ pipeline }: { pipeline: Pipeline }) {
     const queryClient = useQueryClient()
     const isRunning = pipeline.status === 'START' || pipeline.status === 'REFRESH'
-  
+
     const { mutate, isPending } = useMutation({
-      mutationFn: async (checked: boolean) => {
-        if (checked) {
-          return pipelinesRepo.start(pipeline.id)
-        } else {
-          return pipelinesRepo.pause(pipeline.id)
+        mutationFn: async (checked: boolean) => {
+            if (checked) {
+                return pipelinesRepo.start(pipeline.id)
+            } else {
+                return pipelinesRepo.pause(pipeline.id)
+            }
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['pipelines'] })
+            queryClient.invalidateQueries({ queryKey: ['pipeline', pipeline.id] })
+            toast.success('Pipeline status updated')
+        },
+        onError: (error) => {
+            toast.error(`Failed to update status: ${error}`)
         }
-      },
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['pipelines'] })
-        queryClient.invalidateQueries({ queryKey: ['pipeline', pipeline.id] })
-        toast.success('Pipeline status updated')
-      },
-      onError: (error) => {
-        toast.error(`Failed to update status: ${error}`)
-      }
     })
-  
+
     return (
-      <div className="flex items-center space-x-2">
-           <span className="text-sm font-medium">{isRunning ? 'Running' : 'Paused'}</span>
-          <Switch
-            checked={isRunning}
-            onCheckedChange={(checked) => mutate(checked)}
-            disabled={isPending}
-          />
-      </div>
+        <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium">{isRunning ? 'Running' : 'Paused'}</span>
+            <Switch
+                checked={isRunning}
+                onCheckedChange={(checked) => mutate(checked)}
+                disabled={isPending}
+            />
+        </div>
     )
-  }
+}
 
 export default function PipelineDetailsPage() {
     const { pipelineId } = useParams({ from: '/_authenticated/pipelines/$pipelineId' })
@@ -104,9 +105,9 @@ export default function PipelineDetailsPage() {
 
     // Build destinations summary for header
     const destinationNames = pipeline?.destinations?.map(d => d.destination?.name).filter(Boolean) || []
-    const destinationsSummary = destinationNames.length > 0 
-        ? destinationNames.length === 1 
-            ? destinationNames[0] 
+    const destinationsSummary = destinationNames.length > 0
+        ? destinationNames.length === 1
+            ? destinationNames[0]
             : `${destinationNames.length} destinations`
         : 'No destinations'
 
@@ -122,17 +123,17 @@ export default function PipelineDetailsPage() {
 
             <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
                 <Breadcrumb>
-                  <BreadcrumbList>
-                    <BreadcrumbItem>
-                      <BreadcrumbLink asChild>
-                        <Link to="/pipelines">Pipelines</Link>
-                      </BreadcrumbLink>
-                    </BreadcrumbItem>
-                    <BreadcrumbSeparator />
-                    <BreadcrumbItem>
-                      <BreadcrumbPage>{pipeline?.name || 'Loading...'}</BreadcrumbPage>
-                    </BreadcrumbItem>
-                  </BreadcrumbList>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                                <Link to="/pipelines">Pipelines</Link>
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>{pipeline?.name || 'Loading...'}</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
                 </Breadcrumb>
 
                 {/* Header Section */}
@@ -166,20 +167,20 @@ export default function PipelineDetailsPage() {
                 </div>
 
                 {/* Tabbed Content */}
-                <Tabs defaultValue="flow-destination" className="flex-1">
-                    <TabsList>
-                        <TabsTrigger value="flow-destination">
+                <CustomTabs defaultValue="flow-destination" className="flex-1 w-full">
+                    <CustomTabsList className="w-full justify-start border-b mb-4">
+                        <CustomTabsTrigger value="flow-destination">
                             <GitBranch className="h-4 w-4 mr-2" />
                             Flow Destination
-                        </TabsTrigger>
-                        <TabsTrigger value="flow-data">
+                        </CustomTabsTrigger>
+                        <CustomTabsTrigger value="flow-data">
                             <Table2 className="h-4 w-4 mr-2" />
                             Flow Data
-                        </TabsTrigger>
-                    </TabsList>
+                        </CustomTabsTrigger>
+                    </CustomTabsList>
 
                     {/* Flow Destination Tab */}
-                    <TabsContent value="flow-destination" className="mt-4">
+                    <CustomTabsContent value="flow-destination" className="mt-0">
                         {isPipelineLoading ? (
                             <div className="h-[500px] flex items-center justify-center">
                                 <Skeleton className="h-full w-full rounded-lg" />
@@ -189,10 +190,10 @@ export default function PipelineDetailsPage() {
                         ) : (
                             <div className="p-4 text-muted-foreground">Pipeline not found.</div>
                         )}
-                    </TabsContent>
+                    </CustomTabsContent>
 
                     {/* Flow Data Tab */}
-                    <TabsContent value="flow-data" className="mt-4">
+                    <CustomTabsContent value="flow-data" className="mt-0">
                         {isLoading ? (
                             <div className="space-y-2">
                                 <Skeleton className="h-10 w-full" />
@@ -207,8 +208,8 @@ export default function PipelineDetailsPage() {
                         ) : (
                             <div className="p-4 text-muted-foreground">No source details available.</div>
                         )}
-                    </TabsContent>
-                </Tabs>
+                    </CustomTabsContent>
+                </CustomTabs>
             </Main>
         </>
     )
