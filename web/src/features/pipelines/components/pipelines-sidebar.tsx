@@ -60,7 +60,7 @@ function TableItem({ name, isActive, highlight, type, sourceTable }: {
             <HoverCard openDelay={100} closeDelay={200}>
                 <HoverCardTrigger asChild>
                     <div className={cn(
-                        "flex items-center gap-2 py-1 px-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer ml-3",
+                        "flex items-center gap-2 py-1 px-2 rounded-md text-sm text-muted-foreground dark:text-[#bec4d6] hover:bg-accent hover:text-accent-foreground cursor-pointer ml-3",
                         isActive && "bg-accent text-accent-foreground font-medium"
                     )}>
                         <Table className="h-3 w-3 shrink-0" />
@@ -153,18 +153,18 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
             <Accordion type="multiple" className="w-full" value={openItems} onValueChange={setOpenItems}>
                 {/* SOURCES FOLDER */}
                 <AccordionItem value="sources" className="border-none">
-                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium">
+                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium dark:text-[#bec4d6]">
                         <div className="flex items-center gap-2">
-                            <Folder className="h-4 w-4 text-orange-500" />
+                            <Folder className="h-4 w-4" />
                             <span>Sources</span>
                         </div>
                     </AccordionTrigger>
                     <AccordionContent className="pb-0 pt-0.5">
                         <Accordion type="multiple" className="w-full ml-2 border-l border-border/50 pl-2" value={openItems} onValueChange={setOpenItems}>
                             <AccordionItem value={`src-${pipeline.source_id}`} className="border-none">
-                                <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm">
+                                <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm dark:text-[#bec4d6]">
                                     <div className="flex items-center gap-2">
-                                        <Database className="h-3.5 w-3.5 text-blue-500" />
+                                        <Database className="h-3.5 w-3.5" />
                                         <HighlightedText text={sourceName} highlight={searchQuery} />
                                     </div>
                                 </AccordionTrigger>
@@ -181,9 +181,9 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
 
                 {/* DESTINATIONS FOLDER */}
                 <AccordionItem value="destinations" className="border-none">
-                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium">
+                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium dark:text-[#bec4d6]">
                         <div className="flex items-center gap-2">
-                            <Folder className="h-4 w-4 text-indigo-500" />
+                            <Folder className="h-4 w-4" />
                             <span>Destinations</span>
                         </div>
                     </AccordionTrigger>
@@ -195,9 +195,9 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                             {filteredDestinations.map(d => (
                                 <Accordion key={d.id} type="multiple" className="w-full" value={openItems} onValueChange={setOpenItems}>
                                     <AccordionItem value={`dest-${d.id}`} className="border-none">
-                                        <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm">
+                                        <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm dark:text-[#bec4d6]">
                                             <div className="flex items-center gap-2">
-                                                <Layers className="h-3.5 w-3.5 text-purple-500" />
+                                                <Layers className="h-3.5 w-3.5" />
                                                 <HighlightedText text={d.destination.name} highlight={searchQuery} />
                                             </div>
                                         </AccordionTrigger>
@@ -396,12 +396,11 @@ export function PipelinesSidebar() {
         <div className="h-full flex flex-col bg-sidebar border-r border-sidebar-border">
             {/* Header: Title & Branding */}
             <div className="px-4 pt-4 pb-0">
-                <h1 className="text-xl font-bold text-foreground mb-2">Pipelines Explorer</h1>
+                <h1 className="text-xl font-bold text-foreground dark:text-[#bec4d6] mb-2">Pipelines Explorer</h1>
                 <div className="flex items-center gap-2 mb-4">
                     <Workflow className="h-4 w-4 text-cyan-500" />
-                    <span className="text-sm font-semibold">
-                        <span className="text-cyan-500">ROSETTA</span>
-                        <span className="text-muted-foreground"> CATALOG</span>
+                    <span className="text-sm font-semibold text-cyan-500">
+                        ROSETTA CATALOG
                     </span>
                 </div>
             </div>
