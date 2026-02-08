@@ -25,7 +25,7 @@ export function SnowflakeTableConfig({
   const handleToggleSync = async (table: TableWithSyncInfo) => {
     setSavingTable(table.table_name)
     const syncConfig = table.sync_configs?.[0]
-    
+
     try {
       if (syncConfig) {
         await tableSyncRepo.deleteTableSync(
@@ -81,7 +81,7 @@ export function SnowflakeTableConfig({
     <div className={cn(
       "flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border",
       exists
-        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+        ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800"
         : "bg-muted text-muted-foreground border-border"
     )}>
       {exists ? (
