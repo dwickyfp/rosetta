@@ -4,7 +4,7 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion"
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { sourcesRepo, SourceDetailResponse } from '@/repo/sources'
 import { Link, useParams } from '@tanstack/react-router'
@@ -190,9 +190,11 @@ export function PipelinesSidebar() {
     const currentId = pipelineId ? parseInt(pipelineId) : null
     const [searchQuery, setSearchQuery] = useState("")
     const [expandedItems, setExpandedItems] = useState<string[]>([])
+    const [isManualRefreshing, setIsManualRefreshing] = useState(false)
+    const queryClient = useQueryClient()
 
     // 1. Fetch Pipelines
-    const { data: pipelinesData, isLoading: isLoadingPipelines, isError, refetch } = useQuery({
+    const { data: pipelinesData, isLoading: isLoadingPipelines, isError, isFetching } = useQuery({
         queryKey: ['pipelines'],
         queryFn: pipelinesRepo.getAll,
     })
@@ -362,10 +364,20 @@ export function PipelinesSidebar() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                        onClick={() => refetch()}
+                        onClick={() => {
+                            setIsManualRefreshing(true)
+                            queryClient.invalidateQueries({ queryKey: ['pipelines'] })
+                            queryClient.invalidateQueries({ queryKey: ['source-details'] })
+                            setTimeout(() => setIsManualRefreshing(false), 800)
+                        }}
                         title="Refresh pipelines"
+                        disabled={isFetching || isManualRefreshing}
                     >
-                        <RefreshCw className="h-3.5 w-3.5" />
+                        {isFetching || isManualRefreshing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                        )}
                     </Button>
                 </div>
             </div>
