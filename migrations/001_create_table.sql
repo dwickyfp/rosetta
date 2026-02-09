@@ -202,6 +202,10 @@ CREATE TABLE IF NOT EXISTS data_flow_record_monitoring(
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure columns exist (for schema evolution on existing tables)
+ALTER TABLE data_flow_record_monitoring ADD COLUMN IF NOT EXISTS pipeline_destination_id INTEGER NULL REFERENCES pipelines_destination(id) ON DELETE CASCADE;
+ALTER TABLE data_flow_record_monitoring ADD COLUMN IF NOT EXISTS pipeline_destination_table_sync_id INTEGER NULL REFERENCES pipelines_destination_table_sync(id) ON DELETE CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_pipeline_id ON data_flow_record_monitoring(pipeline_id);
 CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_pipeline_destination_id ON data_flow_record_monitoring(pipeline_destination_id);
 

@@ -119,7 +119,7 @@ services:
     ports:
       - "5453:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - rosetta_postgres_data:/var/lib/postgresql/data
     command: >
       postgres 
       -c wal_level=logical 
@@ -149,7 +149,7 @@ networks:
     name: rosetta-network
 
 volumes:
-  postgres_data:
+  rosetta_postgres_data:
   rosetta_redis_data:
   rosetta_compute_data:
 
