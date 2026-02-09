@@ -51,19 +51,12 @@ export const createSqlCompleter = (
                         const isKeyword = ["select", "from", "join", "where", "as", "on", "and", "or", "group", "order", "limit", "left", "right", "inner", "outer", "using", "update", "set", "insert", "into"].includes(aliasName);
                         if (!isKeyword) {
                             aliasMap[aliasName] = tableName;
-                        } else {
-                            console.log(`DEBUG: Filtered out keyword as alias: ${aliasName}`);
                         }
                     }
                 }
-
-                // 2. Resolve Identifier content
-
-                // Logic Branch A: Is it a Destination Prefix? (e.g. pg_pg_target_2.)
                 const destPrefix = destinationName ? `pg_${destinationName.toLowerCase()}` : 'pg_dest';
 
                 if (identifierChain === destPrefix) {
-                    // Goal 2: Show list of existing tables in destination
                     let tables: string[] = [];
                     if (destinationCache['__tables__']) {
                         tables = destinationCache['__tables__'];
@@ -88,11 +81,8 @@ export const createSqlCompleter = (
                     })));
                 }
 
-                // Logic Branch B: Is it a Full Destination Table Reference? (e.g. pg_pg_target_2.tbl_sales_region.)
                 if (identifierChain.startsWith(destPrefix + ".")) {
-                    // Extract table name
                     const tableName = identifierChain.replace(destPrefix + ".", "");
-                    // Fetch columns for this table
                     let columns: string[] = [];
 
                     if (destinationCache[tableName]) {
@@ -118,15 +108,10 @@ export const createSqlCompleter = (
                     })));
                 }
 
-                // Logic Branch C: Is it an Alias? (e.g. a. or reg.)
                 if (aliasMap[identifierChain]) {
                     const realTableName = aliasMap[identifierChain];
-                    console.log("DEBUG: Alias detected:", identifierChain, "->", realTableName);
-                    console.log("DEBUG: destPrefix used for comparison:", destPrefix);
 
-                    // Is it a local source table?
                     if (schema[realTableName]) {
-                        console.log("DEBUG: Resolved to Source Table:", realTableName);
                         return callback(null, schema[realTableName].map(c => ({
                             caption: c,
                             value: c,
@@ -139,18 +124,14 @@ export const createSqlCompleter = (
                     // e.g. realTableName = "pg_pg_target_2.tbl_sales_region"
                     if (realTableName.startsWith(destPrefix + ".")) {
                         const tableName = realTableName.replace(destPrefix + ".", "");
-                        console.log("DEBUG: Resolved to Destination Table:", tableName);
                         let columns: string[] = [];
 
                         if (destinationCache[tableName]) {
-                            console.log("DEBUG: Using cached columns for:", tableName);
                             columns = destinationCache[tableName];
                         } else {
                             try {
                                 if (onLoading) onLoading(true);
-                                console.log("DEBUG: Fetching destination columns for:", tableName);
                                 columns = await fetchDestinationSchema(tableName);
-                                console.log("DEBUG: Fetched columns:", columns.length);
                                 if (columns.length > 0) {
                                     destinationCache[tableName] = columns;
                                 }
@@ -167,14 +148,10 @@ export const createSqlCompleter = (
                             meta: "dest column",
                             score: 1000
                         })));
-                    } else {
-                        console.log("DEBUG: Alias did not match source or dest prefix patterns.");
                     }
                 }
 
-                // Default Fallback: Check if identifier matches a source table name directly
                 if (schema[identifierChain]) {
-                    console.log("DEBUG: Resolved directly to Source Table name:", identifierChain);
                     return callback(null, schema[identifierChain].map(c => ({
                         caption: c,
                         value: c,
