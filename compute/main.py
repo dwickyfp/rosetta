@@ -15,9 +15,42 @@ import os
 import sys
 
 from compute.config import get_config
-from compute.core.database import init_connection_pool, close_connection_pool
+from compute.core.database import init_connection_pool, close_connection_pool, get_db_connection, return_db_connection
 from compute.core.manager import PipelineManager
 from compute.core.engine import run_pipeline
+
+
+def run_migration(logger: logging.Logger) -> None:
+    """Run database migration on startup."""
+    migration_file = os.path.join(os.getcwd(), 'migrations', '001_create_table.sql')
+    
+    if not os.path.exists(migration_file):
+        logger.warning(f"Migration file not found: {migration_file}")
+        return
+
+    logger.info(f"Running migration from {migration_file}")
+    
+    conn = None
+    try:
+        with open(migration_file, 'r') as f:
+            sql_script = f.read()
+            
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(sql_script)
+            conn.commit()
+            
+        logger.info("Migration completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
+        if conn:
+            conn.rollback()
+        # We might want to exit here if migration fails, but for now just log it
+        raise e
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 
 def setup_logging() -> None:
@@ -51,6 +84,10 @@ def main() -> int:
     try:
         logger.info("Starting Rosetta Compute Engine")
         logger.info("Press Ctrl+C to shutdown gracefully")
+
+        # Running Migration SQL
+        run_migration(logger)
+
         manager = PipelineManager()
         manager.run()
         logger.info("Shutdown complete")

@@ -241,6 +241,23 @@ ALTER TABLE job_metrics_monitoring ADD CONSTRAINT uq_job_metrics_monitoring_key_
 ALTER TABLE pipeline_metadata DROP CONSTRAINT IF EXISTS uq_pipeline_metadata_pipeline_id;
 ALTER TABLE pipeline_metadata ADD CONSTRAINT uq_pipeline_metadata_pipeline_id UNIQUE (pipeline_id);
 
+-- Table Notification
+CREATE TABLE IF NOT EXISTS notification_log(
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(255) NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    iteration_check INT DEFAULT 0, -- For check iteration job, if 3 then will sent into webhook if is_read is false
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create Index for notification_log
+CREATE INDEX IF NOT EXISTS idx_notification_log_iteration_check ON notification_log(iteration_check);
+
+
 
 
 

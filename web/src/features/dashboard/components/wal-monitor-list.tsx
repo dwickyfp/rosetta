@@ -101,7 +101,7 @@ export function WALMonitorList() {
                                         className={cn("font-mono text-[10px] h-5 px-1.5",
                                             monitor.wal_threshold_status === 'OK' && "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border-emerald-500/20",
                                             monitor.wal_threshold_status === 'WARNING' && "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 border-amber-500/20",
-                                            monitor.wal_threshold_status === 'ERROR' && "bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 border-rose-500/20"
+                                            monitor.wal_threshold_status === 'ERROR' && "bg-rose-500/20 text-rose-200 hover:bg-rose-500/30 border-rose-500/30"
                                         )}
                                     >
                                         {monitor.total_wal_size || '0 B'}
