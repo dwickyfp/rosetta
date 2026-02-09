@@ -82,13 +82,15 @@ async def update_wal_thresholds(
         service.set_value("WAL_MONITORING_THRESHOLD_WARNING", str(thresholds.warning))
         service.set_value("WAL_MONITORING_THRESHOLD_ERROR", str(thresholds.error))
         service.set_value("ALERT_NOTIFICATION_WEBHOOK_URL", thresholds.webhook_url)
+        service.set_value("NOTIFICATION_ITERATION_DEFAULT", str(thresholds.notification_iteration))
         
         logger.info(
             "WAL thresholds updated",
             extra={
                 "warning": thresholds.warning,
                 "error": thresholds.error,
-                "webhook_url": thresholds.webhook_url
+                "webhook_url": thresholds.webhook_url,
+                "notification_iteration": thresholds.notification_iteration
             }
         )
         

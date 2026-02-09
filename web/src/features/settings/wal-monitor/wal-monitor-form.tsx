@@ -26,6 +26,9 @@ const walMonitorFormSchema = z.object({
     .min(1, 'Error threshold must be at least 1 MB')
     .max(1000000, 'Error threshold is too large'),
   webhook_url: z.string().url('Please enter a valid URL').or(z.literal('')),
+  notification_iteration: z.number()
+    .min(1, 'Iteration must be at least 1')
+    .max(100, 'Iteration cannot exceed 100'),
 }).refine((data) => data.error > data.warning, {
   message: 'Error threshold must be greater than warning threshold',
   path: ['error'],
@@ -45,6 +48,7 @@ export function WALMonitorForm() {
     warning: 3000,
     error: 6000,
     webhook_url: '',
+    notification_iteration: 3,
   }
 
   const form = useForm<WALMonitorFormValues>({
@@ -59,6 +63,7 @@ export function WALMonitorForm() {
         warning: config.warning,
         error: config.error,
         webhook_url: config.webhook_url,
+        notification_iteration: config.notification_iteration,
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,6 +78,7 @@ export function WALMonitorForm() {
         warning: data.warning,
         error: data.error,
         webhook_url: data.webhook_url,
+        notification_iteration: data.notification_iteration,
       })
       toast.success('WAL Monitor settings updated successfully')
     },
@@ -156,6 +162,28 @@ export function WALMonitorForm() {
               <FormDescription>
                 Webhook URL for alert notifications. Leave empty to disable notifications.
                 Alerts will be sent when WAL size reaches warning or error thresholds.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='notification_iteration'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Notification Iteration</FormLabel>
+              <FormControl>
+                <Input
+                  type='number'
+                  placeholder='3'
+                  {...field}
+                  onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                  className='max-w-xs'
+                />
+              </FormControl>
+              <FormDescription>
+                Number of check iterations before sending a notification (defaults to 3).
               </FormDescription>
               <FormMessage />
             </FormItem>

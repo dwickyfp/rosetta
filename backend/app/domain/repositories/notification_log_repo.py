@@ -9,6 +9,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.domain.models.notification_log import NotificationLog
+from app.domain.models.rosetta_setting_configuration import RosettaSettingConfiguration
 from app.domain.schemas.notification_log import NotificationLogCreate, NotificationLogUpdate
 
 
@@ -39,7 +40,21 @@ class NotificationLogRepository:
 
         now = datetime.now(timezone(timedelta(hours=7)))
 
-        if latest_notification and latest_notification.iteration_check < 3:
+        # Get iteration limit from settings
+        iteration_limit = 3
+        try:
+            setting = (
+                self.db.query(RosettaSettingConfiguration)
+                .filter(RosettaSettingConfiguration.config_key == 'NOTIFICATION_ITERATION_DEFAULT')
+                .first()
+            )
+            if setting and setting.config_value:
+                iteration_limit = int(setting.config_value)
+        except Exception:
+            # Fallback to default if any error occurs (e.g. invalid int conversion)
+            iteration_limit = 3
+
+        if latest_notification and latest_notification.iteration_check < iteration_limit:
             # Update existing
             latest_notification.message = notification_data.message
             latest_notification.title = notification_data.title # Update title too just in case

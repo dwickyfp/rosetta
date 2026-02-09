@@ -29,6 +29,7 @@ class ConfigurationService:
         warning_mb = int(self.repo.get_value('WAL_MONITORING_THRESHOLD_WARNING', '3000'))
         error_mb = int(self.repo.get_value('WAL_MONITORING_THRESHOLD_ERROR', '6000'))
         webhook_url = self.repo.get_value('ALERT_NOTIFICATION_WEBHOOK_URL', '')
+        notification_iteration = int(self.repo.get_value('NOTIFICATION_ITERATION_DEFAULT', '3'))
         
         # Convert MB to bytes (1 MB = 1024 * 1024 bytes)
         warning_bytes = warning_mb * 1024 * 1024
@@ -37,7 +38,8 @@ class ConfigurationService:
         return WALThresholds(
             warning=warning_bytes,
             error=error_bytes,
-            webhook_url=webhook_url
+            webhook_url=webhook_url,
+            notification_iteration=notification_iteration
         )
     
     def get_value(self, key: str, default: str = "") -> str:
