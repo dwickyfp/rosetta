@@ -47,28 +47,28 @@ export function PipelineDetailsTable({ pipelineId, tables, destinationId }: Pipe
 
     const statsMap = useMemo(() => {
         if (!pipelineStats) return {}
-        
+
         // Filter by destination if provided
         let filteredStats = pipelineStats
         if (destinationId !== undefined) {
-             filteredStats = pipelineStats.filter(s => s.pipeline_destination_id === destinationId)
+            filteredStats = pipelineStats.filter(s => s.pipeline_destination_id === destinationId)
         } else {
-             // If no destination specified, maybe aggregate? Or just show all? 
-             // Existing behavior assumed 1:1 table mapping, but now we have duplicate table names (1 per dest).
-             // For backward compatibility or "Source" view, we might want to aggregate counts per table?
-             // VALIDATION: The user wants "exact information". 
-             // If this component is used in "Flow Data" tab directly (without selection), it shows list of tables.
-             // If we have 3 destinations, we have 3 rows for table "users". 
-             // Adapting this table to show aggregate if destinationId is missing is safer.
-             
-             // However, reusing this table for the "Drawer" means we definitely have a destinationId.
+            // If no destination specified, maybe aggregate? Or just show all? 
+            // Existing behavior assumed 1:1 table mapping, but now we have duplicate table names (1 per dest).
+            // For backward compatibility or "Source" view, we might want to aggregate counts per table?
+            // VALIDATION: The user wants "exact information". 
+            // If this component is used in "Flow Data" tab directly (without selection), it shows list of tables.
+            // If we have 3 destinations, we have 3 rows for table "users". 
+            // Adapting this table to show aggregate if destinationId is missing is safer.
+
+            // However, reusing this table for the "Drawer" means we definitely have a destinationId.
         }
 
         return filteredStats.reduce((acc, stat) => {
             // If multiple destinations and no filter, this might overwrite. 
             // Ideally we sum up if we want "Source" view. 
             // Let's implement Summing for now if no destinationId is passed, to preserve "Total" view.
-            
+
             if (!acc[stat.table_name]) {
                 acc[stat.table_name] = { ...stat }
             } else {
@@ -127,7 +127,7 @@ export function PipelineDetailsTable({ pipelineId, tables, destinationId }: Pipe
                         table={table}
                         searchPlaceholder='Filter by table name...'
                     />
-                    <div className='rounded-md border'>
+                    <div className='rounded-md border border-border/50'>
                         <Table>
                             <TableHeader>
                                 {table.getHeaderGroups().map((headerGroup) => (
@@ -162,14 +162,14 @@ export function PipelineDetailsTable({ pipelineId, tables, destinationId }: Pipe
                                             data-state={row.getIsSelected() && 'selected'}
                                         >
                                             {row.getVisibleCells().map((cell) => (
-                                                 <TableCell
-                                                     key={cell.id}
-                                                     className={cn(
-                                                         'py-2',
-                                                         cell.column.columnDef.meta?.className,
-                                                         cell.column.columnDef.meta?.tdClassName
-                                                     )}
-                                                 >
+                                                <TableCell
+                                                    key={cell.id}
+                                                    className={cn(
+                                                        'py-2',
+                                                        cell.column.columnDef.meta?.className,
+                                                        cell.column.columnDef.meta?.tdClassName
+                                                    )}
+                                                >
                                                     {flexRender(
                                                         cell.column.columnDef.cell,
                                                         cell.getContext()

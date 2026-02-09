@@ -127,7 +127,7 @@ export function TasksTable({ data }: DataTableProps) {
           },
         ]}
       />
-      <div className='overflow-hidden rounded-md border'>
+      <div className='overflow-hidden rounded-md border border-border/50'>
         <Table className='min-w-xl'>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -145,9 +145,9 @@ export function TasksTable({ data }: DataTableProps) {
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                     </TableHead>
                   )
                 })}

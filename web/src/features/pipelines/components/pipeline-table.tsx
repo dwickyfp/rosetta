@@ -62,7 +62,7 @@ export function PipelinesTable<TData, TValue>({
   return (
     <div className='space-y-4'>
       <DataTableToolbar table={table} searchPlaceholder='Filter pipelines...' />
-      <div className='rounded-md border'>
+      <div className='rounded-md border border-border/50'>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -73,9 +73,9 @@ export function PipelinesTable<TData, TValue>({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                     </TableHead>
                   )
                 })}

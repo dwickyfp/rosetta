@@ -461,7 +461,7 @@ export function SourceDetailsListTable({ sourceId: propSourceId, isPublicationEn
                     {isLoading ? (
                         <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
                     ) : (
-                        <div className='rounded-md border'>
+                        <div className='rounded-md border border-border/50'>
                             <Table>
                                 <TableHeader>
                                     {table.getHeaderGroups().map((headerGroup) => (

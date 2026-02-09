@@ -116,7 +116,7 @@ export function SourceDetailsCreatePublicationDialog({
                             <TabsTrigger value="presets">Presets</TabsTrigger>
                         </TabsList>
 
-                        <TabsContent value="tables" className="flex-1 flex flex-col overflow-hidden mt-4 border rounded-md">
+                        <TabsContent value="tables" className="flex-1 flex flex-col overflow-hidden mt-4 border border-border/50 rounded-md">
                             <div className="p-2 border-b bg-muted/20 flex items-center gap-2">
                                 <Search className="h-4 w-4 text-muted-foreground ml-2" />
                                 <Input
