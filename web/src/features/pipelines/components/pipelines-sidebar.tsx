@@ -155,7 +155,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
             <Accordion type="multiple" className="w-full" value={openItems} onValueChange={setOpenItems}>
                 {/* SOURCES FOLDER */}
                 <AccordionItem value="sources" className="border-none">
-                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium dark:text-[#bec4d6]">
+                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-normal dark:text-[#bec4d6]">
                         <div className="flex items-center gap-2">
                             <FolderInput className="h-4 w-4" />
                             <span>Sources</span>
@@ -164,7 +164,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                     <AccordionContent className="pb-0 pt-0.5">
                         <Accordion type="multiple" className="w-full ml-2 border-l border-border/50 pl-2" value={openItems} onValueChange={setOpenItems}>
                             <AccordionItem value={`src-${pipeline.source_id}`} className="border-none">
-                                <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm dark:text-[#bec4d6]">
+                                <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-normal dark:text-[#bec4d6]">
                                     <div className="flex items-center gap-2 w-full overflow-hidden">
                                         <Database className="h-3.5 w-3.5 shrink-0" />
                                         <div className="flex-1 min-w-0 truncate max-w-[200px]">
@@ -185,7 +185,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
 
                 {/* DESTINATIONS FOLDER */}
                 <AccordionItem value="destinations" className="border-none">
-                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-medium dark:text-[#bec4d6]">
+                    <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-normal dark:text-[#bec4d6]">
                         <div className="flex items-center gap-2">
                             <FolderSync className="h-4 w-4" />
                             <span>Destinations</span>
@@ -199,7 +199,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                             {filteredDestinations.map(d => (
                                 <Accordion key={d.id} type="multiple" className="w-full" value={openItems} onValueChange={setOpenItems}>
                                     <AccordionItem value={`dest-${d.id}`} className="border-none">
-                                        <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm dark:text-[#bec4d6]">
+                                        <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-normal dark:text-[#bec4d6]">
                                             <div className="flex items-center gap-2 w-full overflow-hidden">
                                                 <Layers className="h-3.5 w-3.5 shrink-0" />
                                                 <div className="flex-1 min-w-0 truncate max-w-[200px]">
@@ -399,7 +399,7 @@ export function PipelinesSidebar() {
     }
 
     return (
-        <div className="h-full flex flex-col bg-sidebar border-r border-sidebar-border">
+        <div className="h-full flex flex-col bg-background border-r border-sidebar-border">
             {/* Header: Title & Branding */}
             <div className="px-4 pt-4 pb-0">
                 <h1 className="text-xl font-bold text-foreground dark:text-[#bec4d6] mb-2">Pipelines Explorer</h1>
@@ -481,7 +481,7 @@ export function PipelinesSidebar() {
                                     <AccordionTrigger
                                         chevronPosition="left"
                                         className={cn(
-                                            "justify-start py-2 px-2 pr-8 gap-1.5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline rounded-md text-sm font-semibold flex-1",
+                                            "justify-start py-2 px-2 pr-8 gap-1.5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline rounded-md text-sm font-medium flex-1",
                                             currentId === pipeline.id && "bg-[#d6e6ff] text-[#088ae8] dark:bg-[#002c6e] dark:text-[#5999f7] hover:bg-[#d6e6ff] hover:text-[#088ae8]"
                                         )}
                                         onClick={(e) => {
