@@ -41,3 +41,9 @@ dist-ssr
 
 /tmp/*
 /logs/*
+/compute/__pycache__/*
+/compute/config/__pycache__/*
+/compute/destinations/__pycache__/*
+/compute/sources/__pycache__/*
+/compute/core/__pycache__/*
+

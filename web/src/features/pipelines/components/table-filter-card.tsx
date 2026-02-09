@@ -149,7 +149,6 @@ export function TableFilterCard({
     const handleAddFilter = (e: React.MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        console.log("Add Filter Clicked", columns)
 
         const firstColumn = columns.length > 0 ? columns[0].column_name : ''
 
