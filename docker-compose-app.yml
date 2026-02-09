@@ -19,6 +19,8 @@ services:
     image: rosetta-etl:1.0.0-compute
     container_name: rosetta-compute
     restart: unless-stopped
+    ports:
+      - "${COMPUTE_PORT:-8001}:8001"
     environment:
       MODE: worker
       # Database Configuration
@@ -45,6 +47,12 @@ services:
       - rosetta_compute_data:/app/tmp
     networks:
       - rosetta-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -62,6 +70,7 @@ services:
       - "${WEB_PORT:-5173}:80"
     environment:
       MODE: web
+      COMPUTE_NODE_URL: http://rosetta-compute-node:8001
       # Database Configuration
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://postgres:postgres@rosetta-postgres:5432/postgres}
       # Application Configuration
@@ -90,7 +99,7 @@ services:
       rosetta-postgres:
         condition: service_healthy
       rosetta-compute-node:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
