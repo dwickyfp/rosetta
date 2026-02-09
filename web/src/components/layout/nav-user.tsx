@@ -35,7 +35,7 @@ export function NavUser({ user }: NavUserProps) {
     <>
       <SidebarMenu>
         <SidebarMenuItem>
-          <div className="flex items-center w-full gap-1 group-data-[collapsible=icon]:flex-col">
+          <div className="flex items-center w-full gap-1 group-data-[collapsible=icon]:flex-col-reverse">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
@@ -79,7 +79,7 @@ export function NavUser({ user }: NavUserProps) {
             <div className="h-6 w-[1px] bg-border mx-0 hidden group-data-[collapsible=icon]:hidden md:block" />
 
             {/* Notification Button */}
-            <div className="hidden group-data-[collapsible=icon]:hidden md:block">
+            <div className="hidden group-data-[collapsible=icon]:block md:block">
               <NotificationPopover />
             </div>
           </div>
