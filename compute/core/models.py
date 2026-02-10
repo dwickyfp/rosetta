@@ -41,7 +41,7 @@ class Source:
     pg_username: str
     pg_password: Optional[str]
     publication_name: str
-    replication_id: int
+    replication_name: str
     is_publication_enabled: bool = False
     is_replication_enabled: bool = False
     last_check_replication_publication: Optional[datetime] = None
@@ -61,7 +61,7 @@ class Source:
             pg_username=data["pg_username"],
             pg_password=data.get("pg_password"),
             publication_name=data["publication_name"],
-            replication_id=data["replication_id"],
+            replication_name=data["replication_name"],
             is_publication_enabled=data.get("is_publication_enabled", False),
             is_replication_enabled=data.get("is_replication_enabled", False),
             last_check_replication_publication=data.get("last_check_replication_publication"),

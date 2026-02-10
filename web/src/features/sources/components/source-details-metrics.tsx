@@ -199,7 +199,7 @@ export function SourceDetailsMetrics({
                             <Server className="h-5 w-5 text-muted-foreground/50" />
                             <div className="flex flex-col gap-0.5">
                                 <span className="text-[10px] font-semibold uppercase text-muted-foreground leading-none">Slot ID</span>
-                                <span className="font-mono text-sm text-foreground leading-none">supabase_etl_apply_{source.replication_id}</span>
+                                <span className="font-mono text-sm text-foreground leading-none">{source.replication_name}</span>
                             </div>
                         </div>
                         {data?.replication_slot_name && (

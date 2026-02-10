@@ -8,7 +8,7 @@ export interface Source {
     pg_database: string
     pg_username: string
     publication_name: string
-    replication_id: number
+    replication_name: string
     is_publication_enabled: boolean
     is_replication_enabled: boolean
     last_check_replication_publication: string | null
@@ -25,7 +25,7 @@ export interface SourceCreate {
     pg_username: string
     pg_password?: string
     publication_name: string
-    replication_id: number
+    replication_name: string
 }
 
 export interface SourceUpdate extends Partial<SourceCreate> { }

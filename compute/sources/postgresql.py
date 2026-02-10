@@ -58,14 +58,12 @@ class PostgreSQLSource(BaseSource):
     
     def get_slot_name(self, pipeline_name: str) -> str:
         """
-        Generate replication slot name.
+        Get replication slot name.
         
-        Format: rosetta_{replication_id}_{sanitized_pipeline_name}
+        Returns:
+            Configured replication slot name
         """
-        # Sanitize pipeline name for slot (only lowercase alphanumeric and underscore)
-        sanitized = pipeline_name.lower().replace("-", "_")
-        sanitized = "".join(c for c in sanitized if c.isalnum() or c == "_")
-        return f"supabase_etl_apply_{self._config.replication_id}"
+        return self._config.replication_name
     
     def validate_connection(self) -> bool:
         """

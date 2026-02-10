@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS sources (
     pg_username VARCHAR(255) NOT NULL,
     pg_password VARCHAR(255),
     publication_name VARCHAR(255) NOT NULL,
-    replication_id INTEGER NOT NULL,
+    replication_name VARCHAR(255) NOT NULL,
     is_publication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     is_replication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     last_check_replication_publication TIMESTAMPTZ NULL,
@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS sources (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- constraint unique for replication_name and publication_name
+ALTER TABLE sources ADD CONSTRAINT unique_replication_name UNIQUE (replication_name);
+ALTER TABLE sources ADD CONSTRAINT unique_publication_name UNIQUE (publication_name);
+
 
 -- Table 2: Destinations Snowflake
 CREATE TABLE IF NOT EXISTS destinations (

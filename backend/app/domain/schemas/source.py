@@ -61,8 +61,12 @@ class SourceBase(BaseSchema):
         description="PostgreSQL publication name for CDC",
         examples=["dbz_publication", "cdc_pub"],
     )
-    replication_id: int = Field(
-        ..., ge=0, description="Replication slot identifier", examples=[1, 2, 100]
+    replication_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Replication slot name",
+        examples=["dbz_replication_slot"],
     )
 
 
@@ -111,7 +115,7 @@ class SourceCreate(SourceBase):
                 "pg_username": "replication_user",
                 "pg_password": "SecurePassword123!",
                 "publication_name": "dbz_publication",
-                "replication_id": 1,
+                "replication_name": "dbz_replication_slot",
             }
         }
 
@@ -190,8 +194,11 @@ class SourceUpdate(BaseSchema):
         max_length=255,
         description="PostgreSQL publication name for CDC",
     )
-    replication_id: int | None = Field(
-        default=None, ge=0, description="Replication slot identifier"
+    replication_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="Replication slot name",
     )
 
     @validator("name")
@@ -238,7 +245,7 @@ class SourceResponse(SourceBase, TimestampSchema):
                 "pg_database": "myapp_production",
                 "pg_username": "replication_user",
                 "publication_name": "dbz_publication",
-                "replication_id": 1,
+                "replication_name": "dbz_replication_slot",
                 "is_publication_enabled": True,
                 "is_replication_enabled": True,
                 "total_tables": 10,

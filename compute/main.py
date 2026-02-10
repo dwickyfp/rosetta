@@ -27,11 +27,26 @@ from server import run_server
 
 def run_migration(logger: logging.Logger) -> None:
     """Run database migration on startup."""
-    migration_file = os.path.join(os.getcwd(), 'migrations', '001_create_table.sql')
+    # Robust path resolution: assuming 'migrations' is at project root, and this script is in 'compute/'
+    # Or assuming CWD is project root.
+    # Let's check typical CWD first, then relative to file.
     
-    if not os.path.exists(migration_file):
-        logger.warning(f"Migration file not found: {migration_file}")
-        return
+    # Try project root (CWD)
+    migration_path_cwd = os.path.join(os.getcwd(), 'migrations', '001_create_table.sql')
+    
+    # Try relative to this file (compute/main.py -> ../migrations)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    migration_path_rel = os.path.join(base_dir, 'migrations', '001_create_table.sql')
+
+    if os.path.exists(migration_path_cwd):
+        migration_file = migration_path_cwd
+    elif os.path.exists(migration_path_rel):
+        migration_file = migration_path_rel
+    else:
+        # User requested strict dependency: fail if missing
+        error_msg = f"Migration file not found at {migration_path_cwd} or {migration_path_rel}"
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
 
     logger.info(f"Running migration from {migration_file}")
     
@@ -51,7 +66,6 @@ def run_migration(logger: logging.Logger) -> None:
         logger.error(f"Migration failed: {e}")
         if conn:
             conn.rollback()
-        # We might want to exit here if migration fails, but for now just log it
         raise e
     finally:
         if conn:

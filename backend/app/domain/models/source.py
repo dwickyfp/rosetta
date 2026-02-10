@@ -79,8 +79,8 @@ class Source(Base, TimestampMixin):
         String(255), nullable=False, comment="PostgreSQL publication name for CDC"
     )
 
-    replication_id: Mapped[int] = mapped_column(
-        Integer, nullable=False, comment="Replication slot identifier"
+    replication_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="Replication slot name"
     )
 
     is_publication_enabled: Mapped[bool] = mapped_column(

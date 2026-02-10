@@ -40,14 +40,4 @@ class SourceRepository(BaseRepository[Source]):
         result = self.db.execute(select(Source).offset(skip).limit(limit))
         return list(result.scalars().all())
 
-    def get_max_replication_id(self) -> int:
-        """
-        Get the maximum replication ID currently in use.
 
-        Returns:
-            Max replication ID, or 0 if no sources exist.
-        """
-        from sqlalchemy import func
-        result = self.db.execute(select(func.max(Source.replication_id)))
-        max_id = result.scalar()
-        return max_id if max_id is not None else 0

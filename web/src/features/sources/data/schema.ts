@@ -8,7 +8,7 @@ export const sourceSchema = z.object({
     pg_database: z.string(),
     pg_username: z.string(),
     publication_name: z.string(),
-    replication_id: z.number(),
+    replication_name: z.string(),
     is_publication_enabled: z.boolean(),
     is_replication_enabled: z.boolean(),
     last_check_replication_publication: z.string().nullable(),
@@ -27,7 +27,7 @@ export const sourceFormSchema = z.object({
     pg_username: z.string().min(1, 'Username is required'),
     pg_password: z.string().optional(),
     publication_name: z.string().min(1, 'Publication name is required'),
-    replication_id: z.coerce.number().min(0, 'Replication ID is required'),
+    replication_name: z.string().min(1, 'Replication name is required'),
 })
 
 export type SourceForm = z.infer<typeof sourceFormSchema>
