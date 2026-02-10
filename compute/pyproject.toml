@@ -17,6 +17,7 @@ dependencies = [
     "pyjwt>=2.11.0",
     "pandas>=3.0.0",
     "rocksq>=0.3.0",
+    "pytz>=2025.2",
 ]
 
 [project.optional-dependencies]

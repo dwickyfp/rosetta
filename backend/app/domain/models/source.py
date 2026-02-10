@@ -99,8 +99,6 @@ class Source(Base, TimestampMixin):
         Integer, default=0, nullable=False, comment="Total tables in publication"
     )
 
-
-
     # Relationships
     pipelines: Mapped[list["Pipeline"]] = relationship(
         "Pipeline",
@@ -142,6 +140,12 @@ class Source(Base, TimestampMixin):
         # back_populates="source", # Enable if added to Preset
         cascade="all, delete-orphan",
         lazy="select",
+    )
+
+    backfill_jobs: Mapped[list["QueueBackfillData"]] = relationship(
+        "QueueBackfillData",
+        back_populates="source",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

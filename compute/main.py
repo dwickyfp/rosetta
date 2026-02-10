@@ -18,11 +18,16 @@ import time
 
 
 from config import get_config
-from core.database import init_connection_pool, close_connection_pool, get_db_connection, return_db_connection
+from core.database import (
+    init_connection_pool,
+    close_connection_pool,
+    get_db_connection,
+    return_db_connection,
+)
 from core.manager import PipelineManager
 from core.engine import run_pipeline
+from core.backfill_manager import BackfillManager
 from server import run_server
-
 
 
 def run_migration(logger: logging.Logger) -> None:
@@ -30,13 +35,13 @@ def run_migration(logger: logging.Logger) -> None:
     # Robust path resolution: assuming 'migrations' is at project root, and this script is in 'compute/'
     # Or assuming CWD is project root.
     # Let's check typical CWD first, then relative to file.
-    
+
     # Try project root (CWD)
-    migration_path_cwd = os.path.join(os.getcwd(), 'migrations', '001_create_table.sql')
-    
+    migration_path_cwd = os.path.join(os.getcwd(), "migrations", "001_create_table.sql")
+
     # Try relative to this file (compute/main.py -> ../migrations)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    migration_path_rel = os.path.join(base_dir, 'migrations', '001_create_table.sql')
+    migration_path_rel = os.path.join(base_dir, "migrations", "001_create_table.sql")
 
     if os.path.exists(migration_path_cwd):
         migration_file = migration_path_cwd
@@ -44,24 +49,26 @@ def run_migration(logger: logging.Logger) -> None:
         migration_file = migration_path_rel
     else:
         # User requested strict dependency: fail if missing
-        error_msg = f"Migration file not found at {migration_path_cwd} or {migration_path_rel}"
+        error_msg = (
+            f"Migration file not found at {migration_path_cwd} or {migration_path_rel}"
+        )
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
 
     logger.info(f"Running migration from {migration_file}")
-    
+
     conn = None
     try:
-        with open(migration_file, 'r') as f:
+        with open(migration_file, "r") as f:
             sql_script = f.read()
-            
+
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute(sql_script)
             conn.commit()
-            
+
         logger.info("Migration completed successfully")
-        
+
     except Exception as e:
         logger.error(f"Migration failed: {e}")
         if conn:
@@ -100,8 +107,9 @@ def main() -> int:
     logger = logging.getLogger(__name__)
     init_connection_pool()
     config = get_config()
-    
+
     manager = None
+    backfill_manager = None
 
     try:
         logger.info("Starting Rosetta Compute Engine")
@@ -114,19 +122,23 @@ def main() -> int:
         server_thread = threading.Thread(
             target=run_server,
             args=(config.server.host, config.server.port),
-            daemon=True
+            daemon=True,
         )
         server_thread.start()
-        logger.info(f"API Server started at http://{config.server.host}:{config.server.port}")
+        logger.info(
+            f"API Server started at http://{config.server.host}:{config.server.port}"
+        )
 
         # Start Pipeline Manager in a separate thread
         manager = PipelineManager(register_signals=False)
-        manager_thread = threading.Thread(
-            target=manager.run,
-            daemon=True
-        )
+        manager_thread = threading.Thread(target=manager.run, daemon=True)
         manager_thread.start()
         logger.info("Pipeline Manager started in background thread")
+
+        # Start Backfill Manager in a separate thread
+        backfill_manager = BackfillManager(check_interval=5, batch_size=10000)
+        backfill_manager.start()
+        logger.info("Backfill Manager started in background thread")
 
         # Keep main thread alive to handle signals and facilitate clean shutdown
         while True:
@@ -142,12 +154,16 @@ def main() -> int:
         # If manager exists, try to shutdown gracefully (if not already handled by its own signals)
         # Note: manager.run() handles signals, but if we are here via KeyboardInterrupt caught in main,
         # we might want to ensure manager stops.
-        # Since threads are daemon, they will be killed when main exits, 
+        # Since threads are daemon, they will be killed when main exits,
         # but manager.shutdown() is cleaner if possible.
         if manager:
             logger.info("Shutting down Pipeline Manager...")
             manager.shutdown()
-            
+
+        if backfill_manager:
+            logger.info("Shutting down Backfill Manager...")
+            backfill_manager.stop()
+
         close_connection_pool()
         logger.info("Shutdown complete")
 
