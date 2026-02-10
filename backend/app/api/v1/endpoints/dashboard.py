@@ -19,7 +19,8 @@ def get_dashboard_summary(
     pipeline_status = service.get_pipeline_status_summary()
     flow_stats = service.get_global_data_flow_stats(days=7) # Get short term for summary cards if needed, or just today/yesterday
     credit_stats = service.get_total_credit_usage(days=30)
-    
+    backfill_stats = service.get_backfill_summary()
+
     return {
         "pipelines": pipeline_status,
         "data_flow": {
@@ -28,7 +29,8 @@ def get_dashboard_summary(
         },
         "credits": {
             "month_total": credit_stats["current_month_total"]
-        }
+        },
+        "backfills": backfill_stats
     }
 
 @router.get("/flow-chart", response_model=Dict[str, Any])

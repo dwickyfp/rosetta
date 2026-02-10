@@ -4,9 +4,9 @@ Backfill repository - Data access for queue_backfill_data.
 Handles CRUD operations for backfill jobs.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -187,3 +187,49 @@ class BackfillRepository(BaseRepository[QueueBackfillData]):
         except Exception as e:
             logger.error(f"Error incrementing count for job {job_id}: {e}")
             return False
+
+    def get_global_status_summary(self) -> Dict[str, int]:
+        """
+        Get count of backfill jobs by status globally.
+
+        Returns:
+            Dictionary of status counts
+        """
+        try:
+            stmt = select(
+                QueueBackfillData.status,
+                func.count(QueueBackfillData.id)
+            ).group_by(QueueBackfillData.status)
+
+            result = self.db.execute(stmt)
+
+            summary = {
+                "PENDING": 0,
+                "EXECUTING": 0,
+                "COMPLETED": 0,
+                "FAILED": 0,
+                "CANCELLED": 0,
+            }
+
+            for row in result:
+                status = row[0]
+                count = row[1]
+                if status in summary:
+                    summary[status] = count
+                else:
+                    summary[status] = count
+
+            # Calculate total
+            summary["total"] = sum(summary.values())
+
+            return summary
+        except Exception as e:
+            logger.error(f"Error fetching global backfill status summary: {e}")
+            return {
+                "PENDING": 0,
+                "EXECUTING": 0,
+                "COMPLETED": 0,
+                "FAILED": 0,
+                "CANCELLED": 0,
+                "total": 0,
+            }

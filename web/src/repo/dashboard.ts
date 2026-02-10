@@ -12,6 +12,14 @@ export interface DashboardSummary {
   credits: {
     month_total: number
   }
+  backfills: {
+    PENDING: number
+    EXECUTING: number
+    COMPLETED: number
+    FAILED: number
+    CANCELLED: number
+    total: number
+  }
 }
 
 export interface FlowChartData {
