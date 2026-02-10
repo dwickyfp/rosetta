@@ -33,11 +33,11 @@ class NotificationService:
     async def _send_webhook(self, url: str, payload: dict) -> bool:
         """
         Send payload to webhook URL.
-        
+
         Args:
             url: Webhook URL
             payload: JSON payload
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -54,7 +54,7 @@ class NotificationService:
     async def process_pending_notifications(self) -> int:
         """
         Process pending notifications and send them to the webhook.
-        
+
         Logic:
         1. Check if webhook URL is configured.
         2. Fetch notifications where:
@@ -64,7 +64,7 @@ class NotificationService:
            - is_read = False
         3. Send to webhook.
         4. Mark as sent.
-        
+
         Returns:
             Number of notifications sent.
         """
@@ -73,8 +73,10 @@ class NotificationService:
         if not webhook_url:
             logger.debug("No webhook URL configured, skipping notification sending")
             return 0
-            
-        iteration_limit_str = self.config_repo.get_value("NOTIFICATION_ITERATION_DEFAULT", "3")
+
+        iteration_limit_str = self.config_repo.get_value(
+            "NOTIFICATION_ITERATION_DEFAULT", "3"
+        )
         try:
             iteration_limit = int(iteration_limit_str)
         except ValueError:
@@ -84,24 +86,25 @@ class NotificationService:
         # We need a custom query here as repo might not have this specific filter
         # "iteration_check is equals with config NOTIFICATION_ITERATION_DEFAULT"
         # "is_sent is false", "is_deleted is false", "is_read is false"
-        
+
         pending_notifications = (
             self.db.query(NotificationLog)
             .filter(
-                (NotificationLog.iteration_check >= iteration_limit) | (NotificationLog.is_force_sent == True),
+                (NotificationLog.iteration_check >= iteration_limit)
+                | (NotificationLog.is_force_sent == True),
                 NotificationLog.is_sent == False,
                 NotificationLog.is_deleted == False,
-                NotificationLog.is_read == False
+                NotificationLog.is_read == False,
             )
             .all()
         )
-        
+
         if not pending_notifications:
             return 0
-            
+
         sent_count = 0
         now = datetime.now(timezone(timedelta(hours=7)))
-        
+
         # 3. Process each
         for notification in pending_notifications:
             payload = {
@@ -109,45 +112,59 @@ class NotificationService:
                 "title": notification.title,
                 "message": notification.message,
                 "type": notification.type,
-                "timestamp": notification.created_at.isoformat() if notification.created_at else None
+                "timestamp": (
+                    notification.created_at.isoformat()
+                    if notification.created_at
+                    else None
+                ),
             }
-            
+
             # Send (awaiting inside the loop, could be parallelized but sequential is safer for now)
             success = await self._send_webhook(webhook_url, payload)
-            
+
             if success:
                 # 4. Update status
                 notification.is_sent = True
                 notification.updated_at = now
                 sent_count += 1
-        
+
         if sent_count > 0:
             self.db.commit()
-            
+
+        # Cleanup old notifications (older than 1 month)
+        try:
+            deleted_count = self.repo.delete_old_notifications(days_to_keep=30)
+            if deleted_count > 0:
+                logger.info(
+                    f"Deleted {deleted_count} old notifications (older than 30 days)"
+                )
+        except Exception as e:
+            logger.error(f"Failed to cleanup old notifications: {e}")
+
         return sent_count
 
     async def send_test_notification(self, webhook_url: Optional[str] = None) -> bool:
         """
         Send a test notification to the configured webhook.
-        
+
         Args:
             webhook_url: Optional webhook URL to use. If not provided, uses configured URL.
-        
+
         Returns:
             True if successful, False otherwise
         """
         if not webhook_url:
             webhook_url = self.config_repo.get_value("ALERT_NOTIFICATION_WEBHOOK_URL")
-            
+
         if not webhook_url:
             raise ValueError("Webhook URL is not configured")
-            
+
         payload = {
             "key_notification": "TEST_NOTIFICATION",
             "title": "Test Notification",
             "message": "This is a test notification from Rosetta ETL Platform.",
             "type": "TEST",
-            "timestamp": datetime.now(timezone(timedelta(hours=7))).isoformat()
+            "timestamp": datetime.now(timezone(timedelta(hours=7))).isoformat(),
         }
-        
+
         return await self._send_webhook(webhook_url, payload)

@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.models.notification_log import NotificationLog
 from app.domain.models.rosetta_setting_configuration import RosettaSettingConfiguration
-from app.domain.schemas.notification_log import NotificationLogCreate, NotificationLogUpdate
+from app.domain.schemas.notification_log import (
+    NotificationLogCreate,
+    NotificationLogUpdate,
+)
 
 
 class NotificationLogRepository:
@@ -19,10 +22,12 @@ class NotificationLogRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def upsert_notification_by_key(self, notification_data: NotificationLogCreate) -> NotificationLog:
+    def upsert_notification_by_key(
+        self, notification_data: NotificationLogCreate
+    ) -> NotificationLog:
         """
         Insert or update notification based on key_notification and iteration logic.
-        
+
         Logic:
         1. Check if key exists (get latest).
         2. If exists:
@@ -33,7 +38,9 @@ class NotificationLogRepository:
         # Get latest notification with this key
         latest_notification = (
             self.db.query(NotificationLog)
-            .filter(NotificationLog.key_notification == notification_data.key_notification)
+            .filter(
+                NotificationLog.key_notification == notification_data.key_notification
+            )
             .order_by(desc(NotificationLog.created_at))
             .first()
         )
@@ -45,7 +52,10 @@ class NotificationLogRepository:
         try:
             setting = (
                 self.db.query(RosettaSettingConfiguration)
-                .filter(RosettaSettingConfiguration.config_key == 'NOTIFICATION_ITERATION_DEFAULT')
+                .filter(
+                    RosettaSettingConfiguration.config_key
+                    == "NOTIFICATION_ITERATION_DEFAULT"
+                )
                 .first()
             )
             if setting and setting.config_value:
@@ -54,26 +64,31 @@ class NotificationLogRepository:
             # Fallback to default if any error occurs (e.g. invalid int conversion)
             iteration_limit = 3
 
-        if latest_notification and latest_notification.iteration_check < iteration_limit:
+        if (
+            latest_notification
+            and latest_notification.iteration_check < iteration_limit
+        ):
             # Update existing
             latest_notification.message = notification_data.message
-            latest_notification.title = notification_data.title # Update title too just in case
-            latest_notification.type = notification_data.type # Update type
+            latest_notification.title = (
+                notification_data.title
+            )  # Update title too just in case
+            latest_notification.type = notification_data.type  # Update type
             latest_notification.is_read = False
             latest_notification.is_deleted = False
             latest_notification.iteration_check += 1
             latest_notification.updated_at = now
-            
+
             self.db.commit()
             self.db.refresh(latest_notification)
             return latest_notification
         else:
             # Insert new (either not exists or iteration >= 3)
-            # If inserting new when iteration >= 3, should we reset iteration to 1? 
+            # If inserting new when iteration >= 3, should we reset iteration to 1?
             # User said "create insert new job". Assuming new fresh record implies iteration 1.
             # But the passed `notification_data` has `iteration_check`.
             # I should ensure the new record starts with iteration 1 (or whatever is passed).
-            
+
             new_notification = NotificationLog(
                 key_notification=notification_data.key_notification,
                 title=notification_data.title,
@@ -81,7 +96,7 @@ class NotificationLogRepository:
                 type=notification_data.type,
                 is_read=False,
                 is_deleted=False,
-                iteration_check=1, # Reset iteration for new job
+                iteration_check=1,  # Reset iteration for new job
                 is_sent=False,
                 created_at=now,
                 updated_at=now,
@@ -110,18 +125,25 @@ class NotificationLogRepository:
 
     def get_by_id(self, notification_id: int) -> Optional[NotificationLog]:
         """Get notification by ID."""
-        return self.db.query(NotificationLog).filter(NotificationLog.id == notification_id).first()
+        return (
+            self.db.query(NotificationLog)
+            .filter(NotificationLog.id == notification_id)
+            .first()
+        )
 
-    def get_all(self, skip: int = 0, limit: int = 100, is_read: Optional[bool] = None) -> List[NotificationLog]:
+    def get_all(
+        self, skip: int = 0, limit: int = 100, is_read: Optional[bool] = None
+    ) -> List[NotificationLog]:
         """Get all active notifications, ordered by creation time desc."""
-        query = self.db.query(NotificationLog).filter(NotificationLog.is_deleted == False)
-        
+        query = self.db.query(NotificationLog).filter(
+            NotificationLog.is_deleted == False
+        )
+
         if is_read is not None:
             query = query.filter(NotificationLog.is_read == is_read)
-            
+
         return (
-            query
-            .order_by(desc(NotificationLog.created_at))
+            query.order_by(desc(NotificationLog.created_at))
             .offset(skip)
             .limit(limit)
             .all()
@@ -142,7 +164,9 @@ class NotificationLogRepository:
         now = datetime.now(timezone(timedelta(hours=7)))
         result = (
             self.db.query(NotificationLog)
-            .filter(NotificationLog.is_deleted == False, NotificationLog.is_read == False)
+            .filter(
+                NotificationLog.is_deleted == False, NotificationLog.is_read == False
+            )
             .update({NotificationLog.is_read: True, NotificationLog.updated_at: now})
         )
         self.db.commit()
@@ -168,3 +192,51 @@ class NotificationLogRepository:
         )
         self.db.commit()
         return result
+
+    def delete_old_notifications(self, days_to_keep: int = 30) -> int:
+        """Permanently delete notifications older than specified days based on created_at.
+
+        Args:
+            days_to_keep: Number of days to keep notifications (default: 30)
+
+        Returns:
+            Number of notifications deleted
+        """
+        from app.core.logging import get_logger
+        from zoneinfo import ZoneInfo
+
+        logger = get_logger(__name__)
+
+        now = datetime.now(ZoneInfo("Asia/Jakarta"))
+        cutoff_date = now - timedelta(days=days_to_keep)
+
+        logger.info(
+            f"Cleanup check - Current time: {now}, Cutoff date: {cutoff_date}, Looking for records older than {cutoff_date}"
+        )
+
+        # Query old notifications
+        old_notifications = (
+            self.db.query(NotificationLog)
+            .filter(NotificationLog.created_at < cutoff_date)
+            .all()
+        )
+
+        deleted_count = len(old_notifications)
+
+        if deleted_count > 0:
+            logger.info(f"Found {deleted_count} notifications to delete")
+            for notification in old_notifications:
+                logger.debug(
+                    f"Deleting notification ID {notification.id} created at {notification.created_at}"
+                )
+        else:
+            logger.info(
+                f"No old notifications found to delete (older than {cutoff_date})"
+            )
+
+        # Delete them
+        for notification in old_notifications:
+            self.db.delete(notification)
+
+        self.db.commit()
+        return deleted_count
