@@ -163,7 +163,7 @@ export function NotificationPopover() {
                     tooltip='Notifications'
                     className='data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground h-8 w-8 rounded-lg aspect-square p-0 flex items-center justify-center shrink-0 relative overflow-visible'
                 >
-                    <Bell className="h-4 w-4" />
+                    <Bell className={`h-4 w-4 ${unreadCount > 0 ? 'animate-bell-ring' : ''}`} />
                     {unreadCount > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background pointer-events-none z-10">
                             {unreadCount > 9 ? '9+' : unreadCount}

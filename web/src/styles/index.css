@@ -61,7 +61,11 @@
 }
 
 @utility faded-bottom {
-  @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,transparent_10%,var(--background)_70%)] md:after:block;
+  @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl md:after:block;
+
+  &::after {
+    background: linear-gradient(180deg, transparent 10%, var(--background) 70%);
+  }
 }
 
 /* styles.css */
@@ -131,4 +135,39 @@
 
 .animate-fade-in-slide-up {
   animation: fade-in-slide-up 0.3s ease-out forwards;
+}
+
+@keyframes bell-ring {
+  0% {
+    transform: rotate(0);
+  }
+
+  10% {
+    transform: rotate(30deg);
+  }
+
+  30% {
+    transform: rotate(-28deg);
+  }
+
+  50% {
+    transform: rotate(34deg);
+  }
+
+  70% {
+    transform: rotate(-32deg);
+  }
+
+  90% {
+    transform: rotate(30deg);
+  }
+
+  100% {
+    transform: rotate(0);
+  }
+}
+
+.animate-bell-ring {
+  animation: bell-ring 2s ease-in-out infinite;
+  transform-origin: top center;
 }
