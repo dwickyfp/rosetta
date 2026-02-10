@@ -9,71 +9,94 @@ import { PipelineDetailsTable } from './pipeline-details-table'
 import { SourceTableInfo } from '@/repo/sources'
 import { Database, Layers } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
+// Custom Node Component for consistent styling
 // Custom Node Component for consistent styling
 const CustomNode = ({ data }: { data: any }) => {
     const isSource = data.isSource;
     const isDestGroup = data.isDestGroup;
+    
+    // Helper to render label with tooltip if needed
+    const NodeLabel = ({ label, icon: Icon, colorClass }: { label: string, icon: any, colorClass: string }) => (
+        <TooltipProvider delayDuration={200}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2 w-full max-w-full">
+                        <Icon className={`w-4 h-4 shrink-0 ${colorClass}`} />
+                        <span className="font-semibold text-sm leading-tight truncate flex-1 min-w-0 text-left">
+                            {label}
+                        </span>
+                    </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[300px] break-words">
+                    <p>{label}</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    )
 
     if (isSource) {
         return (
-            <div className="relative">
-                <Handle type="target" position={Position.Left} className="!bg-slate-400 !w-3 !h-3" />
-                <Card className="min-w-[280px] max-w-[400px] shadow-sm border-l-4 border-l-blue-500">
-                    <CardHeader className="p-3 pb-2">
-                        <div className="flex items-center gap-2">
-                            <Database className="w-4 h-4 text-blue-500 shrink-0" />
-                            <div className="font-semibold text-sm leading-tight truncate" title={data.label}>
-                                {data.label}
-                            </div>
-                        </div>
+            <div className="relative group">
+                <Handle type="target" position={Position.Left} className="!bg-muted-foreground !w-2 !h-2 border-2 border-background transition-all group-hover:!bg-blue-500" />
+                <Card className="w-[280px] shadow-sm transition-all hover:shadow-md border-l-4 border-l-blue-500 overflow-hidden">
+                    <CardHeader className="p-3">
+                        <NodeLabel label={data.label} icon={Database} colorClass="text-blue-500" />
                     </CardHeader>
                 </Card>
-                <Handle type="source" position={Position.Right} className="!bg-slate-400 !w-3 !h-3" />
+                <Handle type="source" position={Position.Right} className="!bg-muted-foreground !w-2 !h-2 border-2 border-background transition-all group-hover:!bg-blue-500" />
             </div>
         )
     }
 
     if (isDestGroup) {
         return (
-            <div className="relative">
-                <Handle type="target" position={Position.Left} className="!bg-slate-400 !w-2 !h-2" />
-                <Card className="min-w-[200px] max-w-[300px] shadow-sm hover:shadow-md transition-shadow border-l-4 border-l-purple-500 bg-card">
-                    <CardHeader className="p-3 pb-2">
-                        <div className="flex items-center gap-2">
-                            <Layers className="w-4 h-4 text-purple-500 shrink-0" />
-                            <div className="font-semibold text-sm leading-tight truncate" title={data.label}>
-                                {data.label}
-                            </div>
-                        </div>
+            <div className="relative group">
+                <Handle type="target" position={Position.Left} className="!bg-muted-foreground !w-2 !h-2 border-2 border-background transition-all group-hover:!bg-purple-500" />
+                <Card className="w-[240px] shadow-sm transition-all hover:shadow-md border-l-4 border-l-purple-500 overflow-hidden">
+                    <CardHeader className="p-3">
+                         <NodeLabel label={data.label} icon={Layers} colorClass="text-purple-500" />
                     </CardHeader>
                 </Card>
-                <Handle type="source" position={Position.Right} className="!bg-slate-400 !w-2 !h-2" />
+                <Handle type="source" position={Position.Right} className="!bg-muted-foreground !w-2 !h-2 border-2 border-background transition-all group-hover:!bg-purple-500" />
             </div>
         )
     }
 
     // Compact Target Node
     return (
-        <div className="relative">
-            <Handle type="target" position={Position.Left} className="!bg-slate-400 !w-2 !h-2" />
+        <div className="relative group">
+            <Handle type="target" position={Position.Left} className="!bg-muted-foreground !w-2 !h-2 border-2 border-background transition-all group-hover:!bg-emerald-500" />
 
-            <Card className="min-w-[180px] max-w-[250px] shadow-sm hover:shadow-md transition-shadow border-l-2 border-l-emerald-500">
-                <CardContent className="p-2 flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                        <Database className="w-3 h-3 text-emerald-500 shrink-0" />
-                        <div className="font-semibold text-xs leading-tight truncate" title={data.label}>
-                            {data.label}
+            <Card className="w-[240px] shadow-sm transition-all hover:shadow-md hover:border-emerald-500 border-l-2 border-l-emerald-500 overflow-hidden">
+                <CardContent className="p-2.5 flex flex-col gap-2">
+                     <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="flex items-center gap-2 w-full max-w-full">
+                                    <Database className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                    <span className="font-medium text-xs truncate flex-1 min-w-0 text-left">
+                                        {data.label}
+                                    </span>
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                <p>{data.label}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+
+                    <div className="flex justify-between items-center pt-2 border-t border-dashed">
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Records</span>
+                        <div className="flex items-center gap-1 bg-emerald-50/50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded text-emerald-600 dark:text-emerald-400">
+                             <span className="font-mono text-xs font-bold">{data.totalCount?.toLocaleString()}</span>
                         </div>
-                    </div>
-                    <div className="flex justify-between items-center mt-1 pt-1 border-t border-border">
-                        <span className="text-[10px] text-muted-foreground">Records</span>
-                        <span className="font-mono text-xs font-bold text-emerald-600">{data.totalCount?.toLocaleString()}</span>
                     </div>
                 </CardContent>
             </Card>
 
-            <Handle type="source" position={Position.Right} className="!bg-slate-400 !w-2 !h-2" />
+            <Handle type="source" position={Position.Right} className="!bg-muted-foreground !w-2 !h-2 border-2 border-background transition-all group-hover:!bg-emerald-500" />
         </div>
     )
 }
