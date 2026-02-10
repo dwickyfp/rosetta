@@ -431,7 +431,7 @@ class BackfillManager:
                                 pipeline_destination_id=pd.id,
                                 source_id=job["source_id"],
                                 table_sync_id=table_sync.id,
-                                table_name=f"{table_name.upper()}",
+                                table_name=f"LANDING_{table_name.upper()}",
                                 count=written,
                             )
                             logger.debug(
