@@ -11,18 +11,18 @@ from dataclasses import dataclass
 
 from pydbzengine import ChangeEvent, BasePythonChangeHandler
 
-from compute.destinations.base import CDCRecord, BaseDestination
-from compute.core.models import (
+from destinations.base import CDCRecord, BaseDestination
+from core.models import (
     Pipeline,
     PipelineDestination,
     PipelineDestinationTableSync,
 )
-from compute.core.repository import (
+from core.repository import (
     DataFlowRepository,
     TableSyncRepository,
     PipelineDestinationRepository,
 )
-from compute.core.exceptions import DestinationException
+from core.exceptions import DestinationException
 
 logger = logging.getLogger(__name__)
 

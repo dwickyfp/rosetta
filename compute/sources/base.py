@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 import logging
 
-from compute.core.models import Source
+from core.models import Source
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 import logging
 
-from compute.core.models import Destination, PipelineDestinationTableSync
+from core.models import Destination, PipelineDestinationTableSync
 
 logger = logging.getLogger(__name__)
 

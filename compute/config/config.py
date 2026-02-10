@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 from functools import lru_cache
-from compute.core.security import decrypt_value
+from core.security import decrypt_value
 
 # Try to load dotenv if available
 try:

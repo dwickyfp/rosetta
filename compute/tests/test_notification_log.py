@@ -9,8 +9,8 @@ from datetime import datetime
 import os
 sys.path.append(os.path.join(os.getcwd()))
 
-from compute.core.notification import NotificationLogRepository, NotificationLogCreate
-from compute.core.database import DatabaseSession
+from core.notification import NotificationLogRepository, NotificationLogCreate
+from core.database import DatabaseSession
 
 # Mock database connection
 class MockCursor:
@@ -54,8 +54,8 @@ class MockConnection:
 
 class TestNotificationLog(unittest.TestCase):
     
-    @patch('compute.core.notification.get_db_connection')
-    @patch('compute.core.notification.return_db_connection')
+    @patch('core.notification.get_db_connection')
+    @patch('core.notification.return_db_connection')
     def test_upsert_new_notification(self, mock_return_conn, mock_get_conn):
         mock_conn = MockConnection()
         mock_get_conn.return_value = mock_conn
@@ -87,8 +87,8 @@ class TestNotificationLog(unittest.TestCase):
         self.assertTrue("INSERT INTO notification_log" in mock_conn.cursor_mock.last_query)
         self.assertTrue("iteration_check" in mock_conn.cursor_mock.last_query)
         
-    @patch('compute.core.notification.get_db_connection')
-    @patch('compute.core.notification.return_db_connection')
+    @patch('core.notification.get_db_connection')
+    @patch('core.notification.return_db_connection')
     def test_update_existing_notification(self, mock_return_conn, mock_get_conn):
         mock_conn = MockConnection()
         mock_get_conn.return_value = mock_conn

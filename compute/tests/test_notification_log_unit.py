@@ -10,7 +10,7 @@ import os
 sys.path.append(os.path.join(os.getcwd()))
 
 try:
-    from compute.core.notification import NotificationLogRepository, NotificationLogCreate
+    from core.notification import NotificationLogRepository, NotificationLogCreate
 except ImportError as e:
     with open('test_results.txt', 'w') as f:
         f.write(f"ImportError: {e}")
@@ -58,8 +58,8 @@ class MockConnection:
 
 class TestNotificationLog(unittest.TestCase):
     
-    @patch('compute.core.notification.get_db_connection')
-    @patch('compute.core.notification.return_db_connection')
+    @patch('core.notification.get_db_connection')
+    @patch('core.notification.return_db_connection')
     def test_upsert_new_notification(self, mock_return_conn, mock_get_conn):
         mock_conn = MockConnection()
         mock_get_conn.return_value = mock_conn
@@ -88,8 +88,8 @@ class TestNotificationLog(unittest.TestCase):
         
         self.assertTrue("INSERT INTO notification_log" in mock_conn.cursor_mock.last_query)
         
-    @patch('compute.core.notification.get_db_connection')
-    @patch('compute.core.notification.return_db_connection')
+    @patch('core.notification.get_db_connection')
+    @patch('core.notification.return_db_connection')
     def test_update_existing_notification(self, mock_return_conn, mock_get_conn):
         mock_conn = MockConnection()
         mock_get_conn.return_value = mock_conn

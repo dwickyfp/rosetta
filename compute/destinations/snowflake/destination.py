@@ -12,12 +12,12 @@ from concurrent.futures import Future
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from compute.core.exceptions import DestinationException
-from compute.core.models import Destination, PipelineDestinationTableSync
-from compute.core.security import decrypt_value
-from compute.core.notification import NotificationLogRepository, NotificationLogCreate
-from compute.destinations.base import BaseDestination, CDCRecord
-from compute.destinations.snowflake.client import SnowpipeClient
+from core.exceptions import DestinationException
+from core.models import Destination, PipelineDestinationTableSync
+from core.security import decrypt_value
+from core.notification import NotificationLogRepository, NotificationLogCreate
+from destinations.base import BaseDestination, CDCRecord
+from destinations.snowflake.client import SnowpipeClient
 
 logger = logging.getLogger(__name__)
 

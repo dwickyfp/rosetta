@@ -17,11 +17,11 @@ import threading
 import time
 
 
-from compute.config import get_config
-from compute.core.database import init_connection_pool, close_connection_pool, get_db_connection, return_db_connection
-from compute.core.manager import PipelineManager
-from compute.core.engine import run_pipeline
-from compute.server import run_server
+from config import get_config
+from core.database import init_connection_pool, close_connection_pool, get_db_connection, return_db_connection
+from core.manager import PipelineManager
+from core.engine import run_pipeline
+from server import run_server
 
 
 
@@ -106,7 +106,7 @@ def main() -> int:
         logger.info(f"API Server started at http://{config.server.host}:{config.server.port}")
 
         # Start Pipeline Manager in a separate thread
-        manager = PipelineManager()
+        manager = PipelineManager(register_signals=False)
         manager_thread = threading.Thread(
             target=manager.run,
             daemon=True

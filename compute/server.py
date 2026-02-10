@@ -7,7 +7,7 @@ Provides health check and other API endpoints.
 import logging
 import uvicorn
 from fastapi import FastAPI
-from compute.config import get_config
+from config import get_config
 
 logger = logging.getLogger(__name__)
 

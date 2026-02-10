@@ -12,11 +12,11 @@ from contextlib import contextmanager
 import duckdb
 import psycopg2
 
-from compute.destinations.base import BaseDestination, CDCRecord
-from compute.core.models import Destination, PipelineDestinationTableSync
-from compute.core.exceptions import DestinationException
-from compute.core.security import decrypt_value
-from compute.core.notification import NotificationLogRepository, NotificationLogCreate
+from destinations.base import BaseDestination, CDCRecord
+from core.models import Destination, PipelineDestinationTableSync
+from core.exceptions import DestinationException
+from core.security import decrypt_value
+from core.notification import NotificationLogRepository, NotificationLogCreate
 
 logger = logging.getLogger(__name__)
 

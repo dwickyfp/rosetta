@@ -8,8 +8,8 @@ import logging
 from typing import Optional
 from datetime import datetime
 
-from compute.core.database import DatabaseSession
-from compute.core.models import (
+from core.database import DatabaseSession
+from core.models import (
     Source,
     Destination,
     Pipeline,
@@ -19,7 +19,7 @@ from compute.core.models import (
     TableMetadataList,
     DataFlowRecordMonitoring,
 )
-from compute.core.exceptions import DatabaseException
+from core.exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 

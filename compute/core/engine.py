@@ -9,20 +9,20 @@ from typing import Any, Optional
 
 from pydbzengine import DebeziumJsonEngine
 
-from compute.config import get_config
-from compute.core.models import Pipeline, DestinationType
-from compute.core.event_handler import CDCEventHandler
-from compute.core.repository import (
+from config import get_config
+from core.models import Pipeline, DestinationType
+from core.event_handler import CDCEventHandler
+from core.repository import (
     PipelineRepository,
     TableMetadataRepository,
     PipelineMetadataRepository,
 )
-from compute.core.exceptions import PipelineException
-from compute.sources.base import BaseSource
-from compute.sources.postgresql import PostgreSQLSource
-from compute.destinations.base import BaseDestination
-from compute.destinations.snowflake import SnowflakeDestination
-from compute.destinations.postgresql import PostgreSQLDestination
+from core.exceptions import PipelineException
+from sources.base import BaseSource
+from sources.postgresql import PostgreSQLSource
+from destinations.base import BaseDestination
+from destinations.snowflake import SnowflakeDestination
+from destinations.postgresql import PostgreSQLDestination
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ class PipelineEngine:
                 successful_destinations += 1
 
                 # Clear any previous initialization errors
-                from compute.core.repository import PipelineDestinationRepository
+                from core.repository import PipelineDestinationRepository
 
                 if pd.is_error:
                     PipelineDestinationRepository.update_error(pd.id, False)
@@ -178,7 +178,7 @@ class PipelineEngine:
                 failed_destinations += 1
 
                 # Update error state in database
-                from compute.core.repository import PipelineDestinationRepository
+                from core.repository import PipelineDestinationRepository
 
                 PipelineDestinationRepository.update_error(pd.id, True, error_msg)
 

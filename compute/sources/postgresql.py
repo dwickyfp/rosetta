@@ -9,10 +9,10 @@ from typing import Any, Optional
 
 import psycopg2
 
-from compute.sources.base import BaseSource
-from compute.core.models import Source
-from compute.core.security import decrypt_value
-from compute.config import get_config
+from sources.base import BaseSource
+from core.models import Source
+from core.security import decrypt_value
+from config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ class PostgreSQLSource(BaseSource):
         Returns:
             PostgreSQLSource instance or None if not found
         """
-        from compute.core.repository import SourceRepository
+        from core.repository import SourceRepository
         
         source = SourceRepository.get_by_id(source_id)
         if source is None:

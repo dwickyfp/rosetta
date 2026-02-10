@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Any
 from dataclasses import dataclass
 
-from compute.core.database import get_db_connection, return_db_connection
+from core.database import get_db_connection, return_db_connection
 
 logger = logging.getLogger(__name__)
 
