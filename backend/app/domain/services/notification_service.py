@@ -126,14 +126,19 @@ class NotificationService:
             
         return sent_count
 
-    async def send_test_notification(self) -> bool:
+    async def send_test_notification(self, webhook_url: Optional[str] = None) -> bool:
         """
         Send a test notification to the configured webhook.
+        
+        Args:
+            webhook_url: Optional webhook URL to use. If not provided, uses configured URL.
         
         Returns:
             True if successful, False otherwise
         """
-        webhook_url = self.config_repo.get_value("ALERT_NOTIFICATION_WEBHOOK_URL")
+        if not webhook_url:
+            webhook_url = self.config_repo.get_value("ALERT_NOTIFICATION_WEBHOOK_URL")
+            
         if not webhook_url:
             raise ValueError("Webhook URL is not configured")
             

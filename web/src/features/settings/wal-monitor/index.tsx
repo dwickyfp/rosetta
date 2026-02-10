@@ -6,6 +6,7 @@ export function SettingsWALMonitor() {
     <ContentSection
       title='WAL Monitor'
       desc='Configure Write-Ahead Log monitoring thresholds and alert notifications for PostgreSQL sources.'
+      fullWidth
     >
       <WALMonitorForm />
     </ContentSection>

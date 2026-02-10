@@ -1,6 +1,11 @@
+import { useEffect } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { configurationRepo } from '@/repo/configuration'
+import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -12,27 +17,27 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { configurationRepo } from '@/repo/configuration'
-import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
-import { useEffect } from 'react'
 
-const walMonitorFormSchema = z.object({
-  warning: z.number()
-    .min(1, 'Warning threshold must be at least 1 MB')
-    .max(1000000, 'Warning threshold is too large'),
-  error: z.number()
-    .min(1, 'Error threshold must be at least 1 MB')
-    .max(1000000, 'Error threshold is too large'),
-  webhook_url: z.string().url('Please enter a valid URL').or(z.literal('')),
-  notification_iteration: z.number()
-    .min(1, 'Iteration must be at least 1')
-    .max(100, 'Iteration cannot exceed 100'),
-}).refine((data) => data.error > data.warning, {
-  message: 'Error threshold must be greater than warning threshold',
-  path: ['error'],
-})
+const walMonitorFormSchema = z
+  .object({
+    warning: z
+      .number()
+      .min(1, 'Warning threshold must be at least 1 MB')
+      .max(1000000, 'Warning threshold is too large'),
+    error: z
+      .number()
+      .min(1, 'Error threshold must be at least 1 MB')
+      .max(1000000, 'Error threshold is too large'),
+    webhook_url: z.string().url('Please enter a valid URL').or(z.literal('')),
+    notification_iteration: z
+      .number()
+      .min(1, 'Iteration must be at least 1')
+      .max(100, 'Iteration cannot exceed 100'),
+  })
+  .refine((data) => data.error > data.warning, {
+    message: 'Error threshold must be greater than warning threshold',
+    path: ['error'],
+  })
 
 type WALMonitorFormValues = z.infer<typeof walMonitorFormSchema>
 
@@ -72,7 +77,9 @@ export function WALMonitorForm() {
   const updateMutation = useMutation({
     mutationFn: configurationRepo.updateWALThresholds,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['configuration', 'wal-thresholds'] })
+      queryClient.invalidateQueries({
+        queryKey: ['configuration', 'wal-thresholds'],
+      })
       // Update form with the saved values
       form.reset({
         warning: data.warning,
@@ -102,9 +109,9 @@ export function WALMonitorForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className='space-y-8'>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className='grid grid-cols-1 gap-8 lg:grid-cols-2'>
+          <div className='space-y-6'>
+            <div className='grid grid-cols-1 gap-6 md:grid-cols-2'>
               <FormField
                 control={form.control}
                 name='warning'
@@ -148,44 +155,35 @@ export function WALMonitorForm() {
                 )}
               />
             </div>
-            
+
             <FormField
               control={form.control}
               name='webhook_url'
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Webhook URL</FormLabel>
-                  <div className="flex gap-2">
+                  <div className='flex gap-2'>
                     <FormControl>
                       <Input
                         type='url'
-                        placeholder='https://your-webhook-endpoint.com/alerts'
+                        placeholder='https://your-webhook-endpoint.com/webhook'
                         {...field}
                       />
                     </FormControl>
-                    <Button 
-                      type="button" 
-                      variant="secondary"
+                    <Button
+                      type='button'
+                      variant='secondary'
                       onClick={async () => {
-                        if (!form.getValues('webhook_url')) {
-                          toast.error("Please enter a webhook URL first")
+                        const currentWebhookUrl = form.getValues('webhook_url')
+                        if (!currentWebhookUrl) {
+                          toast.error('Please enter a webhook URL first')
                           return
                         }
                         try {
-                          await form.handleSubmit(onSubmit)()
-                          
-                          const response = await fetch('/api/v1/configuration/wal-thresholds/test', {
-                            method: 'POST',
-                          })
-                          
-                          if (response.ok) {
-                            toast.success("Test notification sent successfully")
-                          } else {
-                            const error = await response.json()
-                            toast.error(error.detail || "Failed to send test notification")
-                          }
-                        } catch (e) {
-                          toast.error("Failed to trigger test notification")
+                          await configurationRepo.testNotification(currentWebhookUrl)
+                          toast.success('Test notification sent successfully')
+                        } catch (e: any) {
+                          toast.error(e.response?.data?.detail || 'Failed to trigger test notification')
                         }
                       }}
                     >
@@ -199,7 +197,7 @@ export function WALMonitorForm() {
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name='notification_iteration'
@@ -212,7 +210,7 @@ export function WALMonitorForm() {
                       placeholder='3'
                       {...field}
                       onChange={(e) => field.onChange(e.target.valueAsNumber)}
-                      className='max-w-[200px]'
+                      className='max-w-50'
                     />
                   </FormControl>
                   <FormDescription>
@@ -222,8 +220,8 @@ export function WALMonitorForm() {
                 </FormItem>
               )}
             />
-            
-            <div className="pt-4">
+
+            <div className='pt-4'>
               <Button type='submit' disabled={updateMutation.isPending}>
                 {updateMutation.isPending && (
                   <Loader2 className='mr-2 h-4 w-4 animate-spin' />
@@ -232,25 +230,32 @@ export function WALMonitorForm() {
               </Button>
             </div>
           </div>
-          
+
           <div>
-             <div className="p-6 bg-card rounded-xl border shadow-sm sticky top-6">
-              <div className="flex items-center gap-2 mb-4 text-muted-foreground">
-                 <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                 <h3 className="font-medium text-xs uppercase tracking-wider">Example Payload</h3>
+            <div className='sticky top-6 rounded-xl border bg-card p-6 shadow-sm'>
+              <div className='mb-4 flex items-center gap-2 text-muted-foreground'>
+                <div className='h-2 w-2 animate-pulse rounded-full bg-green-500' />
+                <h3 className='text-xs font-medium tracking-wider uppercase'>
+                  Example Payload
+                </h3>
               </div>
-              <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
-                Notifications are sent as JSON POST requests. Ensure your endpoint can parse the following structure:
+              <p className='mb-4 text-sm leading-relaxed text-muted-foreground'>
+                Notifications are sent as JSON POST requests. Ensure your
+                endpoint can parse the following structure:
               </p>
-              <div className="rounded-lg border bg-zinc-950 p-4 overflow-hidden">
-                <pre className="text-[10px] sm:text-xs text-zinc-50 font-mono overflow-auto custom-scrollbar">
-{JSON.stringify({
-  "key_notification": "WAL_SIZE_WARNING",
-  "title": "WAL Size Warning",
-  "message": "WAL size exceeded 3000MB.",
-  "type": "WARNING",
-  "timestamp": "2024-01-01T12:00:00+07:00"
-}, null, 2)}
+              <div className='overflow-hidden rounded-lg border bg-zinc-950 p-4'>
+                <pre className='custom-scrollbar overflow-auto font-mono text-[10px] text-zinc-50 sm:text-xs'>
+                  {JSON.stringify(
+                    {
+                      key_notification: 'WAL_SIZE_WARNING',
+                      title: 'WAL Size Warning',
+                      message: 'WAL size exceeded 3000MB.',
+                      type: 'WARNING',
+                      timestamp: '2024-01-01T12:00:00+07:00',
+                    },
+                    null,
+                    2
+                  )}
                 </pre>
               </div>
             </div>

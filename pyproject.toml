@@ -29,3 +29,8 @@ rosetta-compute = "python -m compute.main"
 
 [tool.uv]
 native-tls = true
+
+[tool.uv.workspace]
+members = [
+    "webhook_example",
+]
