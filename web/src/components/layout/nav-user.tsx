@@ -71,7 +71,6 @@ export function NavUser({ user }: NavUserProps) {
                     </div>
                   </div>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
               </DropdownMenuContent>
             </DropdownMenu>
 
