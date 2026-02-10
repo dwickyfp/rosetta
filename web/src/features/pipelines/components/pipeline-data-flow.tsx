@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pipeline, pipelinesRepo } from '@/repo/pipelines'
-
 import {
   ReactFlow,
   Background,
@@ -22,7 +21,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-
 // Custom Node Component for consistent styling with cleaner design
 const CustomNode = ({ data }: { data: any }) => {
   const isSource = data.isSource
@@ -35,10 +33,10 @@ const CustomNode = ({ data }: { data: any }) => {
         <Handle
           type='target'
           position={Position.Left}
-          className='!h-2.5 !w-2.5 !border-2 !border-white !bg-blue-500/50 transition-all group-hover:scale-110 group-hover:!bg-blue-500 dark:!border-gray-900'
+          className='h-2.5! w-2.5! border-2! border-white! bg-blue-500/50! transition-all group-hover:scale-110 group-hover:bg-blue-500! dark:border-gray-900!'
         />
 
-        <div className='relative w-[260px] rounded-lg border-2 border-blue-500/40 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-500/60 hover:shadow-lg dark:bg-gray-950'>
+        <div className='relative w-65 rounded-lg border-2 border-blue-500/40 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-500/60 hover:shadow-lg dark:bg-gray-950'>
           {/* Subtle glow effect */}
           <div className='absolute inset-0 rounded-lg bg-blue-500/5' />
 
@@ -55,7 +53,7 @@ const CustomNode = ({ data }: { data: any }) => {
                     </p>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side='top' className='max-w-[300px]'>
+                <TooltipContent side='top' className='max-w-75'>
                   <p>{data.label}</p>
                 </TooltipContent>
               </Tooltip>
@@ -66,7 +64,7 @@ const CustomNode = ({ data }: { data: any }) => {
         <Handle
           type='source'
           position={Position.Right}
-          className='!h-2.5 !w-2.5 !border-2 !border-white !bg-blue-500/50 transition-all group-hover:scale-110 group-hover:!bg-blue-500 dark:!border-gray-900'
+          className='h-2.5! w-2.5! border-2! border-white! bg-blue-500/50! transition-all group-hover:scale-110 group-hover:bg-blue-500! dark:border-gray-900!'
         />
       </div>
     )
@@ -79,10 +77,10 @@ const CustomNode = ({ data }: { data: any }) => {
         <Handle
           type='target'
           position={Position.Left}
-          className='!h-2.5 !w-2.5 !border-2 !border-white !bg-purple-500/50 transition-all group-hover:scale-110 group-hover:!bg-purple-500 dark:!border-gray-900'
+          className='h-2.5! w-2.5! border-2! border-white! bg-purple-500/50! transition-all group-hover:scale-110 group-hover:bg-purple-500! dark:border-gray-900!'
         />
 
-        <div className='relative w-[240px] rounded-lg border-2 border-purple-500/40 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-purple-500/60 hover:shadow-lg dark:bg-gray-950'>
+        <div className='relative w-65 rounded-lg border-2 border-purple-500/40 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-purple-500/60 hover:shadow-lg dark:bg-gray-950'>
           {/* Subtle glow effect */}
           <div className='absolute inset-0 rounded-lg bg-purple-500/5' />
 
@@ -99,7 +97,7 @@ const CustomNode = ({ data }: { data: any }) => {
                     </p>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side='top' className='max-w-[300px]'>
+                <TooltipContent side='top' className='max-w-75'>
                   <p>{data.label}</p>
                 </TooltipContent>
               </Tooltip>
@@ -110,7 +108,7 @@ const CustomNode = ({ data }: { data: any }) => {
         <Handle
           type='source'
           position={Position.Right}
-          className='!h-2.5 !w-2.5 !border-2 !border-white !bg-purple-500/50 transition-all group-hover:scale-110 group-hover:!bg-purple-500 dark:!border-gray-900'
+          className='h-2.5! w-2.5! border-2! border-white! bg-purple-500/50! transition-all group-hover:scale-110 group-hover:bg-purple-500! dark:border-gray-900!'
         />
       </div>
     )
@@ -122,10 +120,10 @@ const CustomNode = ({ data }: { data: any }) => {
       <Handle
         type='target'
         position={Position.Left}
-        className='!h-2.5 !w-2.5 !border-2 !border-white !bg-emerald-500/50 transition-all group-hover:scale-110 group-hover:!bg-emerald-500 dark:!border-gray-900'
+        className='h-2.5! w-2.5! border-2! border-white! bg-emerald-500/50! transition-all group-hover:scale-110 group-hover:bg-emerald-500! dark:border-gray-900!'
       />
 
-      <div className='relative w-[260px] rounded-lg border-2 border-emerald-500/40 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/60 hover:shadow-lg dark:bg-gray-950'>
+      <div className='relative w-65 rounded-lg border-2 border-emerald-500/40 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/60 hover:shadow-lg dark:bg-gray-950'>
         {/* Subtle glow effect */}
         <div className='absolute inset-0 rounded-lg bg-emerald-500/5' />
 
@@ -144,7 +142,7 @@ const CustomNode = ({ data }: { data: any }) => {
                     </p>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side='top' className='max-w-[300px]'>
+                <TooltipContent side='top' className='max-w-75'>
                   <p>{data.label}</p>
                 </TooltipContent>
               </Tooltip>
@@ -168,7 +166,7 @@ const CustomNode = ({ data }: { data: any }) => {
       <Handle
         type='source'
         position={Position.Right}
-        className='!h-2.5 !w-2.5 !border-2 !border-white !bg-emerald-500/50 transition-all group-hover:scale-110 group-hover:!bg-emerald-500 dark:!border-gray-900'
+        className='h-2.5! w-2.5! border-2! border-white! bg-emerald-500/50! transition-all group-hover:scale-110 group-hover:bg-emerald-500! dark:border-gray-900!'
       />
     </div>
   )
@@ -184,7 +182,6 @@ interface PipelineDataFlowProps {
 
 export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
   const { theme } = useTheme()
-
 
   // Fetch stats to calculate edge labels
   const { data: stats } = useQuery({
@@ -390,10 +387,8 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
     return { nodes, edges }
   }, [pipeline, stats])
 
-
-
   return (
-    <div className='relative h-[700px] rounded-lg border bg-background [&_.react-flow__controls]:border-border [&_.react-flow__controls]:bg-background [&_.react-flow__controls]:shadow-md [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button:hover]:bg-muted'>
+    <div className='relative h-175 rounded-lg border bg-background [&_.react-flow__controls]:border-border [&_.react-flow__controls]:bg-background [&_.react-flow__controls]:shadow-md [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button:hover]:bg-muted'>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -401,7 +396,7 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
         colorMode={theme}
         fitView
       >
-        <Background className='!bg-background' color='var(--border)' />
+        <Background className='bg-background!' color='var(--border)' />
         <Controls />
       </ReactFlow>
     </div>

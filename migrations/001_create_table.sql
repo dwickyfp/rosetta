@@ -273,6 +273,28 @@ CREATE TABLE IF NOT EXISTS notification_log(
 -- Create Index for notification_log
 CREATE INDEX IF NOT EXISTS idx_notification_log_iteration_check ON notification_log(iteration_check);
 
+-- Table queue backfill data 
+CREATE TABLE IF NOT EXISTS queue_backfill_data(
+    id SERIAL PRIMARY KEY,
+    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    source_id  INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    table_name VARCHAR(255) NOT NULL,
+    filter_sql TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED'
+    count_record BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create Index for queue_backfill_data
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_pipeline_id ON queue_backfill_data(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_source_id ON queue_backfill_data(source_id);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_table_name ON queue_backfill_data(table_name);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_status ON queue_backfill_data(status);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_created_at ON queue_backfill_data(created_at);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_updated_at ON queue_backfill_data(updated_at);
+
+
 
 
 
