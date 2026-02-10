@@ -39,6 +39,11 @@ services:
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CREDENTIAL_ENCRYPTION_KEY: Wn5x7y9z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8=
+      # Redis and DLQ Configuration
+      REDIS_URL: ${REDIS_URL:-redis://rosetta-redis:6379/0}
+      DLQ_KEY_PREFIX: rosetta:dlq
+      DLQ_CHECK_INTERVAL: 30
+      DLQ_BATCH_SIZE: 100
       TZ: Asia/Jakarta
     depends_on:
       rosetta-postgres:
