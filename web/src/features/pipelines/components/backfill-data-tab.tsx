@@ -135,6 +135,14 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
     },
   })
 
+  // Handle dialog open state change
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      resetForm()
+    }
+    setOpen(newOpen)
+  }
+
   const resetForm = () => {
     setTableName('')
     setFilters([])
@@ -198,7 +206,7 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className='mr-2 h-4 w-4' />
@@ -381,7 +389,7 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
         </div>
 
         <DialogFooter>
-          <Button variant='outline' onClick={() => setOpen(false)}>
+          <Button variant='outline' onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={createMutation.isPending}>
