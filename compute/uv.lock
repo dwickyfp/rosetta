@@ -823,6 +823,19 @@ wheels = [
 ]
 
 [[package]]
+name = "rocksq"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b9/dc/3828f6cf393c8e0819da84bf8efad8285dc306b278d53777030fcf2fbc76/rocksq-0.3.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:05311c7e5640398eedf6c330c3caed2b83f9172e35d759df9bf68f55d075ff81", size = 3395066, upload-time = "2024-09-30T12:36:34.49Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/fa/17cdbadb54349b52b98e375d2f9c0a3344fd002df8fc5dd15f2d33b8ebdc/rocksq-0.3.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:2e44f689a8c0bc44aeaf0cb3287c0c50b5630dc115d73dbe3f7c62ec2be11010", size = 3575604, upload-time = "2024-09-30T11:10:10.888Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/c5/7846d8c82a6b932f7ae7365c4d86fc90b066cbcbc8ede72781af0a5c132b/rocksq-0.3.0-cp311-none-win_amd64.whl", hash = "sha256:624981e2490850239ca466e9f52e7cb95656fb7b3e3b94fd5fe630afde3d8d71", size = 2284383, upload-time = "2024-08-26T06:56:18.537Z" },
+    { url = "https://files.pythonhosted.org/packages/30/1b/b5ef8c80cb0becc7d7f23557e4344915382c7144b936d69072ba056edba0/rocksq-0.3.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:ebb4dce97a294e4ef9e1d21f59273c4192bde763ecc3dd46be69c5b230e4527b", size = 3393754, upload-time = "2024-09-30T12:36:42.362Z" },
+    { url = "https://files.pythonhosted.org/packages/77/98/c2bb8414461dc6aa40581cb7612cba431aa53f771a6bf95bcc218345e384/rocksq-0.3.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:99fe8b80142a3d1d99e4eb37ed090e4cc75a39bbb6d40948a301e07ea017c182", size = 3576164, upload-time = "2024-09-30T11:10:14.716Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/6f/dca21476c4cdc0d786f8d169320619cf9290dfcbdfe12f52a3285fae72a9/rocksq-0.3.0-cp312-none-win_amd64.whl", hash = "sha256:d56cd7c07f1e2108e8a6f35e9b707fe747ee0ac9e8f294f6a007a162522e90a8", size = 2282735, upload-time = "2024-08-26T06:56:20.516Z" },
+]
+
+[[package]]
 name = "rosetta-compute"
 version = "0.1.0"
 source = { virtual = "." }
@@ -837,6 +850,7 @@ dependencies = [
     { name = "pydbzengine" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
+    { name = "rocksq" },
     { name = "uvicorn" },
 ]
 
@@ -860,6 +874,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "rocksq", specifier = ">=0.3.0" },
     { name = "uvicorn", specifier = ">=0.27.0" },
 ]
 provides-extras = ["dev"]

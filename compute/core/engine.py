@@ -18,6 +18,8 @@ from core.repository import (
     PipelineMetadataRepository,
 )
 from core.exceptions import PipelineException
+from core.dlq_manager import DLQManager
+from core.dlq_recovery import DLQRecoveryWorker
 from sources.base import BaseSource
 from sources.postgresql import PostgreSQLSource
 from destinations.base import BaseDestination
@@ -52,6 +54,10 @@ class PipelineEngine:
         self._engine: Optional[DebeziumJsonEngine] = None
         self._logger = logging.getLogger(f"{__name__}.Pipeline_{pipeline_id}")
         self._is_running = False
+
+        # DLQ components
+        self._dlq_manager: Optional[DLQManager] = None
+        self._dlq_recovery_worker: Optional[DLQRecoveryWorker] = None
 
     def _load_pipeline(self) -> Pipeline:
         """Load pipeline configuration from database."""
@@ -195,6 +201,12 @@ class PipelineEngine:
             f"{failed_destinations} destination(s) failed"
         )
 
+        # Initialize DLQ manager
+        config = get_config()
+        dlq_base_path = config.dlq.get("base_path", "./tmp/dlq")
+        self._dlq_manager = DLQManager(base_path=dlq_base_path)
+        self._logger.info(f"DLQ manager initialized at {dlq_base_path}")
+
     def run(self) -> None:
         """
         Run the pipeline engine.
@@ -223,11 +235,28 @@ class PipelineEngine:
             offset_file=offset_file,
         )
 
-        # Create event handler
+        # Create event handler with DLQ manager
         handler = CDCEventHandler(
             pipeline=self._pipeline,
             destinations=self._destinations,
+            dlq_manager=self._dlq_manager,
         )
+
+        # Start DLQ recovery worker
+        if self._dlq_manager:
+            config = get_config()
+            check_interval = config.dlq.get("check_interval", 30)
+            batch_size = config.dlq.get("batch_size", 100)
+
+            self._dlq_recovery_worker = DLQRecoveryWorker(
+                pipeline=self._pipeline,
+                destinations=self._destinations,
+                dlq_manager=self._dlq_manager,
+                check_interval=check_interval,
+                batch_size=batch_size,
+            )
+            self._dlq_recovery_worker.start()
+            self._logger.info("DLQ recovery worker started")
 
         # Update metadata
         PipelineMetadataRepository.upsert(self._pipeline_id, "RUNNING")
@@ -249,6 +278,23 @@ class PipelineEngine:
     def stop(self) -> None:
         """Stop the pipeline engine."""
         self._is_running = False
+
+        # Stop DLQ recovery worker
+        if self._dlq_recovery_worker:
+            try:
+                self._dlq_recovery_worker.stop()
+                self._logger.info("DLQ recovery worker stopped")
+            except Exception as e:
+                self._logger.warning(f"Error stopping DLQ recovery worker: {e}")
+            self._dlq_recovery_worker = None
+
+        # Close DLQ manager
+        if self._dlq_manager:
+            try:
+                self._dlq_manager.close_all()
+            except Exception as e:
+                self._logger.warning(f"Error closing DLQ manager: {e}")
+            self._dlq_manager = None
 
         # Close destinations
         for dest in self._destinations.values():

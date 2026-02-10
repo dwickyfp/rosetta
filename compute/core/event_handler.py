@@ -23,6 +23,7 @@ from core.repository import (
     PipelineDestinationRepository,
 )
 from core.exceptions import DestinationException
+from core.dlq_manager import DLQManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,14 @@ class CDCEventHandler(BasePythonChangeHandler):
     Debezium change event handler that routes CDC records to destinations.
 
     Handles parsing of Debezium events and routing to configured destinations
-    based on pipeline configuration.
+    based on pipeline configuration. Failed writes are automatically routed to DLQ.
     """
 
     def __init__(
         self,
         pipeline: Pipeline,
         destinations: dict[int, BaseDestination],
+        dlq_manager: Optional[DLQManager] = None,
     ):
         """
         Initialize CDC event handler.
@@ -55,9 +57,11 @@ class CDCEventHandler(BasePythonChangeHandler):
         Args:
             pipeline: Pipeline configuration with destinations loaded
             destinations: Dict mapping destination_id to BaseDestination instances
+            dlq_manager: Optional DLQ manager for handling failed writes
         """
         self._pipeline = pipeline
         self._destinations = destinations
+        self._dlq_manager = dlq_manager
         self._logger = logging.getLogger(f"{__name__}.{pipeline.name}")
 
         # Build routing table: table_name -> list of RoutingInfo
@@ -67,10 +71,14 @@ class CDCEventHandler(BasePythonChangeHandler):
     def _build_routing_table(self) -> None:
         """Build routing table from pipeline configuration."""
         self._logger.info(f"Building routing table for pipeline {self._pipeline.name}")
-        self._logger.info(f"Pipeline has {len(self._pipeline.destinations)} destination(s)")
-        
+        self._logger.info(
+            f"Pipeline has {len(self._pipeline.destinations)} destination(s)"
+        )
+
         for pd in self._pipeline.destinations:
-            self._logger.info(f"Processing pipeline_destination {pd.id} -> destination_id {pd.destination_id}")
+            self._logger.info(
+                f"Processing pipeline_destination {pd.id} -> destination_id {pd.destination_id}"
+            )
             destination = self._destinations.get(pd.destination_id)
             if not destination:
                 self._logger.warning(
@@ -78,10 +86,14 @@ class CDCEventHandler(BasePythonChangeHandler):
                 )
                 continue
 
-            self._logger.info(f"Destination {pd.destination_id} has {len(pd.table_syncs)} table_sync(s)")
+            self._logger.info(
+                f"Destination {pd.destination_id} has {len(pd.table_syncs)} table_sync(s)"
+            )
             for table_sync in pd.table_syncs:
                 table_name = table_sync.table_name
-                self._logger.info(f"  Adding routing for table: '{table_name}' -> target: '{table_sync.table_name_target}'")
+                self._logger.info(
+                    f"  Adding routing for table: '{table_name}' -> target: '{table_sync.table_name_target}'"
+                )
 
                 if table_name not in self._routing_table:
                     self._routing_table[table_name] = []
@@ -94,7 +106,9 @@ class CDCEventHandler(BasePythonChangeHandler):
                     )
                 )
 
-        self._logger.info(f"Built routing table with {len(self._routing_table)} tables: {list(self._routing_table.keys())}")
+        self._logger.info(
+            f"Built routing table with {len(self._routing_table)} tables: {list(self._routing_table.keys())}"
+        )
 
     def _parse_destination_to_table_name(self, destination: str) -> str:
         """
@@ -357,6 +371,10 @@ class CDCEventHandler(BasePythonChangeHandler):
                 exc_info=False,
             )
 
+            # Enqueue failed records to DLQ if available
+            if self._dlq_manager:
+                self._enqueue_to_dlq(records, routing, error_msg)
+
             # Update error state for both table sync and pipeline destination
             TableSyncRepository.update_error(routing.table_sync.id, True, error_msg)
             PipelineDestinationRepository.update_error(
@@ -377,6 +395,10 @@ class CDCEventHandler(BasePythonChangeHandler):
                 f"for table {table_name}: {error_msg}",
                 exc_info=True,
             )
+
+            # Enqueue failed records to DLQ if available
+            if self._dlq_manager:
+                self._enqueue_to_dlq(records, routing, error_msg)
 
             # Update error state for both table sync and pipeline destination
             TableSyncRepository.update_error(routing.table_sync.id, True, error_msg)
@@ -415,3 +437,38 @@ class CDCEventHandler(BasePythonChangeHandler):
             )
         except Exception as e:
             self._logger.warning(f"Failed to update monitoring: {e}")
+
+    def _enqueue_to_dlq(
+        self,
+        records: list[CDCRecord],
+        routing: RoutingInfo,
+        error_message: str,
+    ) -> None:
+        """
+        Enqueue failed records to dead letter queue.
+
+        Args:
+            records: CDC records that failed to write
+            routing: Routing information
+            error_message: Error message describing the failure
+        """
+        if not self._dlq_manager:
+            return
+
+        for record in records:
+            try:
+                self._dlq_manager.enqueue(
+                    pipeline_id=self._pipeline.id,
+                    source_id=self._pipeline.source_id,
+                    destination_id=routing.destination.destination_id,
+                    table_name=record.table_name,
+                    table_name_target=routing.table_sync.table_name_target,
+                    cdc_record=record,
+                    table_sync=routing.table_sync,
+                    error_message=error_message,
+                )
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to enqueue record to DLQ: {e}",
+                    exc_info=True,
+                )
