@@ -91,11 +91,17 @@ class ServerConfig:
 
 @dataclass
 class DLQConfig:
-    """Dead Letter Queue configuration."""
+    """Dead Letter Queue configuration (Redis Streams backend)."""
 
-    base_path: str = "./tmp/dlq"
+    redis_url: str = "redis://localhost:6379/0"
+    key_prefix: str = "rosetta:dlq"
+    max_stream_length: int = 100000  # MAXLEN cap per stream
+    consumer_group: str = "dlq_recovery"
     check_interval: int = 30  # seconds between recovery attempts
     batch_size: int = 100  # number of messages to process per batch
+    max_retry_count: int = 10  # max retries before discarding
+    max_age_days: int = 7  # max age before purging
+    block_ms: int = 2000  # XREADGROUP block timeout
 
     def get(self, key: str, default=None):
         """Dict-like access for compatibility."""
@@ -152,9 +158,15 @@ class Config:
                 port=int(os.getenv("SERVER_PORT", "8001")),
             ),
             dlq=DLQConfig(
-                base_path=os.getenv("DLQ_BASE_PATH", "./tmp/dlq"),
+                redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+                key_prefix=os.getenv("DLQ_KEY_PREFIX", "rosetta:dlq"),
+                max_stream_length=int(os.getenv("DLQ_MAX_STREAM_LENGTH", "100000")),
+                consumer_group=os.getenv("DLQ_CONSUMER_GROUP", "dlq_recovery"),
                 check_interval=int(os.getenv("DLQ_CHECK_INTERVAL", "30")),
                 batch_size=int(os.getenv("DLQ_BATCH_SIZE", "100")),
+                max_retry_count=int(os.getenv("DLQ_MAX_RETRY_COUNT", "10")),
+                max_age_days=int(os.getenv("DLQ_MAX_AGE_DAYS", "7")),
+                block_ms=int(os.getenv("DLQ_BLOCK_MS", "2000")),
             ),
         )
 

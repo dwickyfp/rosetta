@@ -2,7 +2,7 @@
 DLQ Recovery Worker - Background thread for replaying dead letter queue messages.
 
 Continuously monitors DLQ queues and attempts to replay messages when destinations
-become available. Runs in a separate thread per pipeline.
+become available. Uses Redis Streams consumer groups for at-least-once delivery.
 """
 
 import logging
@@ -26,7 +26,8 @@ class DLQRecoveryWorker:
     Background worker for recovering messages from DLQ.
 
     Monitors all DLQ queues for a pipeline and attempts to replay messages
-    when destinations are healthy and reachable.
+    when destinations are healthy and reachable. Uses Redis Streams consumer
+    groups — unacknowledged messages are automatically retried on next cycle.
     """
 
     def __init__(
@@ -36,6 +37,9 @@ class DLQRecoveryWorker:
         dlq_manager: DLQManager,
         check_interval: int = 30,
         batch_size: int = 100,
+        max_retry_count: int = 10,
+        max_age_days: int = 7,
+        consumer_name: str = "worker-1",
     ):
         """
         Initialize DLQ recovery worker.
@@ -46,12 +50,18 @@ class DLQRecoveryWorker:
             dlq_manager: DLQ manager instance
             check_interval: Seconds between recovery attempts
             batch_size: Number of messages to process per batch
+            max_retry_count: Max retries before discarding a message
+            max_age_days: Max age in days before purging a message
+            consumer_name: Consumer name within the consumer group
         """
         self._pipeline = pipeline
         self._destinations = destinations
         self._dlq_manager = dlq_manager
         self._check_interval = check_interval
         self._batch_size = batch_size
+        self._max_retry_count = max_retry_count
+        self._max_age_days = max_age_days
+        self._consumer_name = consumer_name
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -118,17 +128,22 @@ class DLQRecoveryWorker:
                         if not self._running:
                             break
 
-                        # Process this queue
+                        # First, claim any stale messages from dead consumers
+                        self._claim_and_process_stale(
+                            source_id, table_name, destination_id
+                        )
+
+                        # Then process new messages
                         self._process_queue(source_id, table_name, destination_id)
 
-                        # Periodic cleanup: purge old messages to prevent indefinite bloat
+                        # Periodic cleanup: purge old messages
                         if iteration_count % cleanup_interval == 0:
                             self._dlq_manager.purge_old_messages(
                                 source_id,
                                 table_name,
                                 destination_id,
-                                max_retry_count=10,
-                                max_age_days=7,
+                                max_retry_count=self._max_retry_count,
+                                max_age_days=self._max_age_days,
                             )
 
                 # Sleep before next check
@@ -140,6 +155,44 @@ class DLQRecoveryWorker:
 
         self._logger.info("DLQ recovery loop stopped")
 
+    def _claim_and_process_stale(
+        self,
+        source_id: int,
+        table_name: str,
+        destination_id: int,
+    ) -> None:
+        """
+        Claim stale pending messages from dead consumers and process them.
+
+        Uses XAUTOCLAIM to take over messages that have been pending for too long
+        (e.g., from a crashed worker).
+        """
+        try:
+            stale_messages = self._dlq_manager.claim_stale_messages(
+                source_id=source_id,
+                table_name=table_name,
+                destination_id=destination_id,
+                min_idle_ms=self._check_interval * 3 * 1000,  # 3x check interval
+                max_messages=self._batch_size,
+                consumer_name=self._consumer_name,
+            )
+
+            if stale_messages:
+                self._logger.info(
+                    f"Claimed {len(stale_messages)} stale messages for "
+                    f"s{source_id}:t{table_name}:d{destination_id}"
+                )
+                self._replay_messages_with_ids(
+                    stale_messages, source_id, table_name, destination_id
+                )
+
+        except Exception as e:
+            self._logger.error(
+                f"Error claiming stale messages: "
+                f"s{source_id}:t{table_name}:d{destination_id}: {e}",
+                exc_info=True,
+            )
+
     def _process_queue(
         self,
         source_id: int,
@@ -147,7 +200,7 @@ class DLQRecoveryWorker:
         destination_id: int,
     ) -> None:
         """
-        Process a specific DLQ queue.
+        Process a specific DLQ queue by reading new messages.
 
         Args:
             source_id: Source database ID
@@ -159,38 +212,41 @@ class DLQRecoveryWorker:
             if not self._check_destination_health(destination_id):
                 self._logger.debug(
                     f"Destination {destination_id} unhealthy, skipping recovery for "
-                    f"source_{source_id}/table_{table_name}"
+                    f"s{source_id}:t{table_name}"
                 )
                 return
 
-            # Check if queue has messages
+            # Check if queue has messages (non-destructive XLEN check)
             if not self._dlq_manager.has_messages(
                 source_id, table_name, destination_id
             ):
                 return
 
-            # Dequeue batch of messages
-            messages = self._dlq_manager.dequeue_batch(
+            # Dequeue batch of messages via XREADGROUP
+            messages_with_ids = self._dlq_manager.dequeue_batch(
                 source_id,
                 table_name,
                 destination_id,
                 max_messages=self._batch_size,
+                consumer_name=self._consumer_name,
             )
 
-            if not messages:
+            if not messages_with_ids:
                 return
 
             self._logger.info(
-                f"Processing {len(messages)} DLQ messages for "
-                f"source_{source_id}/table_{table_name}/dest_{destination_id}"
+                f"Processing {len(messages_with_ids)} DLQ messages for "
+                f"s{source_id}:t{table_name}:d{destination_id}"
             )
 
             # Attempt to replay messages
-            self._replay_messages(messages, destination_id)
+            self._replay_messages_with_ids(
+                messages_with_ids, source_id, table_name, destination_id
+            )
 
         except Exception as e:
             self._logger.error(
-                f"Error processing DLQ queue source_{source_id}/table_{table_name}/dest_{destination_id}: {e}",
+                f"Error processing DLQ queue s{source_id}:t{table_name}:d{destination_id}: {e}",
                 exc_info=True,
             )
 
@@ -238,62 +294,76 @@ class DLQRecoveryWorker:
                 self._destination_health[destination_id] = False
             return False
 
-    def _replay_messages(
+    def _replay_messages_with_ids(
         self,
-        messages: list[DLQMessage],
+        messages_with_ids: list[tuple[str, DLQMessage]],
+        source_id: int,
+        table_name: str,
         destination_id: int,
     ) -> None:
         """
         Attempt to replay DLQ messages to destination.
 
+        On success: ACK + DEL the messages (they're done).
+        On failure: Update retry count. If max retries exceeded, discard.
+
         Args:
-            messages: List of DLQ messages to replay
-            destination_id: Destination ID
+            messages_with_ids: List of (message_id, DLQMessage) tuples
+            source_id: Source database ID
+            table_name: Table name
+            destination_id: Destination database ID
         """
         destination = self._destinations.get(destination_id)
         if not destination:
             self._logger.error(f"Destination {destination_id} not found")
-            # Re-enqueue messages
-            self._re_enqueue_messages(messages)
+            # Leave messages unacked — they'll be retried on next cycle
             return
 
         # Group messages by table for batch processing
-        messages_by_table: dict[str, list[DLQMessage]] = {}
-        for msg in messages:
+        messages_by_table: dict[str, list[tuple[str, DLQMessage]]] = {}
+        for msg_id, msg in messages_with_ids:
             table_key = msg.table_name
             if table_key not in messages_by_table:
                 messages_by_table[table_key] = []
-            messages_by_table[table_key].append(msg)
+            messages_by_table[table_key].append((msg_id, msg))
 
         # Process each table's messages
-        for table_name, table_messages in messages_by_table.items():
-            self._replay_table_messages(table_messages, destination)
+        for tbl_name, table_messages in messages_by_table.items():
+            self._replay_table_messages(
+                table_messages, destination, source_id, tbl_name, destination_id
+            )
 
     def _replay_table_messages(
         self,
-        messages: list[DLQMessage],
+        messages_with_ids: list[tuple[str, DLQMessage]],
         destination: BaseDestination,
+        source_id: int,
+        table_name: str,
+        destination_id: int,
     ) -> None:
         """
         Replay messages for a specific table.
 
         Args:
-            messages: List of DLQ messages for same table
+            messages_with_ids: List of (message_id, DLQMessage) tuples
             destination: Destination to write to
+            source_id: Source database ID
+            table_name: Table name
+            destination_id: Destination database ID
         """
-        if not messages:
+        if not messages_with_ids:
             return
 
         # All messages should have same routing info
-        first_msg = messages[0]
-        table_name = first_msg.table_name
+        first_msg = messages_with_ids[0][1]
         table_name_target = first_msg.table_name_target
 
         # Reconstruct table_sync from stored config
         table_sync = self._create_table_sync_from_config(first_msg.table_sync_config)
 
-        # Extract CDC records
-        cdc_records = [msg.cdc_record for msg in messages]
+        # Extract CDC records and message IDs
+        cdc_records = [msg.cdc_record for _, msg in messages_with_ids]
+        message_ids = [msg_id for msg_id, _ in messages_with_ids]
 
         try:
             # Ensure destination is initialized before writing
@@ -303,14 +373,10 @@ class DLQRecoveryWorker:
                 )
                 destination.initialize()
             else:
-                # Even if marked as initialized, force a health check and reconnect if needed
-                # This handles the case where connection was closed after going down
                 self._logger.debug(
                     f"Checking connection health for destination {destination.name}"
                 )
-                destination.initialize(
-                    force_reconnect=False
-                )  # Will auto-detect stale connection
+                destination.initialize(force_reconnect=False)
 
             # Attempt to write batch
             written = destination.write_batch(cdc_records, table_sync)
@@ -320,58 +386,78 @@ class DLQRecoveryWorker:
                 f"{destination.name} for table {table_name}"
             )
 
-            # Success! Messages are already dequeued
-            # Check if queue is now empty and clean up persistent storage to prevent bloat
-            source_id = first_msg.source_id
-            destination_id = first_msg.destination_id
+            # Success! Acknowledge all messages (ACK + DEL)
+            self._dlq_manager.acknowledge(
+                source_id, table_name, destination_id, message_ids
+            )
 
+            # Check if queue is now empty and clean up
             if not self._dlq_manager.has_messages(
                 source_id, table_name, destination_id
             ):
                 self._logger.info(
-                    f"Queue empty after replay, cleaning up persistent storage: "
-                    f"source_{source_id}/table_{table_name}/dest_{destination_id}"
+                    f"Queue empty after replay, cleaning up: "
+                    f"s{source_id}:t{table_name}:d{destination_id}"
                 )
                 self._dlq_manager.delete_queue(source_id, table_name, destination_id)
 
-        except DestinationException as e:
-            # Destination error - re-enqueue with incremented retry count
-            self._logger.warning(
-                f"Failed to replay DLQ messages to {destination.name} for table {table_name}: {e}"
-            )
-            self._re_enqueue_messages(messages, increment_retry=True)
+        except (DestinationException, Exception) as e:
+            is_dest_error = isinstance(e, DestinationException)
+            log_method = self._logger.warning if is_dest_error else self._logger.error
 
-        except Exception as e:
-            # Unexpected error - re-enqueue
-            self._logger.error(
-                f"Unexpected error replaying DLQ messages to {destination.name} for table {table_name}: {e}",
-                exc_info=True,
+            log_method(
+                f"Failed to replay DLQ messages to {destination.name} for table {table_name}: {e}",
+                exc_info=not is_dest_error,
             )
-            self._re_enqueue_messages(messages, increment_retry=True)
 
-    def _re_enqueue_messages(
+            # Update retry count for each message
+            self._handle_retry(
+                messages_with_ids, source_id, table_name, destination_id
+            )
+
+    def _handle_retry(
         self,
-        messages: list[DLQMessage],
-        increment_retry: bool = False,
+        messages_with_ids: list[tuple[str, DLQMessage]],
+        source_id: int,
+        table_name: str,
+        destination_id: int,
     ) -> None:
         """
-        Re-enqueue messages back to DLQ after failed replay.
+        Handle retry logic for failed messages.
+
+        Increments retry_count. If max retries exceeded, acknowledges and discards
+        the message. Otherwise, creates a new entry with updated retry count and
+        removes the old one.
 
         Args:
-            messages: Messages to re-enqueue
-            increment_retry: Whether to increment retry counter
+            messages_with_ids: List of (message_id, DLQMessage) tuples
+            source_id: Source database ID
+            table_name: Table name
+            destination_id: Destination database ID
         """
-        for msg in messages:
-            if increment_retry:
-                msg.retry_count += 1
+        ids_to_discard = []
+        for msg_id, msg in messages_with_ids:
+            msg.retry_count += 1
 
-            # Re-enqueue by pushing back to queue
-            queue = self._dlq_manager._get_or_create_queue(
-                msg.source_id,
-                msg.table_name,
-                msg.destination_id,
+            if msg.retry_count >= self._max_retry_count:
+                # Max retries exceeded — discard message
+                self._logger.warning(
+                    f"Discarding DLQ message after {msg.retry_count} retries: "
+                    f"s{source_id}:t{table_name}:d{destination_id} "
+                    f"operation={msg.cdc_record.operation}, key={msg.cdc_record.key}"
+                )
+                ids_to_discard.append(msg_id)
+            else:
+                # Replace with updated retry count (XADD new + XACK/XDEL old)
+                self._dlq_manager.update_message_retry(
+                    source_id, table_name, destination_id, msg_id, msg
+                )
+
+        # Discard messages that exceeded max retries
+        if ids_to_discard:
+            self._dlq_manager.acknowledge(
+                source_id, table_name, destination_id, ids_to_discard
             )
-            queue.push([msg.to_bytes()], no_gil=True)
 
     def _create_table_sync_from_config(
         self,
@@ -404,6 +490,17 @@ class DLQRecoveryWorker:
         """
         queues = self._dlq_manager.list_queues()
 
+        # Gather queue sizes
+        queue_stats = []
+        for source_id, table_name, dest_id in queues:
+            size = self._dlq_manager.get_queue_size(source_id, table_name, dest_id)
+            queue_stats.append({
+                "source_id": source_id,
+                "table_name": table_name,
+                "destination_id": dest_id,
+                "size": size,
+            })
+
         with self._health_check_lock:
             health_stats = dict(self._destination_health)
 
@@ -414,5 +511,6 @@ class DLQRecoveryWorker:
             "check_interval": self._check_interval,
             "batch_size": self._batch_size,
             "total_queues": len(queues),
+            "queues": queue_stats,
             "destination_health": health_stats,
         }

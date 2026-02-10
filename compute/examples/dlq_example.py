@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-DLQ Example and Test Script
+DLQ Example and Test Script (Redis Streams)
 
 Demonstrates basic DLQ functionality including:
-- Enqueue messages
-- Check queue status
-- Manual dequeue
+- Enqueue messages to Redis Streams
+- Check queue status (non-destructive XLEN)
+- Dequeue with consumer groups
+- Acknowledge processed messages
 - Simulate recovery flow
 """
 
@@ -19,11 +20,18 @@ from core.dlq_manager import DLQManager, DLQMessage
 from destinations.base import CDCRecord
 
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+KEY_PREFIX = "rosetta:dlq:example"
+
+
 def example_enqueue():
     """Example: Enqueue messages to DLQ."""
     print("\n=== Example 1: Enqueue Messages ===\n")
 
-    dlq = DLQManager(base_path="./tmp/dlq_test")
+    dlq = DLQManager(
+        redis_url=REDIS_URL,
+        key_prefix=KEY_PREFIX,
+    )
 
     # Create sample CDC records
     records = [
@@ -77,11 +85,11 @@ def example_enqueue():
     print(f"\nEnqueued {len(records)} messages to DLQ")
 
 
-def example_list_queues():
-    """Example: List all DLQ queues."""
-    print("\n=== Example 2: List Queues ===\n")
+def example_check_status():
+    """Example: Check queue status without consuming."""
+    print("\n=== Example 2: Check Queue Status ===\n")
 
-    dlq = DLQManager(base_path="./tmp/dlq_test")
+    dlq = DLQManager(redis_url=REDIS_URL, key_prefix=KEY_PREFIX)
     queues = dlq.list_queues()
 
     if not queues:
@@ -90,23 +98,25 @@ def example_list_queues():
 
     print(f"Found {len(queues)} queue(s):")
     for source_id, table_name, dest_id in queues:
+        size = dlq.get_queue_size(source_id, table_name, dest_id)
         has_msgs = dlq.has_messages(source_id, table_name, dest_id)
-        status = "📦 Has messages" if has_msgs else "✓ Empty"
-        print(f"  - source_{source_id}/table_{table_name}/dest_{dest_id}: {status}")
+        status = f"📦 {size} messages" if has_msgs else "✓ Empty"
+        print(f"  - s{source_id}:t{table_name}:d{dest_id}: {status}")
 
 
 def example_dequeue():
-    """Example: Dequeue and inspect messages."""
+    """Example: Dequeue and inspect messages using consumer group."""
     print("\n=== Example 3: Dequeue Messages ===\n")
 
-    dlq = DLQManager(base_path="./tmp/dlq_test")
+    dlq = DLQManager(redis_url=REDIS_URL, key_prefix=KEY_PREFIX)
 
-    # Dequeue from specific queue
+    # Dequeue from specific queue via consumer group
     messages = dlq.dequeue_batch(
         source_id=1,
         table_name="users",
         destination_id=2,
         max_messages=10,
+        consumer_name="example-consumer",
     )
 
     if not messages:
@@ -115,8 +125,10 @@ def example_dequeue():
 
     print(f"Dequeued {len(messages)} message(s):\n")
 
-    for i, msg in enumerate(messages, 1):
-        print(f"Message {i}:")
+    msg_ids = []
+    for i, (msg_id, msg) in enumerate(messages, 1):
+        msg_ids.append(msg_id)
+        print(f"Message {i} (ID: {msg_id}):")
         print(f"  Pipeline ID: {msg.pipeline_id}")
         print(f"  Source ID: {msg.source_id}")
         print(f"  Destination ID: {msg.destination_id}")
@@ -128,60 +140,40 @@ def example_dequeue():
         print(f"  First failed at: {msg.first_failed_at}")
         print()
 
-
-def example_check_status():
-    """Example: Check queue status without dequeuing."""
-    print("\n=== Example 4: Check Queue Status ===\n")
-
-    dlq = DLQManager(base_path="./tmp/dlq_test")
-
-    queues = dlq.list_queues()
-    if not queues:
-        print("No queues found")
-        return
-
-    for source_id, table_name, dest_id in queues:
-        has_msgs = dlq.has_messages(source_id, table_name, dest_id)
-        print(f"Queue: source_{source_id}/table_{table_name}/dest_{dest_id}")
-        print(f"  Has messages: {has_msgs}")
-
-        if has_msgs:
-            # Peek at one message
-            msgs = dlq.dequeue_batch(source_id, table_name, dest_id, max_messages=1)
-            if msgs:
-                msg = msgs[0]
-                print(f"  First message operation: {msg.cdc_record.operation}")
-                print(f"  First message key: {msg.cdc_record.key}")
-                # Re-enqueue for next check
-                queue = dlq._get_or_create_queue(source_id, table_name, dest_id)
-                queue.push([msg.to_bytes()], no_gil=True)
-        print()
+    # Acknowledge all messages (simulating successful processing)
+    acked = dlq.acknowledge(
+        source_id=1,
+        table_name="users",
+        destination_id=2,
+        message_ids=msg_ids,
+    )
+    print(f"Acknowledged {acked} messages")
 
 
 def cleanup():
-    """Cleanup test DLQ directory."""
-    import shutil
-
-    dlq_path = "./tmp/dlq_test"
-    if os.path.exists(dlq_path):
-        shutil.rmtree(dlq_path)
-        print(f"\n✓ Cleaned up test directory: {dlq_path}")
+    """Cleanup test DLQ streams."""
+    dlq = DLQManager(redis_url=REDIS_URL, key_prefix=KEY_PREFIX)
+    queues = dlq.list_queues()
+    for source_id, table_name, dest_id in queues:
+        dlq.delete_queue(source_id, table_name, dest_id)
+    dlq.close_all()
+    print(f"\n✓ Cleaned up {len(queues)} test stream(s)")
 
 
 def main():
     """Run all examples."""
     print("=" * 60)
-    print("DLQ Example and Test Script")
+    print("DLQ Example Script (Redis Streams)")
     print("=" * 60)
 
     try:
         # Run examples
         example_enqueue()
-        example_list_queues()
+        example_check_status()
         example_dequeue()
 
-        # Enqueue again for check status example
-        print("\n--- Re-enqueueing for status check example ---")
+        # Enqueue again for status check
+        print("\n--- Re-enqueueing for status check ---")
         example_enqueue()
         example_check_status()
 
@@ -192,11 +184,9 @@ def main():
     except Exception as e:
         print(f"\n✗ Error: {e}")
         import traceback
-
         traceback.print_exc()
 
     finally:
-        # Cleanup
         cleanup()
 
 

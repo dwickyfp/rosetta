@@ -229,9 +229,13 @@ class PipelineEngine:
 
         # Initialize DLQ manager
         config = get_config()
-        dlq_base_path = config.dlq.get("base_path", "./tmp/dlq")
-        self._dlq_manager = DLQManager(base_path=dlq_base_path)
-        self._logger.info(f"DLQ manager initialized at {dlq_base_path}")
+        self._dlq_manager = DLQManager(
+            redis_url=config.dlq.redis_url,
+            key_prefix=config.dlq.key_prefix,
+            max_stream_length=config.dlq.max_stream_length,
+            consumer_group=config.dlq.consumer_group,
+        )
+        self._logger.info(f"DLQ manager initialized with Redis")
 
     def run(self) -> None:
         """
@@ -280,6 +284,8 @@ class PipelineEngine:
                 dlq_manager=self._dlq_manager,
                 check_interval=check_interval,
                 batch_size=batch_size,
+                max_retry_count=config.dlq.max_retry_count,
+                max_age_days=config.dlq.max_age_days,
             )
             self._dlq_recovery_worker.start()
             self._logger.info("DLQ recovery worker started")
