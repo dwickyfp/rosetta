@@ -16,6 +16,7 @@ from compute.destinations.base import BaseDestination, CDCRecord
 from compute.core.models import Destination, PipelineDestinationTableSync
 from compute.core.exceptions import DestinationException
 from compute.core.security import decrypt_value
+from compute.core.notification import NotificationLogRepository, NotificationLogCreate
 
 logger = logging.getLogger(__name__)
 
@@ -996,10 +997,29 @@ class PostgreSQLDestination(BaseDestination):
             self._logger.debug(f"Wrote {written} records to {target_table}")
             return written
 
+        except Exception as e:
+            # Notify on error
+            try:
+                notification_repo = NotificationLogRepository()
+                notification_repo.upsert_notification_by_key(
+                    NotificationLogCreate(
+                        key_notification=f"destination_error_{self.destination_id}_{source_table}",
+                        title=f"PostgreSQL Sync Error: {target_table}",
+                        message=f"Failed to sync table {source_table} to {target_table}: {str(e)}",
+                        type="ERROR"
+                    )
+                )
+            except Exception as notify_error:
+                self._logger.error(f"Failed to log notification: {notify_error}")
+
+            # Re-raise original exception
+            raise e
+
         finally:
             # Step 5: Cleanup DuckDB table
             try:
-                self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
+                if self._duckdb_conn:
+                    self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
             except Exception as e:
                 self._logger.warning(f"Failed to cleanup DuckDB table {safe_table_name}: {e}")
 

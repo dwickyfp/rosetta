@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS notification_log(
     type VARCHAR(255) NOT NULL,
     is_read BOOLEAN DEFAULT FALSE,
     is_deleted BOOLEAN DEFAULT FALSE,
-    iteration_check INT DEFAULT 0, -- For check iteration job, if 3 then will sent into webhook if is_read is false
+    iteration_check INTEGER DEFAULT 0, -- For check iteration job, if 3 then will sent into webhook if is_read is false
     is_sent BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

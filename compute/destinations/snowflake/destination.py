@@ -15,6 +15,7 @@ from typing import Any, Optional
 from compute.core.exceptions import DestinationException
 from compute.core.models import Destination, PipelineDestinationTableSync
 from compute.core.security import decrypt_value
+from compute.core.notification import NotificationLogRepository, NotificationLogCreate
 from compute.destinations.base import BaseDestination, CDCRecord
 from compute.destinations.snowflake.client import SnowpipeClient
 
@@ -448,6 +449,21 @@ class SnowflakeDestination(BaseDestination):
 
         except Exception as e:
             self._logger.error(f"Failed to write to {landing_table}: {e}")
+            
+            # Notify on error
+            try:
+                notification_repo = NotificationLogRepository()
+                notification_repo.upsert_notification_by_key(
+                    NotificationLogCreate(
+                        key_notification=f"destination_error_{self.destination_id}_{landing_table}",
+                        title=f"Snowflake Sync Error: {landing_table}",
+                        message=f"Failed to sync to {landing_table}: {str(e)}",
+                        type="ERROR"
+                    )
+                )
+            except Exception as notify_error:
+                self._logger.error(f"Failed to log notification: {notify_error}")
+
             # Clear tokens to force channel re-open on retry
             self._channel_tokens.pop(landing_table, None)
             raise

@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 import threading
+import time
 
 
 from compute.config import get_config
@@ -85,15 +86,8 @@ def main() -> int:
     logger = logging.getLogger(__name__)
     init_connection_pool()
     config = get_config()
-
-    # Start API Server in a separate thread
-    server_thread = threading.Thread(
-        target=run_server,
-        args=(config.server.host, config.server.port),
-        daemon=True
-    )
-    server_thread.start()
-
+    
+    manager = None
 
     try:
         logger.info("Starting Rosetta Compute Engine")
@@ -102,16 +96,46 @@ def main() -> int:
         # Running Migration SQL
         run_migration(logger)
 
-        manager = PipelineManager()
-        manager.run()
-        logger.info("Shutdown complete")
-        return 0
+        # Start API Server in a separate thread
+        server_thread = threading.Thread(
+            target=run_server,
+            args=(config.server.host, config.server.port),
+            daemon=True
+        )
+        server_thread.start()
+        logger.info(f"API Server started at http://{config.server.host}:{config.server.port}")
 
+        # Start Pipeline Manager in a separate thread
+        manager = PipelineManager()
+        manager_thread = threading.Thread(
+            target=manager.run,
+            daemon=True
+        )
+        manager_thread.start()
+        logger.info("Pipeline Manager started in background thread")
+
+        # Keep main thread alive to handle signals and facilitate clean shutdown
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested via KeyboardInterrupt")
+        return 0
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         return 1
     finally:
+        # If manager exists, try to shutdown gracefully (if not already handled by its own signals)
+        # Note: manager.run() handles signals, but if we are here via KeyboardInterrupt caught in main,
+        # we might want to ensure manager stops.
+        # Since threads are daemon, they will be killed when main exits, 
+        # but manager.shutdown() is cleaner if possible.
+        if manager:
+            logger.info("Shutting down Pipeline Manager...")
+            manager.shutdown()
+            
         close_connection_pool()
+        logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":

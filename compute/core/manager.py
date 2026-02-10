@@ -327,17 +327,26 @@ class PipelineManager:
 
             # Check for pipelines to START
             for pipeline in db_pipelines:
-                if pipeline.status == "START":
+                if pipeline.status in ("START", "REFRESH"):
                     if pipeline.id not in self._processes:
                         self._logger.info(
-                            f"Found new pipeline to start: {pipeline.name}"
+                            f"Found new pipeline to start: {pipeline.name} (Status: {pipeline.status})"
                         )
                         self.start_pipeline(pipeline.id, pipeline.updated_at)
+                        
+                        # Reset status to START if it was REFRESH
+                        if pipeline.status == "REFRESH":
+                            PipelineRepository.update_status(pipeline.id, "START")
+
                     elif not self._processes[pipeline.id].is_alive:
                         self._logger.warning(
-                            f"Pipeline {pipeline.name} is START but process died. Restarting..."
+                            f"Pipeline {pipeline.name} is {pipeline.status} but process died. Restarting..."
                         )
                         self.restart_pipeline(pipeline.id, pipeline.updated_at)
+                        
+                        # Reset status to START if it was REFRESH
+                        if pipeline.status == "REFRESH":
+                            PipelineRepository.update_status(pipeline.id, "START")
 
         except Exception as e:
             self._logger.error(f"Error syncing pipeline states: {e}", exc_info=True)
