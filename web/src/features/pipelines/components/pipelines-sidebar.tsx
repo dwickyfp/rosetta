@@ -9,6 +9,12 @@ import {
     HoverCardContent,
     HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import {
+    CustomTabs,
+    CustomTabsList,
+    CustomTabsTrigger,
+    CustomTabsContent,
+} from "@/components/ui/custom-tabs"
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { sourcesRepo, SourceDetailResponse } from '@/repo/sources'
@@ -411,13 +417,13 @@ export function PipelinesSidebar() {
                 </div>
             </div>
             {/* Pipelines Tab with Search */}
-            <div className="border-border">
-                <div className="px-4 pb-2">
-                    <h2 className="text-sm font-semibold text-[#3581f2] inline-block relative pb-2">
+            <CustomTabs defaultValue="pipelines" className="flex-1 flex flex-col ">
+                <CustomTabsList className="w-full justify-start border-b">
+                    <CustomTabsTrigger value="pipelines">
                         Pipelines
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3581f2]" />
-                    </h2>
-                </div>
+                    </CustomTabsTrigger>
+                </CustomTabsList>
+                <CustomTabsContent value="pipelines" className="flex-1 flex flex-col mt-0">
                 <div className="p-3 pt-2">
                     <div className="flex items-center gap-2">
                         <div className="relative flex-1">
@@ -460,9 +466,8 @@ export function PipelinesSidebar() {
                         </Button>
                     </div>
                 </div>
-            </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 mt-2">
                 <div className="p-2">
                     {filteredPipelines.length === 0 && (
                         <div className="p-4 text-center text-xs text-muted-foreground">
@@ -533,6 +538,8 @@ export function PipelinesSidebar() {
                     </Accordion>
                 </div>
             </ScrollArea>
+                </CustomTabsContent>
+            </CustomTabs>
         </div>
     )
 }
