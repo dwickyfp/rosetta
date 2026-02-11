@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from pydbzengine import DebeziumJsonEngine
 
-from config import get_config
+from config.config import get_config
 from core.models import Pipeline, DestinationType
 from core.event_handler import CDCEventHandler
 from core.repository import (

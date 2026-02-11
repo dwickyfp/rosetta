@@ -7,7 +7,7 @@ Provides health check and other API endpoints.
 import logging
 import uvicorn
 from fastapi import FastAPI
-from config import get_config
+from config.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ async def health_check():
 def run_server(host: str, port: int) -> None:
     """
     Run FastAPI server using Uvicorn.
-    
+
     Args:
         host: Host to bind to
         port: Port to bind to
