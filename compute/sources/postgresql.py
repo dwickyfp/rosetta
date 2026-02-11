@@ -237,7 +237,7 @@ class PostgreSQLSource(BaseSource):
             "slot.name": slot_name,
             "publication.name": self._config.publication_name,
             # Publication auto-create (disabled - publication must exist)
-            "publication.autocreate.mode": "disabled",
+            "publication.autocreate.mode": "filtered",
             # Snapshot behavior - skip initial data snapshot
             "snapshot.mode": "no_data",
             # Table filtering
