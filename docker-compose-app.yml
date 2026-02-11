@@ -53,19 +53,11 @@ services:
     networks:
       - rosetta-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: 4
-          memory: 16G
-        reservations:
-          cpus: 2
-          memory: 8G
 
   rosetta-web:
     image: rosetta-etl:1.0.0-web
@@ -75,7 +67,7 @@ services:
       - "${WEB_PORT:-5173}:80"
     environment:
       MODE: web
-      COMPUTE_NODE_URL: http://rosetta-compute-node:8085
+      COMPUTE_NODE_URL: http://rosetta-compute-node:8001
       # Database Configuration
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://postgres:postgres@rosetta-postgres:5432/postgres}
       # Application Configuration
@@ -113,12 +105,6 @@ services:
       start_period: 10s
     networks:
       - rosetta-network
-    deploy:
-      resources:
-        limits:
-          memory: 16G
-        reservations:
-          memory: 8G
 
   rosetta-postgres:
     image: postgres:16
