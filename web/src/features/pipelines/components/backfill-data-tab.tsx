@@ -248,7 +248,7 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
           Create Backfill
         </Button>
       </DialogTrigger>
-      <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-4xl'>
+      <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-3xl'>
         <DialogHeader>
           <DialogTitle>Create Backfill Job</DialogTitle>
           <DialogDescription>
@@ -342,7 +342,7 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                 {filters.map((filter, index) => (
                   <div
                     key={index}
-                    className='grid grid-cols-[1fr_180px_1fr_auto] items-end gap-3 rounded-lg border bg-muted/40 p-3'
+                    className='grid grid-cols-[1fr_140px_1fr_auto] items-end gap-2 rounded-lg border bg-muted/40 p-3'
                   >
                     <div className='space-y-1.5'>
                       <Label className='text-xs text-muted-foreground'>

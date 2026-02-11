@@ -488,7 +488,21 @@ class BackfillManager:
         Serialize record values to handle problematic types.
 
         Converts Decimal, datetime, date, and other non-JSON-serializable types
-        to formats that destinations can handle properly.
+        to formats that Snowflake destinations can handle properly.
+
+        DuckDB PostgreSQL Scanner Type Mapping:
+        - PostgreSQL TIMESTAMP → Python datetime (naive, no tzinfo)
+        - PostgreSQL TIMESTAMPTZ → Python datetime (aware, tzinfo preserved)
+        - PostgreSQL NUMERIC/DECIMAL → Python Decimal
+        - PostgreSQL DATE → Python date
+        - PostgreSQL TIME → Python time
+        - PostgreSQL UUID → Python UUID
+        - PostgreSQL BYTEA → Python bytes
+
+        Snowflake Target Type Mapping:
+        - TIMESTAMP_NTZ ← datetime without timezone suffix
+        - TIMESTAMP_TZ ← datetime with timezone suffix (preserves original TZ)
+        - NUMBER/NUMERIC ← string (preserves precision)
 
         Args:
             record: Raw record dictionary from DuckDB
@@ -505,29 +519,64 @@ class BackfillManager:
             if value is None:
                 serialized[key] = None
             elif isinstance(value, Decimal):
-                # Convert Decimal to float to avoid precision issues
-                serialized[key] = float(value)
+                # Convert Decimal to string to preserve precision for Snowflake NUMERIC
+                # DO NOT use float() as it loses precision for high-precision decimals
+                serialized[key] = str(value)
             elif isinstance(value, datetime):
-                # Convert datetime to ISO format string
-                serialized[key] = value.isoformat()
+                # DuckDB returns:
+                # - TIMESTAMP (without TZ) → naive datetime (no tzinfo)
+                # - TIMESTAMPTZ (with TZ) → aware datetime (tzinfo preserved)
+                #
+                # Snowflake expects:
+                # - TIMESTAMP_NTZ ← "2024-01-15T10:30:00.000000" (no TZ suffix)
+                # - TIMESTAMP_TZ ← "2024-01-15T10:30:00.000000+07:00" (with TZ suffix, PRESERVED)
+                if value.tzinfo is not None:
+                    # Has timezone info → TIMESTAMPTZ → TIMESTAMP_TZ
+                    # IMPORTANT: Preserve the original timezone, DO NOT convert to UTC
+                    # isoformat() keeps the original timezone offset
+                    serialized[key] = value.isoformat()
+                else:
+                    # No timezone info → TIMESTAMP → TIMESTAMP_NTZ
+                    # Output without timezone for Snowflake TIMESTAMP_NTZ
+                    serialized[key] = value.strftime("%Y-%m-%dT%H:%M:%S.%f")
             elif isinstance(value, date):
-                # Convert date to ISO format string
+                # DATE → ISO format string "YYYY-MM-DD"
                 serialized[key] = value.isoformat()
             elif isinstance(value, time):
-                # Convert time to ISO format string
-                serialized[key] = value.isoformat()
+                # TIME → ISO format string with or without TZ
+                if value.tzinfo is not None:
+                    # TIME WITH TIME ZONE → preserve timezone
+                    serialized[key] = value.isoformat()
+                else:
+                    # TIME WITHOUT TIME ZONE → no offset
+                    serialized[key] = value.strftime("%H:%M:%S.%f")
             elif isinstance(value, UUID):
-                # Convert UUID to string
+                # UUID → string
                 serialized[key] = str(value)
             elif isinstance(value, (bytes, bytearray)):
-                # Convert bytes to hex string
+                # BYTEA/geometry WKB → hex string
                 serialized[key] = value.hex()
-            elif isinstance(value, (list, dict)):
-                # Keep JSON types as-is
+            elif isinstance(value, dict):
+                # JSON/JSONB → keep as dict for VARIANT
+                serialized[key] = value
+            elif isinstance(value, list):
+                # Array types → keep as list
+                serialized[key] = value
+            elif isinstance(value, bool):
+                # Boolean → keep as-is
+                serialized[key] = value
+            elif isinstance(value, (int, float)):
+                # Numeric primitives → keep as-is
+                serialized[key] = value
+            elif isinstance(value, str):
+                # String → keep as-is
                 serialized[key] = value
             else:
-                # Keep primitives (str, int, float, bool) as-is
-                serialized[key] = value
+                # Unknown types → convert to string
+                logger.warning(
+                    f"Unknown type {type(value).__name__} for column {key}, converting to string"
+                )
+                serialized[key] = str(value)
 
         return serialized
 
