@@ -53,10 +53,10 @@ RUN apk add --no-cache python3 make g++
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy package files first for dependency caching
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install dependencies (without lock file, will resolve fresh)
+RUN pnpm install --no-frozen-lockfile
 
 # Copy source code
 COPY web/ ./
