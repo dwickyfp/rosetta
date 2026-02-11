@@ -834,7 +834,7 @@ class PipelineService:
             landing_table = f"LANDING_{table_name}"
             stream_name = f"STREAM_{landing_table}"
             target_table = table_name
-            task_name = f"TASK_MERGE_{table_name}"
+            task_name = f"ROSETTA_TASK_MERGE_{table_name}"
 
             logger.info(f"Recreating task {landing_db}.{landing_schema}.{task_name}")
             # Drop existing task first
@@ -1109,7 +1109,7 @@ class PipelineService:
 
         # Use Snowflake scripting block to run MERGE then DELETE from landing table
         task_ddl = f"""
-        CREATE OR REPLACE TASK {l_db}.{l_schema}.TASK_MERGE_{t_table}
+        CREATE OR REPLACE TASK {l_db}.{l_schema}.ROSETTA_TASK_MERGE_{t_table}
         WAREHOUSE = {destination.config.get("warehouse")}
         SCHEDULE = '60 MINUTE'
         WHEN SYSTEM$STREAM_HAS_DATA('{l_db}.{l_schema}.{stream}')
