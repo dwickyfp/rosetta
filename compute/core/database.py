@@ -20,30 +20,31 @@ logger = logging.getLogger(__name__)
 _connection_pool: pool.ThreadedConnectionPool | None = None
 
 
-def init_connection_pool(min_conn: int = 1, max_conn: int = 10) -> pool.ThreadedConnectionPool:
+def init_connection_pool(
+    min_conn: int = 1, max_conn: int = 10
+) -> pool.ThreadedConnectionPool:
     """
     Initialize the connection pool.
-    
+
     Args:
         min_conn: Minimum number of connections to maintain
         max_conn: Maximum number of connections allowed
-        
+
     Returns:
         The initialized connection pool
     """
     global _connection_pool
-    
+
     if _connection_pool is not None:
         return _connection_pool
-    
+
     from config import get_config
+
     config = get_config()
-    
+
     try:
         _connection_pool = pool.ThreadedConnectionPool(
-            minconn=min_conn,
-            maxconn=max_conn,
-            **config.database.dsn
+            minconn=min_conn, maxconn=max_conn, **config.database.dsn
         )
         logger.info("Database connection pool initialized")
         return _connection_pool
@@ -54,17 +55,17 @@ def init_connection_pool(min_conn: int = 1, max_conn: int = 10) -> pool.Threaded
 def get_connection_pool() -> pool.ThreadedConnectionPool:
     """Get or create the connection pool."""
     global _connection_pool
-    
+
     if _connection_pool is None:
         return init_connection_pool()
-    
+
     return _connection_pool
 
 
 def close_connection_pool() -> None:
     """Close the connection pool."""
     global _connection_pool
-    
+
     if _connection_pool is not None:
         _connection_pool.closeall()
         _connection_pool = None
@@ -74,10 +75,10 @@ def close_connection_pool() -> None:
 def get_db_connection() -> psycopg2.extensions.connection:
     """
     Get a database connection from the pool.
-    
+
     Returns:
         A PostgreSQL connection
-        
+
     Note:
         Caller is responsible for returning the connection to the pool.
     """
@@ -97,31 +98,31 @@ def return_db_connection(conn: psycopg2.extensions.connection) -> None:
 class DatabaseSession:
     """
     Context manager for database sessions with automatic transaction handling.
-    
+
     Usage:
         with DatabaseSession() as session:
             result = session.execute("SELECT * FROM sources")
             rows = session.fetchall()
     """
-    
+
     def __init__(self, autocommit: bool = False):
         """
         Initialize session.
-        
+
         Args:
             autocommit: If True, disable transaction management
         """
         self._conn: psycopg2.extensions.connection | None = None
         self._cursor: RealDictCursor | None = None
         self._autocommit = autocommit
-    
+
     def __enter__(self) -> "DatabaseSession":
         """Acquire connection and cursor."""
         self._conn = get_db_connection()
         self._conn.autocommit = self._autocommit
         self._cursor = self._conn.cursor(cursor_factory=RealDictCursor)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Handle transaction commit/rollback and cleanup."""
         try:
@@ -140,74 +141,88 @@ class DatabaseSession:
                 self._cursor.close()
             if self._conn:
                 return_db_connection(self._conn)
-        
+
         return False  # Don't suppress exceptions
-    
-    def execute(self, query: str, params: tuple | dict | None = None) -> "DatabaseSession":
+
+    def execute(
+        self, query: str, params: tuple | dict | None = None
+    ) -> "DatabaseSession":
         """
         Execute a query.
-        
+
         Args:
             query: SQL query string
             params: Query parameters
-            
+
         Returns:
             Self for method chaining
         """
         if self._cursor is None:
             raise DatabaseException("Session not initialized. Use as context manager.")
-        
+
         try:
             self._cursor.execute(query, params)
             return self
         except psycopg2.Error as e:
             raise DatabaseException(f"Query execution failed: {e}", {"query": query})
-    
+
     def executemany(self, query: str, params_list: list) -> "DatabaseSession":
         """
         Execute a query with multiple parameter sets.
-        
+
         Args:
             query: SQL query string
             params_list: List of parameter tuples/dicts
-            
+
         Returns:
             Self for method chaining
         """
         if self._cursor is None:
             raise DatabaseException("Session not initialized. Use as context manager.")
-        
+
         try:
             self._cursor.executemany(query, params_list)
             return self
         except psycopg2.Error as e:
             raise DatabaseException(f"Batch execution failed: {e}", {"query": query})
-    
+
     def fetchone(self) -> dict | None:
         """Fetch one row as dict."""
         if self._cursor is None:
             raise DatabaseException("Session not initialized.")
-        return self._cursor.fetchone()
-    
+        try:
+            return self._cursor.fetchone()
+        except psycopg2.ProgrammingError as e:
+            # Handle "no results to fetch" error
+            if "no results to fetch" in str(e):
+                return None
+            raise DatabaseException(f"Error fetching result: {e}")
+
     def fetchall(self) -> list[dict]:
         """Fetch all rows as list of dicts."""
         if self._cursor is None:
             raise DatabaseException("Session not initialized.")
-        return self._cursor.fetchall()
-    
+        try:
+            return self._cursor.fetchall()
+        except psycopg2.ProgrammingError as e:
+            # Handle "no results to fetch" error
+            if "no results to fetch" in str(e):
+                return []
+            raise DatabaseException(f"Error fetching results: {e}")
+
     def fetchmany(self, size: int) -> list[dict]:
         """Fetch specified number of rows."""
         if self._cursor is None:
             raise DatabaseException("Session not initialized.")
         return self._cursor.fetchmany(size)
-    
+
     @property
     def rowcount(self) -> int:
         """Get number of affected rows."""
         if self._cursor is None:
             return 0
         return self._cursor.rowcount
-    
+
     @property
     def lastrowid(self) -> int | None:
         """Get last inserted row ID (if available)."""
@@ -222,7 +237,7 @@ class DatabaseSession:
 def transaction() -> Generator[DatabaseSession, None, None]:
     """
     Context manager for explicit transaction handling.
-    
+
     Usage:
         with transaction() as session:
             session.execute("INSERT INTO ...")
