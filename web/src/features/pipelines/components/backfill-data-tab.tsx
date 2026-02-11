@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format } from 'date-fns'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { backfillApi, BackfillFilter } from '@/repo/backfill'
 import { sourcesRepo } from '@/repo/sources'
+import { DatePicker } from '@/components/date-picker'
 import {
   Plus,
   X,
@@ -181,10 +182,37 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
     setFilters(newFilters)
   }
 
-  // Get columns for selected table
-  const selectedTableColumns = sourceDetails?.tables?.find(
-    (t) => t.table_name === tableName
-  )?.schema_table
+  // Get columns for selected table (exclude text types)
+  const selectedTableColumns = sourceDetails?.tables
+    ?.find((t) => t.table_name === tableName)
+    ?.schema_table?.filter((col) => {
+      const dataType = (col.data_type || col.real_data_type || '').toLowerCase()
+      // Exclude text/varchar/char types
+      return !dataType.includes('text') && 
+             !dataType.includes('char') && 
+             !dataType.includes('string')
+    })
+
+  // Helper to get column data type
+  const getColumnType = (columnName: string): string => {
+    const col = selectedTableColumns?.find(c => c.column_name === columnName)
+    return (col?.data_type || col?.real_data_type || '').toLowerCase()
+  }
+
+  // Helper to determine if column is date/datetime
+  const isDateColumn = (columnName: string): boolean => {
+    const type = getColumnType(columnName)
+    return type.includes('date') || type.includes('time')
+  }
+
+  // Helper to determine if column is numeric
+  const isNumericColumn = (columnName: string): boolean => {
+    const type = getColumnType(columnName)
+    return type.includes('int') || type.includes('numeric') || 
+           type.includes('decimal') || type.includes('float') || 
+           type.includes('double') || type.includes('real') ||
+           type.includes('money')
+  }
 
   const handleSubmit = () => {
     if (!tableName) {
@@ -213,7 +241,7 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
           Create Backfill
         </Button>
       </DialogTrigger>
-      <DialogContent className='sm:max-w-[600px]'>
+      <DialogContent className='sm:max-w-3xl max-h-[90vh] overflow-y-auto'>
         <DialogHeader>
           <DialogTitle>Create Backfill Job</DialogTitle>
           <DialogDescription>
@@ -326,9 +354,6 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                               value={col.column_name}
                             >
                               {col.column_name}
-                              <span className='ml-2 text-xs text-muted-foreground'>
-                                ({col.data_type || col.real_data_type})
-                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -358,18 +383,40 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
 
                     <div className='space-y-1.5'>
                       <Label className='text-xs text-muted-foreground'>Value</Label>
-                      <Input
-                        className="h-8"
-                        placeholder='Value'
-                        value={filter.value}
-                        onChange={(e) =>
-                          updateFilter(index, 'value', e.target.value)
-                        }
-                        disabled={
-                          filter.operator === 'IS NULL' ||
-                          filter.operator === 'IS NOT NULL'
-                        }
-                      />
+                      {filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL' ? (
+                        <Input
+                          className="h-8"
+                          placeholder='N/A'
+                          disabled
+                        />
+                      ) : filter.column && isDateColumn(filter.column) ? (
+                        <DatePicker
+                          selected={filter.value ? new Date(filter.value) : undefined}
+                          onSelect={(date) =>
+                            updateFilter(index, 'value', date ? format(date, 'yyyy-MM-dd') : '')
+                          }
+                          placeholder='Select date'
+                        />
+                      ) : filter.column && isNumericColumn(filter.column) ? (
+                        <Input
+                          className="h-8"
+                          type='number'
+                          placeholder='Enter number'
+                          value={filter.value}
+                          onChange={(e) =>
+                            updateFilter(index, 'value', e.target.value)
+                          }
+                        />
+                      ) : (
+                        <Input
+                          className="h-8"
+                          placeholder='Enter value'
+                          value={filter.value}
+                          onChange={(e) =>
+                            updateFilter(index, 'value', e.target.value)
+                          }
+                        />
+                      )}
                     </div>
 
                     <Button
