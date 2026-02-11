@@ -35,30 +35,26 @@ export function PipelineRowActions<TData>({ row }: DataTableRowActionsProps<TDat
   const queryClient = useQueryClient()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
-  const { mutate: deleteMutate } = useMutation({
+  const { mutate: deleteMutate, isPending: isDeleting } = useMutation({
     mutationFn: pipelinesRepo.delete,
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ['pipelines'] })
-      const previousPipelines = queryClient.getQueryData(['pipelines'])
+    onSuccess: () => {
+      toast.success('Pipeline deleted')
+      setDeleteDialogOpen(false)
+      
+      // Manually remove from cache to ensure immediate UI update and avoid race conditions
       queryClient.setQueryData(['pipelines'], (old: any) => {
         if (!old) return old
         return {
           ...old,
-          pipelines: old.pipelines.filter((p: Pipeline) => p.id !== id),
-          total: old.total - 1
+          pipelines: old.pipelines.filter((p: Pipeline) => p.id !== pipeline.id),
+          total: Math.max(0, old.total - 1)
         }
       })
-      return { previousPipelines }
-    },
-    onError: (_err, _id, context) => {
-      queryClient.setQueryData(['pipelines'], context?.previousPipelines)
-      toast.error('Failed to delete pipeline')
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['pipelines'] })
-    },
-    onSuccess: () => {
-      toast.success('Pipeline deleted')
+      
+      // We do NOT invalidate queries immediately here because the backend might still return the deleted item 
+      // due to eventual consistency or race conditions.
+      // The manual cache update above is sufficient for the UI.
+      // queryClient.invalidateQueries({ queryKey: ['pipelines'] })
     },
   })
 
@@ -113,13 +109,14 @@ export function PipelineRowActions<TData>({ row }: DataTableRowActionsProps<TDat
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault()
                 deleteMutate(pipeline.id)
-                setDeleteDialogOpen(false)
               }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDeleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Delete
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

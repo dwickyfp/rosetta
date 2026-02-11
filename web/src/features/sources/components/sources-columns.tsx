@@ -2,8 +2,11 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { DataTableColumnHeader } from '@/components/data-table'
 import { type Source } from '../data/schema'
 import { SourcesRowActions } from './sources-row-actions'
-import { Logs, CheckCircle2, XCircle } from 'lucide-react'
+import { Logs, Database } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { formatDistanceToNow } from 'date-fns'
+import { CopyButton } from '@/components/copy-button'
 
 export const sourcesColumns: ColumnDef<Source>[] = [
     {
@@ -30,100 +33,103 @@ export const sourcesColumns: ColumnDef<Source>[] = [
     {
         accessorKey: 'name',
         header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='Name' className='w-full justify-center' />
+            <DataTableColumnHeader column={column} title='Name' />
         ),
         cell: ({ row }) => (
-            <div className='flex items-center justify-center'>
+            <div className='flex flex-col'>
                 <span className='truncate font-medium'>{row.getValue('name')}</span>
+                <span className='truncate text-xs text-muted-foreground'>Postgres</span>
             </div>
         ),
         meta: { title: 'Name' },
     },
     {
-        accessorKey: 'pg_host',
+        id: 'status',
         header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='Host' className='w-full justify-center' />
-        ),
-        cell: ({ row }) => (
-            <div className='flex items-center justify-center'>
-                <span className='truncate'>{row.getValue('pg_host')}</span>
-            </div>
-        ),
-        meta: { title: 'Host' },
-    },
-    {
-        accessorKey: 'pg_database',
-        header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='Database' className='w-full justify-center' />
-        ),
-        cell: ({ row }) => (
-            <div className='flex items-center justify-center'>
-                <span>{row.getValue('pg_database')}</span>
-            </div>
-        ),
-        meta: { title: 'Database' },
-    },
-    {
-        accessorKey: 'pg_username',
-        header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='User' className='w-full justify-center' />
-        ),
-        cell: ({ row }) => (
-            <div className='flex items-center justify-center'>
-                <span>{row.getValue('pg_username')}</span>
-            </div>
-        ),
-        meta: { title: 'User' },
-    },
-    {
-        accessorKey: 'is_replication_enabled',
-        header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='Replication' className='w-full justify-center' />
+            <DataTableColumnHeader column={column} title='Status' />
         ),
         cell: ({ row }) => {
-            const isActive = row.getValue('is_replication_enabled')
+            const isReplicationEnabled = row.original.is_replication_enabled
+            const isPublicationEnabled = row.original.is_publication_enabled
+            const isActive = isReplicationEnabled && isPublicationEnabled
+
             return (
-                <div className='flex justify-center'>
-                    {isActive ? (
-                        <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-                    ) : (
-                        <XCircle className="h-5 w-5 text-gray-400 dark:text-gray-600" />
-                    )}
+                <div className='flex items-center gap-2'>
+                    <div className={cn("h-2 w-2 rounded-full", isActive ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-700")} />
+                    <span className={cn("text-sm", isActive ? "text-foreground" : "text-muted-foreground")}>
+                        {isActive ? "Active" : "Inactive"}
+                    </span>
                 </div>
             )
         },
-        meta: { title: 'Replication' },
+        meta: { title: 'Status' },
     },
     {
-        accessorKey: 'is_publication_enabled',
+        id: 'connection',
         header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='Publication' className='w-full justify-center' />
+            <DataTableColumnHeader column={column} title='Connection Details' />
         ),
         cell: ({ row }) => {
-            const isActive = row.getValue('is_publication_enabled')
+            const host = row.original.pg_host
+            const port = row.original.pg_port
+            const database = row.original.pg_database
+            const mainInfo = `${host}:${port}`
+
             return (
-                <div className='flex justify-center'>
-                    {isActive ? (
-                        <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-                    ) : (
-                        <XCircle className="h-5 w-5 text-gray-400 dark:text-gray-600" />
-                    )}
+                <div className="flex flex-col gap-1 max-w-[300px]">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                        <Database className="h-3.5 w-3.5 text-blue-500" />
+                        <span className="truncate">{mainInfo}</span>
+                        <CopyButton value={mainInfo} className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6" />
+                    </div>
+                    <span className="text-xs text-muted-foreground truncate" title={database}>{database}</span>
                 </div>
             )
         },
-        meta: { title: 'Publication' },
+        meta: { title: 'Connection' },
+    },
+    {
+        id: 'type',
+        header: ({ column }) => (
+            <DataTableColumnHeader column={column} title='Type' className="w-[150px]" />
+        ),
+        cell: () => {
+            return (
+                <div className='flex items-center gap-2 w-[150px]'>
+                    {/* Placeholder icon for Postgres since we don't have a specific one in lucide besides Database, or we could use a custom one if available, sticking to text/color for now or generic DB */}
+                    <div className="flex items-center gap-2">
+                        <span className='truncate font-medium capitalize'>
+                            Postgre<span style={{ color: '#316192' }}>SQL</span>
+                        </span>
+                    </div>
+                </div>
+            )
+        },
+        meta: { title: 'Type' },
     },
     {
         accessorKey: 'total_tables',
         header: ({ column }) => (
-            <DataTableColumnHeader column={column} title='Total Tables' className='w-full justify-center' />
+            <DataTableColumnHeader column={column} title='Tables' />
         ),
         cell: ({ row }) => (
-            <div className='flex items-center justify-center'>
-                <span className='font-medium'>{row.getValue('total_tables')}</span>
-            </div>
+            <span className='font-medium'>{row.getValue('total_tables')} Tables</span>
         ),
         meta: { title: 'Total Tables' },
+    },
+    {
+        accessorKey: 'created_at',
+        header: ({ column }) => (
+            <DataTableColumnHeader column={column} title='Created' />
+        ),
+        cell: ({ row }) => {
+            return (
+                <span className="text-muted-foreground text-sm">
+                    {formatDistanceToNow(new Date(row.getValue('created_at')), { addSuffix: true })}
+                </span>
+            )
+        },
+        meta: { title: 'Created' },
     },
     {
         id: 'actions',

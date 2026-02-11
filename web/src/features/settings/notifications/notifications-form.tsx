@@ -1,10 +1,12 @@
+import { useEffect } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link } from '@tanstack/react-router'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { configurationRepo } from '@/repo/configuration'
+import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Form,
   FormControl,
@@ -14,206 +16,187 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 
 const notificationsFormSchema = z.object({
-  type: z.enum(['all', 'mentions', 'none'], {
-    error: (iss) =>
-      iss.input === undefined
-        ? 'Please select a notification type.'
-        : undefined,
-  }),
-  mobile: z.boolean().default(false).optional(),
-  communication_emails: z.boolean().default(false).optional(),
-  social_emails: z.boolean().default(false).optional(),
-  marketing_emails: z.boolean().default(false).optional(),
-  security_emails: z.boolean(),
+  webhook_url: z.string().url('Please enter a valid URL').or(z.literal('')),
+  notification_iteration: z
+    .number()
+    .min(1, 'Iteration must be at least 1')
+    .max(100, 'Iteration cannot exceed 100'),
 })
 
 type NotificationsFormValues = z.infer<typeof notificationsFormSchema>
 
-// This can come from your database or API.
-const defaultValues: Partial<NotificationsFormValues> = {
-  communication_emails: false,
-  marketing_emails: false,
-  social_emails: true,
-  security_emails: true,
-}
-
 export function NotificationsForm() {
+  const queryClient = useQueryClient()
+
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['configuration', 'wal-thresholds'],
+    queryFn: configurationRepo.getWALThresholds,
+  })
+
   const form = useForm<NotificationsFormValues>({
     resolver: zodResolver(notificationsFormSchema),
-    defaultValues,
+    defaultValues: {
+      webhook_url: '',
+      notification_iteration: 3,
+    },
   })
+
+  // Update form values when config data changes
+  useEffect(() => {
+    if (config) {
+      form.reset({
+        webhook_url: config.webhook_url,
+        notification_iteration: config.notification_iteration,
+      })
+    }
+  }, [config, form])
+
+  const updateMutation = useMutation({
+    mutationFn: configurationRepo.updateWALThresholds,
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['configuration', 'wal-thresholds'],
+      })
+      toast.success('Notification settings updated successfully')
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Failed to update notification settings')
+    },
+  })
+
+  function onSubmit(data: NotificationsFormValues) {
+    if (!config) return
+
+    // Merge with existing config to ensure we don't lose other settings (like thresholds)
+    // assuming backend requires full object
+    const payload = {
+      ...config,
+      ...data,
+    }
+    updateMutation.mutate(payload)
+  }
+
+  if (isLoading) {
+    return (
+      <div className='flex items-center justify-center p-8'>
+        <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+      </div>
+    )
+  }
 
   return (
     <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit((data) => showSubmittedData(data))}
-        className='space-y-8'
-      >
-        <FormField
-          control={form.control}
-          name='type'
-          render={({ field }) => (
-            <FormItem className='relative space-y-3'>
-              <FormLabel>Notify me about...</FormLabel>
-              <FormControl>
-                <RadioGroup
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                  className='flex flex-col gap-2'
-                >
-                  <FormItem className='flex items-center'>
+      <form onSubmit={form.handleSubmit(onSubmit)} className='space-y-8'>
+        <div className='grid grid-cols-1 gap-8 lg:grid-cols-2'>
+          <div className='space-y-6'>
+            <FormField
+              control={form.control}
+              name='webhook_url'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Webhook URL</FormLabel>
+                  <div className='flex gap-2'>
                     <FormControl>
-                      <RadioGroupItem value='all' />
+                      <Input
+                        type='url'
+                        placeholder='https://your-webhook-endpoint.com/webhook'
+                        {...field}
+                      />
                     </FormControl>
-                    <FormLabel className='font-normal'>
-                      All new messages
-                    </FormLabel>
-                  </FormItem>
-                  <FormItem className='flex items-center'>
-                    <FormControl>
-                      <RadioGroupItem value='mentions' />
-                    </FormControl>
-                    <FormLabel className='font-normal'>
-                      Direct messages and mentions
-                    </FormLabel>
-                  </FormItem>
-                  <FormItem className='flex items-center'>
-                    <FormControl>
-                      <RadioGroupItem value='none' />
-                    </FormControl>
-                    <FormLabel className='font-normal'>Nothing</FormLabel>
-                  </FormItem>
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className='relative'>
-          <h3 className='mb-4 text-lg font-medium'>Email Notifications</h3>
-          <div className='space-y-4'>
-            <FormField
-              control={form.control}
-              name='communication_emails'
-              render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
-                  <div className='space-y-0.5'>
-                    <FormLabel className='text-base'>
-                      Communication emails
-                    </FormLabel>
-                    <FormDescription>
-                      Receive emails about your account activity.
-                    </FormDescription>
+                    <Button
+                      type='button'
+                      variant='secondary'
+                      onClick={async () => {
+                        const currentWebhookUrl = form.getValues('webhook_url')
+                        if (!currentWebhookUrl) {
+                          toast.error('Please enter a webhook URL first')
+                          return
+                        }
+                        try {
+                          await configurationRepo.testNotification(currentWebhookUrl)
+                          toast.success('Test notification sent successfully')
+                        } catch (e: any) {
+                          toast.error(e.response?.data?.detail || 'Failed to trigger test notification')
+                        }
+                      }}
+                    >
+                      Test
+                    </Button>
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
+                  <FormDescription>
+                    Webhook URL for alert notifications. Leave empty to disable.
+                  </FormDescription>
+                  <FormMessage />
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
-              name='marketing_emails'
+              name='notification_iteration'
               render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
-                  <div className='space-y-0.5'>
-                    <FormLabel className='text-base'>
-                      Marketing emails
-                    </FormLabel>
-                    <FormDescription>
-                      Receive emails about new products, features, and more.
-                    </FormDescription>
-                  </div>
+                <FormItem>
+                  <FormLabel>Notification Iteration</FormLabel>
                   <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
+                    <Input
+                      type='number'
+                      placeholder='3'
+                      {...field}
+                      onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                      className='max-w-50'
                     />
                   </FormControl>
+                  <FormDescription>
+                    Number of check iterations before sending a notification.
+                  </FormDescription>
+                  <FormMessage />
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name='social_emails'
-              render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
-                  <div className='space-y-0.5'>
-                    <FormLabel className='text-base'>Social emails</FormLabel>
-                    <FormDescription>
-                      Receive emails for friend requests, follows, and more.
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name='security_emails'
-              render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
-                  <div className='space-y-0.5'>
-                    <FormLabel className='text-base'>Security emails</FormLabel>
-                    <FormDescription>
-                      Receive emails about your account activity and security.
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled
-                      aria-readonly
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+
+            <div className='pt-4'>
+              <Button type='submit' disabled={updateMutation.isPending}>
+                {updateMutation.isPending && (
+                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                )}
+                Save Changes
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <div className='sticky top-6 rounded-xl border bg-card p-6 shadow-sm'>
+              <div className='mb-4 flex items-center gap-2 text-muted-foreground'>
+                <div className='h-2 w-2 animate-pulse rounded-full bg-green-500' />
+                <h3 className='text-xs font-medium tracking-wider uppercase'>
+                  Example Payload
+                </h3>
+              </div>
+              <p className='mb-4 text-sm leading-relaxed text-muted-foreground'>
+                Notifications are sent as JSON POST requests. Ensure your
+                endpoint can parse the following structure:
+              </p>
+              <div className='overflow-hidden rounded-lg border bg-zinc-950 p-4'>
+                <pre className='custom-scrollbar overflow-auto font-mono text-[10px] text-zinc-50 sm:text-xs'>
+                  {JSON.stringify(
+                    {
+                      key_notification: 'WAL_SIZE_WARNING',
+                      title: 'WAL Size Warning',
+                      message: 'WAL size exceeded 3000MB.',
+                      type: 'WARNING',
+                      timestamp: '2024-01-01T12:00:00+07:00',
+                    },
+                    null,
+                    2
+                  )}
+                </pre>
+              </div>
+            </div>
           </div>
         </div>
-        <FormField
-          control={form.control}
-          name='mobile'
-          render={({ field }) => (
-            <FormItem className='relative flex flex-row items-start'>
-              <FormControl>
-                <Checkbox
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-              <div className='space-y-1 leading-none'>
-                <FormLabel>
-                  Use different settings for my mobile devices
-                </FormLabel>
-                <FormDescription>
-                  You can manage your mobile notifications in the{' '}
-                  <Link
-                    to='/settings'
-                    className='underline decoration-dashed underline-offset-4 hover:decoration-solid'
-                  >
-                    mobile settings
-                  </Link>{' '}
-                  page.
-                </FormDescription>
-              </div>
-            </FormItem>
-          )}
-        />
-        <Button type='submit'>Update notifications</Button>
       </form>
     </Form>
   )

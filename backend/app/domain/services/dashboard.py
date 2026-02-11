@@ -19,6 +19,7 @@ from app.domain.models.wal_monitor import WALMonitor
 from app.domain.models.wal_metric import WALMetric
 from app.domain.models.source import Source
 from app.domain.models.pipeline import PipelineDestination, Pipeline, PipelineStatus, PipelineMetadata
+from app.domain.repositories.backfill import BackfillRepository
 
 logger = get_logger(__name__)
 
@@ -55,7 +56,15 @@ class DashboardService:
             total += count
             
         summary["total"] = total
+        summary["total"] = total
         return summary
+
+    def get_backfill_summary(self) -> Dict[str, int]:
+        """
+        Get global backfill summary.
+        """
+        repo = BackfillRepository(self.db)
+        return repo.get_global_status_summary()
 
     def get_global_data_flow_stats(self, days: int = 7) -> Dict[str, Any]:
         """

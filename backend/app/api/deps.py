@@ -13,6 +13,7 @@ from app.core.database import get_db_session
 from app.domain.services.destination import DestinationService
 from app.domain.services.pipeline import PipelineService
 from app.domain.services.source import SourceService
+from app.domain.services.backfill import BackfillService
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -65,4 +66,18 @@ def get_pipeline_service(db: Session = Depends(get_db)) -> PipelineService:
 
 def get_preset_service(db: Session = Depends(get_db)) -> Generator:
     from app.domain.services.preset import PresetService
+
     return PresetService(db)
+
+
+def get_backfill_service(db: Session = Depends(get_db)) -> BackfillService:
+    """
+    Get backfill service dependency.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Backfill service instance
+    """
+    return BackfillService(db)

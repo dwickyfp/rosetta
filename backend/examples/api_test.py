@@ -231,7 +231,7 @@ async def example_workflow():
         "pg_username": "postgres",
         "pg_password": "postgres",
         "publication_name": "example_publication",
-        "replication_id": 1,
+        "replication_name": "test_slot_1",
     }
 
     try:

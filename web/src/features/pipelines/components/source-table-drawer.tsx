@@ -54,10 +54,14 @@ export function SourceTableDrawer({
 
   // Set first destination as default or use initialDestinationId
   useEffect(() => {
-    if (open) {
-      if (initialDestinationId) {
-        setSelectedDestinationId(initialDestinationId)
-      } else if (destinations.length > 0 && !selectedDestinationId) {
+    if (open && destinations.length > 0) {
+      if (initialDestinationId && destinations.some(d => d.id === initialDestinationId)) {
+        // Only use initialDestinationId if it exists in the list
+        if (selectedDestinationId !== initialDestinationId) {
+          setSelectedDestinationId(initialDestinationId)
+        }
+      } else if (!selectedDestinationId || !destinations.some(d => d.id === selectedDestinationId)) {
+        // Fallback to first destination if no selection or current selection is invalid
         setSelectedDestinationId(destinations[0].id)
       }
     }
@@ -155,7 +159,7 @@ export function SourceTableDrawer({
 
   const handleValidateTargetName = async (targetName: string) => {
     if (!selectedDestinationId) throw new Error('No destination selected')
-    
+
     return await tableSyncRepo.validateTargetTable(
       pipeline.id,
       selectedDestinationId,
@@ -297,6 +301,7 @@ export function SourceTableDrawer({
           onClose={() => setActiveMode(null)}
           onSave={handleSaveCustomSql}
           destinationName={currentDestination?.destination.name}
+          destinationId={currentDestination?.destination.id}
         />
       )}
 

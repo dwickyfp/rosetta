@@ -139,6 +139,12 @@ class Settings(BaseSettings):
         default=60, ge=1, le=1000, description="Maximum requests per minute per client"
     )
 
+    # External Services
+    compute_node_url: str = Field(
+        default="http://0.0.0.0:8001", description="URL for the compute node API"
+    )
+
+
     @validator("app_env")
     def validate_environment(cls, v: str) -> str:
         """Validate environment is one of allowed values."""

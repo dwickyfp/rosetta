@@ -12,7 +12,7 @@ import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
-from compute.core.exceptions import DatabaseException
+from core.exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def init_connection_pool(min_conn: int = 1, max_conn: int = 10) -> pool.Threaded
     if _connection_pool is not None:
         return _connection_pool
     
-    from compute.config import get_config
+    from config import get_config
     config = get_config()
     
     try:

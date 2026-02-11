@@ -149,18 +149,17 @@ export function SourceReplicationTable({ sourceId, tables }: SourceReplicationTa
                             searchPlaceholder='Filter by table name...'
                         />
 
-                        <div className="rounded-md border">
+                        <div className="rounded-md border border-border/50">
                             <Table>
-                                <TableHeader className="bg-muted/30">
+                                <TableHeader>
                                     {table.getHeaderGroups().map((headerGroup) => (
-                                        <TableRow key={headerGroup.id} className="hover:bg-transparent border-border/40">
+                                        <TableRow key={headerGroup.id}>
                                             {headerGroup.headers.map((header) => {
                                                 return (
                                                     <TableHead
                                                         key={header.id}
                                                         colSpan={header.colSpan}
                                                         className={cn(
-                                                            "h-9 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
                                                             header.column.columnDef.meta?.className,
                                                             header.column.columnDef.meta?.thClassName
                                                         )}
@@ -183,7 +182,6 @@ export function SourceReplicationTable({ sourceId, tables }: SourceReplicationTa
                                             <TableRow
                                                 key={row.id}
                                                 data-state={row.getIsSelected() && 'selected'}
-                                                className="h-10 border-border/40 hover:bg-muted/50 odd:bg-transparent even:bg-muted/20"
                                             >
                                                 {row.getVisibleCells().map((cell) => (
                                                     <TableCell

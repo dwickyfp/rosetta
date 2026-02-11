@@ -13,6 +13,7 @@ from app.domain.schemas.configuration import (
     ConfigurationResponse,
     ConfigurationUpdate,
     WALThresholds,
+    TestNotificationRequest,
 )
 from app.domain.services.configuration import ConfigurationService
 
@@ -101,4 +102,52 @@ async def update_wal_thresholds(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update WAL threshold configuration",
+        )
+
+
+@router.post(
+    "/wal-thresholds/test",
+    status_code=status.HTTP_200_OK,
+    summary="Test notification webhook",
+    description="Send a test notification to the configured webhook URL or a provided one",
+)
+async def test_notification_webhook(
+    request: TestNotificationRequest = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Trigger a test notification.
+    
+    Args:
+        request: Optional body containing webhook_url
+        db: Database session
+        
+    Returns:
+        Success message or error
+    """
+    try:
+        from app.domain.services.notification_service import NotificationService
+        
+        webhook_url = request.webhook_url if request else None
+        
+        service = NotificationService(db)
+        success = await service.send_test_notification(webhook_url)
+        
+        if success:
+            return {"message": "Test notification sent successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send test notification. Check logs for details.",
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error("Failed to send test notification", extra={"error": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to test notification configuration",
         )

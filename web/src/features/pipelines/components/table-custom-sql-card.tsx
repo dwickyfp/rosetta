@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
+import ace from 'ace-builds'
 import AceEditor from 'react-ace'
 import { Button } from '@/components/ui/button'
 import { Loader2, Save, X } from 'lucide-react'
 import { TableWithSyncInfo, TableSyncConfig } from '@/repo/pipelines'
 import { cn } from '@/lib/utils'
+import { createSqlCompleter } from '@/features/pipelines/utils/sql-completer'
+import { api } from '@/repo/client'
 
 import 'ace-builds/src-noconflict/mode-mysql'
 import 'ace-builds/src-noconflict/theme-tomorrow'
@@ -17,6 +20,7 @@ interface TableCustomSqlCardProps {
     onSave: (sql: string) => Promise<void>
     className?: string
     destinationName?: string
+    destinationId?: number | null
 }
 
 export function TableCustomSqlCard({
@@ -25,10 +29,13 @@ export function TableCustomSqlCard({
     onClose,
     onSave,
     className,
-    destinationName
+    destinationName,
+    destinationId
 }: TableCustomSqlCardProps) {
     const [sql, setSql] = useState('')
+    const [editorInstance, setEditorInstance] = useState<any>(null)
     const [isSaving, setIsSaving] = useState(false)
+    const [isFetchingSchema, setIsFetchingSchema] = useState(false)
     const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'))
 
     // Watch for theme changes
@@ -52,6 +59,72 @@ export function TableCustomSqlCard({
             setSql(`SELECT * FROM ${table?.table_name || 'table_name'}`)
         }
     }, [table, destinationName])
+
+    // --- Configure Completer with Lazy Fetching ---
+    useEffect(() => {
+        if (!table || !editorInstance) return;
+
+        const langTools = ace.require("ace/ext/language_tools");
+
+        // Prepare Source Schema
+        const sourceSchema: Record<string, string[]> = {};
+        if (table) {
+            sourceSchema[table.table_name] = table.columns.map(c => c.column_name);
+        }
+
+        // Async Fetcher for Destination Tables
+        const fetchDestinationSchema = async (tableName: string) => {
+            if (!destinationId) return [];
+            try {
+                // If tableName is empty, we just want list of tables
+                const params: any = { table: tableName };
+                if (!tableName) {
+                    params.scope = 'tables';
+                }
+
+                const res = await api.get(`/destinations/${destinationId}/schema`, { params });
+                const data = res.data;
+
+                if (!tableName) {
+                    // Return list of table names
+                    return Object.keys(data);
+                }
+
+                // Check for key case-insensitive
+                const key = Object.keys(data).find(k => k.toLowerCase() === tableName.toLowerCase()) || tableName;
+                return data[key] || [];
+            } catch (e) {
+                return [];
+            }
+        };
+
+        // Custom Completer
+        const sqlCompleter = createSqlCompleter(
+            sourceSchema,
+            fetchDestinationSchema,
+            destinationName,
+            setIsFetchingSchema // Pass setLoading callback
+        );
+
+        // Register on the specific editor instance
+        // Exclude textCompleter to reduce noise, keep default keyword completer
+        editorInstance.completers = [
+            sqlCompleter,
+            langTools.keyWordCompleter
+        ];
+
+        // --- Auto-trigger on dot (.) ---
+        const onAfterExec = (e: any) => {
+            if (e.command.name === "insertstring" && e.args === ".") {
+                editorInstance.execCommand("startAutocomplete");
+            }
+        };
+
+        editorInstance.commands.on("afterExec", onAfterExec);
+        return () => {
+            editorInstance.commands.off("afterExec", onAfterExec);
+        };
+    }, [table, destinationId, destinationName, editorInstance]);
 
 
     const handleSave = async (e: React.MouseEvent) => {
@@ -87,11 +160,19 @@ export function TableCustomSqlCard({
         >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/30">
-                <div>
-                    <h2 className="text-lg font-semibold">Custom SQL</h2>
-                    <p className="text-sm text-muted-foreground">
-                        Define custom SQL for <span className="font-medium text-foreground">{table.table_name}</span>
-                    </p>
+                <div className="flex items-center gap-4">
+                    <div>
+                        <h2 className="text-lg font-semibold">Custom SQL</h2>
+                        <p className="text-sm text-muted-foreground">
+                            Define custom SQL for <span className="font-medium text-foreground">{table.table_name}</span>
+                        </p>
+                    </div>
+                    {isFetchingSchema && (
+                        <div className="flex items-center gap-2 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded text-xs text-blue-700 dark:text-blue-300">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            <span>Fetching schema...</span>
+                        </div>
+                    )}
                 </div>
                 <Button variant="ghost" size="icon" onClick={handleClose} className="h-8 w-8">
                     <X className="h-4 w-4" />
@@ -129,6 +210,7 @@ export function TableCustomSqlCard({
                         mode="mysql"
                         theme={isDarkMode ? 'tomorrow_night' : 'tomorrow'}
                         name="custom-sql-editor"
+                        onLoad={(editor) => setEditorInstance(editor)}
                         onChange={setSql}
                         fontSize={14}
                         lineHeight={20}

@@ -94,7 +94,7 @@ export function SourcesTable({ data }: DataTableProps) {
                 table={table}
                 searchPlaceholder='Filter by name or host...'
             />
-            <div className='rounded-md border'>
+            <div className='rounded-md border border-border/50'>
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (

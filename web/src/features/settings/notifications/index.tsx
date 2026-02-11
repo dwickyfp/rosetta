@@ -4,8 +4,9 @@ import { NotificationsForm } from './notifications-form'
 export function SettingsNotifications() {
   return (
     <ContentSection
-      title='Notifications'
-      desc='Configure how you receive notifications.'
+      title='Notification Setting'
+      desc='Configure webhook URL and alert thresholds for WAL monitoring notifications.'
+      fullWidth
     >
       <NotificationsForm />
     </ContentSection>

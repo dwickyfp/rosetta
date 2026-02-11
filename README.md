@@ -1,36 +1,49 @@
-# Rosetta
+# Rosetta ETL Platform
 
-Rosetta is a high-performance, real-time ETL engine written in Rust. It captures data changes from a **PostgreSQL** database using Logical Replication (CDC - Change Data Capture) and streams them efficiently to **Snowflake**.
+Rosetta is a real-time ETL platform with a modular three-service architecture for managing and executing Change Data Capture (CDC) pipelines from **PostgreSQL** to **Snowflake**, **PostgreSQL**.
 
-Designed for speed and reliability, Rosetta leverages the `etl` framework to handle the replication stream and ensures secure data ingestion into Snowflake using Key-Pair Authentication.
+## Architecture Overview
+
+The platform consists of three independent services:
+
+- **Backend** (FastAPI/Python): RESTful API for managing sources, destinations, and pipeline configurations
+- **Compute** (Python/Debezium): CDC execution engine that replicates data changes in real-time
+- **Web** (React/TypeScript): Admin dashboard for pipeline monitoring and management
 
 ## Project Flow
 
-The data flows through the system in real-time:
+Data flows through the system in real-time:
 
-1.  **Source (PostgreSQL)**: Rosetta connects to a PostgreSQL database and listens to a logical replication slot. Any changes (INSERT, UPDATE, DELETE) are captured immediately from the WAL (Write-Ahead Log).
-2.  **Processing (Rosetta/Rust)**: The Rust application processes these change events. It handles data conversion and batching to optimize throughput.
-3.  **Authentication**: Rosetta uses Key-Pair Authentication (RSA) to securely connect to Snowflake. It supports encrypted private keys (PKCS#8) for enhanced security.
-4.  **Destination (Snowflake)**: The processed data is ingested into the specified Snowflake table (Landing Table).
+1.  **Configuration (Backend API)**: Define sources, destinations, and pipelines via REST API or Web UI
+2.  **Source (PostgreSQL)**: Compute service connects to PostgreSQL using logical replication slots to capture WAL changes (INSERT, UPDATE, DELETE)
+3.  **Processing (Compute/Debezium)**: The pydbzengine processes CDC events and manages data transformation
+4.  **Authentication**: Uses RSA Key-Pair Authentication to securely connect to Snowflake with encrypted private keys (PKCS#8)
+5.  **Destination (Snowflake)**: Processed data is ingested into specified Snowflake tables
 
 ## System Architecture
 
-Rosetta is driven by a configuration database. You define your sources, destinations, and pipelines in PostgreSQL tables, and the application dynamically manages them.
+Rosetta uses a shared configuration database pattern where all three services read/write to a central PostgreSQL database.
 
-The system schema matches `migrations/001_create_table.sql`:
+The system schema is defined in `migrations/001_create_table.sql`:
 
-*   **sources**: PostgreSQL connection configurations.
-*   **destinations**: Snowflake connection capabilities.
-*   **pipelines**: Active data streams linking a source to a destination.
-*   **pipeline_metadata**: Runtime status and health metrics.
+*   **sources**: PostgreSQL source connection configurations
+*   **destinations**: Snowflake destination connection details
+*   **pipelines**: Pipeline definitions linking sources to destinations
+*   **pipeline_metadata**: Real-time status, health metrics, and WAL monitoring data
+
+**Service Communication:**
+- Backend API writes pipeline configurations to the database
+- Compute service polls the database every 10s for `status='START'` pipelines
+- Web dashboard fetches data via Backend API endpoints
 
 ## How to Run
 
 ### Prerequisites
 
-*   [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-*   [Docker](https://www.docker.com/) & Docker Compose (for running the local PostgreSQL instance)
-*   OpenSSL (for generating keys)
+*   **Python 3.11+** with [uv](https://docs.astral.sh/uv/) package manager (for Backend and Compute)
+*   **Node.js 18+** with [pnpm](https://pnpm.io/) (for Web)
+*   **Docker** & Docker Compose (for running local PostgreSQL instances)
+*   **OpenSSL** (for generating Snowflake authentication keys)
 
 ### Step 1: Generate Private & Public Keys
 
@@ -50,42 +63,119 @@ Rosetta uses Key-Pair Authentication for Snowflake.
     ```
 
 ### Step 2: Set Environment Variables
+environment files for each service:
 
-Create a `.env` file in the root directory. Since Rosetta loads configuration from the database, you only need to provide the connection string to your *Configuration Database* and the log level.
+**Backend** (`backend/.env`):
+```bash
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/postgres
+SECRET_KEY=your-secret-key-here
+WAL_MONITOR_INTERVAL_SECONDS=300
+```
+
+**Compute** (`compute/.env`):
+```bash
+CONFIG_DATABASE_URL=postgres://postgres:postgres@localhost:5433/postgres
+DEBUG=falseStart Docker Services
+
+Start the configuration and source PostgreSQL databases:
 
 ```bash
-# Logging
-RUST_LOG=info
-
-# Configuration Database URL
-# This is the Postgres DB where `sources`, `destinations`, etc. tables are located.
-CONFIG_DATABASE_URL=postgres://postgres:postgres@localhost:5433/postgres
+docker-compose up -d
 ```
 
-### Step 3: Populate Configuration
+This starts:
+- **Config DB** on port 5433 (for pipeline configurations)
+- **Source DB** on port 5434 (PostGIS-enabled, for CDC source)
 
-Before running the app, you must insert your connection details into the configuration tables.
+Both databases are configured with `wal_level=logical` for CDC support.
 
-You can interpret `migrations/002_seed_data.sql` as a template.
+### Step 4: Setup and Run Backend
 
-**1. Add a Source (Postgres)**
+```bash
+cd backend
+uv sync                          # Install dependencies
+uv run alembic upgrade head      # Apply database migrations
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Backend API will be available at `http://localhost:8000/docs`
+
+### Step 5: Setup and Run Compute
+
+```bash
+cd compute
+python -m venv venv
+source venv/bin/activate         # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+
+Compute service will start polling for active pipelines.
+
+### Step 6: Setup and Run Web
+
+```bash
+cd web
+pnpm install
+pnpm dev
+```
+
+Web dashboard will be available at `http://localhost:5173`
+
+### Via Web UI
+Use the dashboard at `http://localhost:5173` to manage pipelines through a visual interface.
+
+### Via API
+Backend provides REST endpoints at `http://localhost:8000/api/v1`:
+- `POST /pipelines` - Create pipeline
+- `POST /pipelines/{id}/start` - Start pipeline
+- `POST /pipelines/{id}/pause` - Pause pipeline
+- `GET /pipelines` - List all pipelines
+
+### Via Direct SQL
+Compute service polls for status changes, so you can also control pipelines via SQL:
+
+*   **Pause**: `UPDATE pipelines SET status = 'PAUSE' WHERE name = '...';`
+*   **Start**: `UPDATE pipelines SET status = 'START' WHERE name = '...';`
+
+Monitor pipeline health:
 ```sql
-INSERT INTO sources (name, pg_host, pg_port, pg_database, pg_username, pg_password, publication_name, replication_id)
-VALUES ('my_postgres', 'localhost', 5432, 'mydb', 'user', 'pass', 'my_pub', 1);
+SELECT p.name, pm.health_status, pm.wal_size, pm.last_success_time
+FROM pipelines p
+JOIN pipeline_metadata pm ON p.id = pm.pipeline_id;
 ```
 
-**2. Add a Destination (Snowflake)**
-```sql
-INSERT INTO destinations (name, snowflake_account, snowflake_user, snowflake_db, snowflake_schema, snowflake_role, snowflake_private_key_path, snowflake_private_key_passphrase)
-VALUES ('my_snowflake', 'xy12345', 'etl_user', 'DW', 'LANDING', 'ETL_ROLE', '/path/to/rsa_key.p8', 'passphrase');
+## Testing
+
+### Backend Tests
+```bash
+cd backend
+uv run pytest tests/             # Run all tests
+uv run pytest tests/ --cov=app   # With coverage report
 ```
 
-**3. Create a Pipeline**
-```sql
-INSERT INTO pipelines (name, source_id, destination_id, status)
-VALUES ('LANDING_USERS', 1, 1, 'START');
+### Compute Tests
+```bash
+cd compute
+pytest tests/
 ```
 
+## Port Reference
+
+| Service    | Port | Description                    |
+|------------|------|--------------------------------|
+| Backend    | 8000 | FastAPI REST API               |
+| Compute    | 8001 | Health check endpoint          |
+| Web        | 5173 | Vite dev server                |
+| Config DB  | 5433 | PostgreSQL config database     |
+| Source DB  | 5434 | PostgreSQL source (PostGIS)    |
+
+## Documentation
+
+- **Backend**: See `backend/ARCHITECTURE.md` for Clean Architecture details
+- **Backend**: See `backend/GETTING_STARTED.md` for API usage
+- **Web**: Based on [shadcn-admin](https://github.com/satnaing/shadcn-admin) template
+- **AI Agents**: See `.github/copilot-instructions.md` for development guidelinesple SQL configuration can be found in `migrations/002_seed_data.sql
 ### Step 4: Run Rosetta
 
 Start the local database (if using Docker) and run the application:

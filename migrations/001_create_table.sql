@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS sources (
     pg_username VARCHAR(255) NOT NULL,
     pg_password VARCHAR(255),
     publication_name VARCHAR(255) NOT NULL,
-    replication_id INTEGER NOT NULL,
+    replication_name VARCHAR(255) NOT NULL,
     is_publication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     is_replication_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     last_check_replication_publication TIMESTAMPTZ NULL,
@@ -18,6 +18,14 @@ CREATE TABLE IF NOT EXISTS sources (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Drop constraint unique
+ALTER TABLE sources DROP CONSTRAINT IF EXISTS unique_replication_name;
+ALTER TABLE sources DROP CONSTRAINT IF EXISTS unique_publication_name;
+
+-- constraint unique if not exists for replication_name and publication_name
+ALTER TABLE sources ADD CONSTRAINT unique_replication_name UNIQUE (replication_name);
+ALTER TABLE sources ADD CONSTRAINT unique_publication_name UNIQUE (publication_name);
+
 
 -- Table 2: Destinations Snowflake
 CREATE TABLE IF NOT EXISTS destinations (
@@ -35,9 +43,13 @@ CREATE TABLE IF NOT EXISTS pipelines (
     name VARCHAR(255) NOT NULL UNIQUE,-- 'SNOWFLAKE' or 'POSTGRESQL'
     source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
     status VARCHAR(20) NOT NULL DEFAULT 'PAUSE', -- 'START' or 'PAUSE' or 'REFRESH
+    ready_refresh BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Alter table pipelines add column ready_refresh if not exists
+ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS ready_refresh BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- 1 pipelines sources, now can have more then 1 destination
 CREATE TABLE IF NOT EXISTS pipelines_destination (
@@ -255,14 +267,49 @@ CREATE TABLE IF NOT EXISTS notification_log(
     type VARCHAR(255) NOT NULL,
     is_read BOOLEAN DEFAULT FALSE,
     is_deleted BOOLEAN DEFAULT FALSE,
-    iteration_check INT DEFAULT 0, -- For check iteration job, if 3 then will sent into webhook if is_read is false
+    iteration_check INTEGER DEFAULT 0, -- For check iteration job, if 3 then will sent into webhook if is_read is false
     is_sent BOOLEAN DEFAULT FALSE,
+    is_force_sent BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create Index for notification_log
 CREATE INDEX IF NOT EXISTS idx_notification_log_iteration_check ON notification_log(iteration_check);
+
+-- Table queue backfill data 
+CREATE TABLE IF NOT EXISTS queue_backfill_data(
+    id SERIAL PRIMARY KEY,
+    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    source_id  INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    table_name VARCHAR(255) NOT NULL,
+    filter_sql TEXT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'EXECUTING', 'COMPLETED', 'FAILED', 'CANCELLED'
+    count_record BIGINT NOT NULL DEFAULT 0,
+    total_record BIGINT NOT NULL DEFAULT 0,
+    is_error BOOLEAN NOT NULL DEFAULT FALSE,
+    error_message TEXT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Ensure error_message column exists (for existing deployments)
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS error_message TEXT NULL;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS total_record BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS is_error BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Drop Index if exists
+DROP INDEX IF EXISTS idx_queue_backfill_data_pipeline_id;
+DROP INDEX IF EXISTS idx_queue_backfill_data_source_id;
+DROP INDEX IF EXISTS idx_queue_backfill_data_created_at;
+DROP INDEX IF EXISTS idx_queue_backfill_data_updated_at;
+
+-- Create Index for queue_backfill_data
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_pipeline_id ON queue_backfill_data(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_source_id ON queue_backfill_data(source_id);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_created_at ON queue_backfill_data(created_at);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_updated_at ON queue_backfill_data(updated_at);
+
 
 
 

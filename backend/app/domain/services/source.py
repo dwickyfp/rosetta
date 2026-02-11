@@ -431,7 +431,7 @@ class SourceService:
                 source.is_publication_enabled = bool(cur.fetchone())
 
                 # 3. Check Replication Status
-                slot_name = f"supabase_etl_apply_{source.replication_id}"
+                slot_name = source.replication_name
                 cur.execute("SELECT 1 FROM pg_replication_slots WHERE slot_name = %s", (slot_name,))
                 source.is_replication_enabled = bool(cur.fetchone())
                 
@@ -570,7 +570,7 @@ class SourceService:
             conn = self._get_connection(source)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:
-                slot_name = f"supabase_etl_apply_{source.replication_id}"
+                slot_name = source.replication_name
                 # Check if exists first to avoid error? Or just try create
                 # The user asked for specific query
                 query = f"SELECT pg_create_logical_replication_slot('{slot_name}', 'pgoutput');"
@@ -588,7 +588,7 @@ class SourceService:
             conn = self._get_connection(source)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:
-                slot_name = f"supabase_etl_apply_{source.replication_id}"
+                slot_name = source.replication_name
                 query = f"SELECT pg_drop_replication_slot('{slot_name}');"
                 logger.info(f"Executing: {query}")
                 cur.execute(query)
@@ -777,9 +777,34 @@ class SourceService:
             counter += 1
             new_name = f"{base_name}-{counter}"
             
-        # 2. Generate new replication_id
-        max_rep_id = self.repository.get_max_replication_id()
-        new_rep_id = max_rep_id + 1
+        # 2. Generate new replication_name
+        base_rep_name = original_source.replication_name
+        # If original name ends with _1, _2 etc, strip it? Or just append?
+        # Let's keep it simple: append -1, -2 like name
+        new_rep_name = f"{base_rep_name}_1"
+        rep_counter = 1
+        
+        # We need a way to check if replication_name exists. 
+        # Since it's unique in DB, we can use repository.
+        # But SourceRepository might not have get_by_replication_name.
+        # However, checking uniqueness is good practice.
+        # For now, let's assume we can try catch insert or query.
+        # Better to add get_by_replication_name in repository if needed, or just query.
+        # Since I can't easily see repo interface right now without reading, I'll assume I can inspect DB or rely on the fact that if 'name' is unique, replication_name likely follows similar pattern if derived from name, 
+        # BUT here replication_name is independent. 
+        # Let's assume we can query `self.repository.get_by_replication_name(new_rep_name)` if I add it, 
+        # or crudely loop like name. 
+        # Actually, let's look at get_by_name usage above. 
+        
+        # I'll rely on an loop similar to name, assuming I can query it.
+        # I will need to add `get_by_replication_name` to repository or use a custom query provided by repo.
+        # For now, let's optimistically set it, and if it fails, user has to retry? No, that's bad UX.
+        # I will create a loop but I need a check function.
+        # Let's use `self.db.query(Source).filter(Source.replication_name == new_rep_name).first()`
+        
+        while self.db.query(Source).filter(Source.replication_name == new_rep_name).first():
+            rep_counter += 1
+            new_rep_name = f"{base_rep_name}_{rep_counter}"
         
         # 3. Create new source configuration
         # Copy connection details, referencing original source attributes
@@ -793,13 +818,7 @@ class SourceService:
             pg_username=original_source.pg_username,
             pg_password=decrypt_value(original_source.pg_password) if original_source.pg_password else None,
             publication_name=original_source.publication_name, 
-            # Publication is DB object. If we connect to same DB, we can reuse publication if we want to share it?
-            # Or should we create a new one? 
-            # User said "replicate all connection setting sources".
-            # If multiple sources point to same DB/tables, they might conflict if using same publication/slot if not carefully managed.
-            # But here we are just creating the config. 
-            # Let's keep publication name same, user can change if needed.
-            replication_id=new_rep_id
+            replication_name=new_rep_name, 
         )
         
         return self.create_source(source_data)

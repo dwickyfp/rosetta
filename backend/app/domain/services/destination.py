@@ -13,6 +13,7 @@ from app.domain.models.destination import Destination
 from app.domain.repositories.destination import DestinationRepository
 from app.domain.schemas.destination import DestinationCreate, DestinationUpdate
 from app.core.security import encrypt_value, decrypt_value
+from app.infrastructure.redis import RedisClient
 
 logger = get_logger(__name__)
 
@@ -402,3 +403,201 @@ class DestinationService:
             )
             # Re-raise with clear message if possible
             raise e
+
+    
+    def fetch_schema(
+        self, 
+        destination_id: int, 
+        table_name: str | None = None,
+        only_tables: bool = False
+    ) -> dict[str, list[str]]:
+        """
+        Fetch schema (tables and columns) from the destination.
+
+        Args:
+            destination_id: Destination identifier
+            table_name: Optional table name to filter by
+            only_tables: If True, returns only table names (values are empty lists)
+
+        Returns:
+            Dictionary mapping table names to list of column names (or empty list if only_tables)
+        """
+        destination = self.get_destination(destination_id)
+        
+        # Redis Key - include table_name/only_tables if provided
+        cache_key = f"destination:{destination_id}:schema"
+        if table_name:
+            cache_key += f":table:{table_name}"
+        if only_tables:
+            cache_key += ":only_tables"
+        
+        try:
+            # 1. Try Cache
+            redis_client = RedisClient.get_instance()
+            cached_schema = redis_client.get(cache_key)
+            if cached_schema:
+                import json
+                return json.loads(cached_schema)
+        except Exception as e:
+            logger.warning(f"Redis cache error: {e}")
+
+        schema_data = {}
+
+        try:
+            if destination.type == "POSTGRES":
+                import psycopg2
+                
+                conn = psycopg2.connect(
+                    host=destination.config.get("host"),
+                    port=destination.config.get("port"),
+                    dbname=destination.config.get("database"),
+                    user=destination.config.get("user"),
+                    password=decrypt_value(destination.config.get("password") or ""),
+                    connect_timeout=10,
+                )
+                
+                with conn.cursor() as cur:
+                    if only_tables:
+                        # Fetch ONLY table names
+                        query = """
+                            SELECT table_name
+                            FROM information_schema.tables
+                            WHERE table_schema = 'public'
+                        """
+                        params = []
+                        if table_name:
+                             query += " AND table_name ILIKE %s"
+                             params.append(table_name)
+                        query += " ORDER BY table_name;"
+                        
+                        cur.execute(query, tuple(params))
+                        rows = cur.fetchall()
+                        for (table,) in rows:
+                             schema_data[table] = []
+                    else:
+                        # Fetch tables and columns from information_schema
+                        query = """
+                            SELECT table_name, column_name
+                            FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                        """
+                        params = []
+                        if table_name:
+                            # Use ILIKE for case-insensitive matching
+                            query += " AND table_name ILIKE %s"
+                            params.append(table_name)
+                            
+                        query += " ORDER BY table_name, ordinal_position;"
+                        
+                        cur.execute(query, tuple(params))
+                        rows = cur.fetchall()
+                        
+                        for table, column in rows:
+                            if table not in schema_data:
+                                schema_data[table] = []
+                            schema_data[table].append(column)
+                
+                conn.close()
+
+            elif destination.type == "SNOWFLAKE":
+                import snowflake.connector
+                from cryptography.hazmat.backends import default_backend
+                from cryptography.hazmat.primitives import serialization
+
+                conn_params = {
+                    "user": destination.config.get("user"),
+                    "account": destination.config.get("account"),
+                    "role": destination.config.get("role"),
+                    "warehouse": destination.config.get("warehouse"),
+                    "database": destination.config.get("database"),
+                    "schema": destination.config.get("schema"),
+                    "client_session_keep_alive": False,
+                    "application": "Rosetta_ETL",
+                }
+
+                # Handle Private Key Auth
+                if destination.config.get("private_key"):
+                    private_key_str = destination.config.get("private_key", "").strip()
+                    if "\\n" in private_key_str:
+                        private_key_str = private_key_str.replace("\\n", "\n")
+
+                    passphrase = None
+                    if destination.config.get("private_key_passphrase"):
+                        passphrase = decrypt_value(destination.config.get("private_key_passphrase")).encode()
+
+                    p_key = serialization.load_pem_private_key(
+                        private_key_str.encode(),
+                        password=passphrase,
+                        backend=default_backend(),
+                    )
+                    
+                    pkb = p_key.private_bytes(
+                        encoding=serialization.Encoding.DER,
+                        format=serialization.PrivateFormat.PKCS8,
+                        encryption_algorithm=serialization.NoEncryption(),
+                    )
+                    conn_params["private_key"] = pkb
+                elif destination.config.get("password"):
+                    conn_params["password"] = decrypt_value(destination.config.get("password"))
+
+                ctx = snowflake.connector.connect(**conn_params)
+                cs = ctx.cursor()
+                
+                params = []
+                
+                if only_tables:
+                    # Fetch ONLY table names
+                    query = """
+                        SELECT TABLE_NAME
+                        FROM INFORMATION_SCHEMA.TABLES
+                        WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+                    """
+                    if table_name:
+                        query += " AND TABLE_NAME ILIKE %s"
+                        params.append(table_name)
+                    
+                    query += " ORDER BY TABLE_NAME;"
+                    
+                    cs.execute(query, tuple(params))
+                    rows = cs.fetchall()
+                    for (table,) in rows:
+                         schema_data[table] = []
+                else:
+                    # Fetch tables and columns
+                    query = """
+                        SELECT TABLE_NAME, COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+                    """
+                    if table_name:
+                        # Use ILIKE for case-insensitive matching in Snowflake
+                        query += " AND TABLE_NAME ILIKE %s"
+                        params.append(table_name)
+
+                    query += " ORDER BY TABLE_NAME, ORDINAL_POSITION;"
+                    
+                    cs.execute(query, tuple(params))
+                    rows = cs.fetchall()
+                    
+                    for table, column in rows:
+                        if table not in schema_data:
+                            schema_data[table] = []
+                        schema_data[table].append(column)
+                
+                cs.close()
+                ctx.close()
+            
+            # Cache the result
+            try:
+                import json
+                redis_client = RedisClient.get_instance()
+                redis_client.setex(cache_key, 300, json.dumps(schema_data)) # 5 minutes TTL
+            except Exception as e:
+                logger.warning(f"Failed to cache schema for destination {destination_id}: {e}")
+
+            return schema_data
+
+        except Exception as e:
+            logger.error(f"Failed to fetch schema for destination {destination.name}: {e}")
+            raise ValueError(f"Failed to fetch schema: {str(e)}")
+

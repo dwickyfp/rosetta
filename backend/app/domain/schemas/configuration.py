@@ -43,3 +43,9 @@ class WALThresholds(BaseModel):
     error: int = Field(..., description="Error threshold in bytes")
     webhook_url: str = Field(default="", description="Webhook URL for alerts")
     notification_iteration: int = Field(default=3, description="Number of iterations before sending notification")
+
+
+class TestNotificationRequest(BaseModel):
+    """Schema for test notification request."""
+    
+    webhook_url: str = Field(default=None, description="Optional webhook URL to test")

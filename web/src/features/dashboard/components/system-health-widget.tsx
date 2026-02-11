@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { DashboardPanel } from "./dashboard-panel"
-import { Activity, Database, Server } from "lucide-react"
+import { Activity, Database, Server, Cpu } from "lucide-react"
 import { api } from "@/repo/client"
 
 interface HealthResponse {
@@ -11,6 +11,7 @@ interface HealthResponse {
     database: boolean
     redis: boolean
     wal_monitor: boolean
+    compute: boolean
   }
 }
 
@@ -23,7 +24,7 @@ export function SystemHealthWidget() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["system-health"],
     queryFn: getSystemHealth,
-    refetchInterval: 30000, // Check every 30s
+    refetchInterval: 5000, // Check every 5s
   })
 
   const StatusIndicator = ({ healthy }: { healthy?: boolean }) => (
@@ -56,6 +57,15 @@ export function SystemHealthWidget() {
             </div>
             <StatusIndicator healthy={data.checks.redis} />
           </div>
+
+          <div className="flex items-center justify-between p-2 rounded bg-muted/20 hover:bg-muted/40 transition-colors">
+            <div className="flex items-center space-x-2">
+              <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">Compute Node</span>
+            </div>
+            <StatusIndicator healthy={data.checks.compute} />
+          </div>
+
 
           <div className="flex items-center justify-between pt-2 px-1 border-t border-border/50">
             <span className="text-[10px] text-muted-foreground font-mono">v{data.version}</span>

@@ -191,3 +191,31 @@ async def duplicate_destination(
     """
     destination = service.duplicate_destination(destination_id)
     return DestinationResponse.from_orm(destination)
+
+
+@router.get(
+    "/{destination_id}/schema",
+    response_model=dict[str, List[str]],
+    summary="Get destination schema",
+    description="Get tables and columns from the active destination database",
+)
+async def get_destination_schema(
+    destination_id: int,
+    table: str | None = Query(None, description="Optional table name to filter"),
+    scope: str = Query("all", description="Scope of schema fetch (all, tables)"),
+    service: DestinationService = Depends(get_destination_service),
+) -> dict[str, List[str]]:
+    """
+    Get destination schema (tables and columns).
+
+    Args:
+        destination_id: Destination identifier
+        table: Optional table name to filter
+        scope: Scope of fetch ('all' = tables+columns, 'tables' = tables only)
+        service: Destination service instance
+
+    Returns:
+        Dictionary mapping table names to column lists
+    """
+    only_tables = scope == "tables"
+    return service.fetch_schema(destination_id, table_name=table, only_tables=only_tables)

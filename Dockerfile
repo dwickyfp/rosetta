@@ -29,11 +29,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY compute/requirements.txt ./
+# Copy uv binary
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Install dependencies
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Copy pyproject.toml and uv.lock
+COPY compute/pyproject.toml compute/uv.lock ./
+
+# Install dependencies using uv
+RUN uv sync --frozen --no-install-project
 
 
 # =============================================================================
@@ -102,8 +105,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy installed python dependencies
-COPY --from=compute-deps /install /usr/local
+# Copy virtual environment from compute-deps
+COPY --from=compute-deps /app/.venv /app/.venv
+
+# Enable virtual environment
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy compute source code
 COPY compute/ ./compute/
@@ -122,6 +128,13 @@ USER rosetta
 
 # Run the application
 CMD ["python", "-m", "compute.main"]
+
+# Expose API port
+EXPOSE 8001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
 
 # =============================================================================
 # STAGE 5: WEB (BACKEND + FRONTEND)

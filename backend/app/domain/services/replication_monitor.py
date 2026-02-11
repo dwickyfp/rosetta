@@ -77,7 +77,7 @@ class ReplicationMonitorService:
                     connect_timeout=self.settings.wal_monitor_timeout_seconds, # Reuse timeout setting
                 )
 
-                slot_name = f"supabase_etl_apply_{source.replication_id}"
+                slot_name = source.replication_name
                 
                 logger.debug(
                     "Checking replication status",

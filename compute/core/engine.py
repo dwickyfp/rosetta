@@ -9,20 +9,23 @@ from typing import Any, Optional
 
 from pydbzengine import DebeziumJsonEngine
 
-from compute.config import get_config
-from compute.core.models import Pipeline, DestinationType
-from compute.core.event_handler import CDCEventHandler
-from compute.core.repository import (
+from config import get_config
+from core.models import Pipeline, DestinationType
+from core.event_handler import CDCEventHandler
+from core.repository import (
     PipelineRepository,
     TableMetadataRepository,
     PipelineMetadataRepository,
 )
-from compute.core.exceptions import PipelineException
-from compute.sources.base import BaseSource
-from compute.sources.postgresql import PostgreSQLSource
-from compute.destinations.base import BaseDestination
-from compute.destinations.snowflake import SnowflakeDestination
-from compute.destinations.postgresql import PostgreSQLDestination
+from core.exceptions import PipelineException
+from core.error_sanitizer import sanitize_for_db, sanitize_for_log
+from core.dlq_manager import DLQManager
+from core.dlq_recovery import DLQRecoveryWorker
+from sources.base import BaseSource
+from sources.postgresql import PostgreSQLSource
+from destinations.base import BaseDestination
+from destinations.snowflake import SnowflakeDestination
+from destinations.postgresql import PostgreSQLDestination
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,10 @@ class PipelineEngine:
         self._engine: Optional[DebeziumJsonEngine] = None
         self._logger = logging.getLogger(f"{__name__}.Pipeline_{pipeline_id}")
         self._is_running = False
+
+        # DLQ components
+        self._dlq_manager: Optional[DLQManager] = None
+        self._dlq_recovery_worker: Optional[DLQRecoveryWorker] = None
 
     def _load_pipeline(self) -> Pipeline:
         """Load pipeline configuration from database."""
@@ -138,7 +145,7 @@ class PipelineEngine:
 
         Loads configuration and creates source/destination instances.
         Each destination is initialized independently - if one fails during init,
-        others can still be used.
+        others can still be used. If all fail, pipeline still runs and uses DLQ.
         """
         self._pipeline = self._load_pipeline()
         self._source = self._create_source(self._pipeline)
@@ -156,44 +163,79 @@ class PipelineEngine:
 
             try:
                 dest = self._create_destination(pd.destination.type, pd.destination)
-                dest.initialize()
-                self._destinations[pd.destination_id] = dest
-                successful_destinations += 1
 
-                # Clear any previous initialization errors
-                from compute.core.repository import PipelineDestinationRepository
+                # Try to initialize, but keep destination object even if it fails
+                try:
+                    dest.initialize()
+                    successful_destinations += 1
 
-                if pd.is_error:
-                    PipelineDestinationRepository.update_error(pd.id, False)
-                    self._logger.info(
-                        f"Cleared error state for destination {pd.destination.name}"
+                    # Clear any previous initialization errors
+                    from core.repository import PipelineDestinationRepository
+
+                    if pd.is_error:
+                        PipelineDestinationRepository.update_error(pd.id, False)
+                        self._logger.info(
+                            f"Cleared error state for destination {pd.destination.name}"
+                        )
+
+                except Exception as init_error:
+                    # Log initialization error but keep destination object for DLQ/recovery
+                    log_msg = f"Failed to initialize destination {pd.destination.name}: {sanitize_for_log(init_error)}"
+                    self._logger.warning(log_msg, exc_info=True)
+                    failed_destinations += 1
+
+                    # Update error state in database with sanitized message
+                    from core.repository import PipelineDestinationRepository
+
+                    db_error_msg = sanitize_for_db(
+                        init_error, pd.destination.name, pd.destination.type
+                    )
+                    PipelineDestinationRepository.update_error(
+                        pd.id, True, db_error_msg
                     )
 
+                # Add destination to registry regardless of initialization status
+                # This allows DLQ recovery worker to track and retry connection
+                self._destinations[pd.destination_id] = dest
+
             except Exception as e:
-                # Log error but continue with other destinations
-                error_msg = (
-                    f"Failed to initialize destination {pd.destination.name}: {str(e)}"
-                )
-                self._logger.error(error_msg, exc_info=True)
+                # Failed to even create destination object
+                log_msg = f"Failed to create destination {pd.destination.name}: {sanitize_for_log(e)}"
+                self._logger.error(log_msg, exc_info=True)
                 failed_destinations += 1
 
-                # Update error state in database
-                from compute.core.repository import PipelineDestinationRepository
+                # Update error state in database with sanitized message
+                from core.repository import PipelineDestinationRepository
 
-                PipelineDestinationRepository.update_error(pd.id, True, error_msg)
+                db_error_msg = sanitize_for_db(
+                    e, pd.destination.name, pd.destination.type
+                )
+                PipelineDestinationRepository.update_error(pd.id, True, db_error_msg)
 
+        # Log status but don't fail if no destinations initialized
+        # Pipeline will use DLQ for all writes until destinations recover
         if successful_destinations == 0:
-            raise PipelineException(
-                f"Pipeline {self._pipeline.name} has no working destinations. "
-                f"All {failed_destinations} destination(s) failed to initialize.",
-                {"pipeline_id": self._pipeline_id},
+            self._logger.warning(
+                f"Pipeline {self._pipeline.name} starting with NO working destinations. "
+                f"All {failed_destinations} destination(s) failed to initialize. "
+                f"CDC events will be stored in DLQ until destinations recover."
+            )
+        else:
+            self._logger.info(
+                f"Pipeline {self._pipeline.name} initialized: "
+                f"{successful_destinations} destination(s) ready, "
+                f"{failed_destinations} destination(s) failed"
             )
 
-        self._logger.info(
-            f"Pipeline {self._pipeline.name} initialized: "
-            f"{successful_destinations} destination(s) ready, "
-            f"{failed_destinations} destination(s) failed"
+        # Initialize DLQ manager
+        config = get_config()
+        self._dlq_manager = DLQManager(
+            redis_url=config.dlq.redis_url,
+            key_prefix=config.dlq.key_prefix,
+            max_stream_length=config.dlq.max_stream_length,
+            consumer_group=config.dlq.consumer_group,
         )
+        self._logger.info(f"DLQ manager initialized with Redis")
 
     def run(self) -> None:
         """
@@ -223,11 +265,30 @@ class PipelineEngine:
             offset_file=offset_file,
         )
 
-        # Create event handler
+        # Create event handler with DLQ manager
         handler = CDCEventHandler(
             pipeline=self._pipeline,
             destinations=self._destinations,
+            dlq_manager=self._dlq_manager,
         )
+
+        # Start DLQ recovery worker
+        if self._dlq_manager:
+            config = get_config()
+            check_interval = config.dlq.get("check_interval", 30)
+            batch_size = config.dlq.get("batch_size", 100)
+
+            self._dlq_recovery_worker = DLQRecoveryWorker(
+                pipeline=self._pipeline,
+                destinations=self._destinations,
+                dlq_manager=self._dlq_manager,
+                check_interval=check_interval,
+                batch_size=batch_size,
+                max_retry_count=config.dlq.max_retry_count,
+                max_age_days=config.dlq.max_age_days,
+            )
+            self._dlq_recovery_worker.start()
+            self._logger.info("DLQ recovery worker started")
 
         # Update metadata
         PipelineMetadataRepository.upsert(self._pipeline_id, "RUNNING")
@@ -240,8 +301,11 @@ class PipelineEngine:
             self._engine = DebeziumJsonEngine(properties=props, handler=handler)
             self._engine.run()
         except Exception as e:
-            self._logger.error(f"Pipeline {self._pipeline.name} failed: {e}")
-            PipelineMetadataRepository.upsert(self._pipeline_id, "ERROR", str(e))
+            self._logger.error(
+                f"Pipeline {self._pipeline.name} failed: {sanitize_for_log(e)}"
+            )
+            db_error_msg = sanitize_for_db(e, self._pipeline.name, "PIPELINE")
+            PipelineMetadataRepository.upsert(self._pipeline_id, "ERROR", db_error_msg)
             raise
         finally:
             self._is_running = False
@@ -249,6 +313,23 @@ class PipelineEngine:
     def stop(self) -> None:
         """Stop the pipeline engine."""
         self._is_running = False
+
+        # Stop DLQ recovery worker
+        if self._dlq_recovery_worker:
+            try:
+                self._dlq_recovery_worker.stop()
+                self._logger.info("DLQ recovery worker stopped")
+            except Exception as e:
+                self._logger.warning(f"Error stopping DLQ recovery worker: {e}")
+            self._dlq_recovery_worker = None
+
+        # Close DLQ manager
+        if self._dlq_manager:
+            try:
+                self._dlq_manager.close_all()
+            except Exception as e:
+                self._logger.warning(f"Error closing DLQ manager: {e}")
+            self._dlq_manager = None
 
         # Close destinations
         for dest in self._destinations.values():

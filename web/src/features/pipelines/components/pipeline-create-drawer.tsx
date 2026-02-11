@@ -1,7 +1,6 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useNavigate } from '@tanstack/react-router'
 import {
   Sheet,
   SheetClose,
@@ -57,7 +56,6 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
   // Fetch sources, destinations, and existing pipelines for validation
   const { data: sources } = useQuery({ queryKey: ['sources'], queryFn: sourcesRepo.getAll })
   const { data: pipelines } = useQuery({ queryKey: ['pipelines'], queryFn: pipelinesRepo.getAll })
-  const navigate = useNavigate()
 
   const usedSourceIds = new Set(pipelines?.pipelines.map((p) => p.source_id))
 
@@ -67,12 +65,11 @@ export function PipelineCreateDrawer({ open, setOpen }: PipelineCreateDrawerProp
             name: values.name,
             source_id: parseInt(values.source_id),
         }),
-    onSuccess: async (data) => {
+    onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: ['pipelines'] })
         setOpen(false)
         form.reset()
         toast.success('Pipeline created successfully')
-        navigate({ to: '/pipelines/$pipelineId/flow', params: { pipelineId: data.id.toString() } })
     },
     onError: (error: any) => {
         toast.error(error.response?.data?.message || 'Failed to create pipeline')

@@ -10,7 +10,7 @@ import { JobStatusCard } from './components/job-status-card'
 import { SourceHealthCard } from './components/source-health-card'
 import { TopTablesChart } from './components/top-tables-chart'
 import { ActivityFeed } from './components/activity-feed'
-import { ReplicationLagChart } from './components/replication-lag-chart'
+import { BackfillStatsCard } from './components/backfill-stats-card'
 import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
 import {
@@ -146,7 +146,7 @@ export function Dashboard() {
             className="col-span-24 md:col-span-12 lg:col-span-6 h-32"
           >
             <div className='text-3xl font-bold font-mono'>
-              ${summary?.credits?.month_total.toFixed(2) || '0.00'}
+              ${summary?.credits?.month_total.toFixed(8) || '0.00000000'}
             </div>
           </DashboardPanel>
 
@@ -224,10 +224,10 @@ export function Dashboard() {
 
           {/* Row 3: Secondary Charts & Feed */}
           <div className="col-span-24 lg:col-span-16">
-            <ReplicationLagChart />
+            <ActivityFeed />
           </div>
           <div className="col-span-24 lg:col-span-8">
-            <ActivityFeed />
+            <BackfillStatsCard data={summary?.backfills} />
           </div>
 
           {/* Row 4: System Monitor Status (Bottom Row, equal width 4 cols) */}

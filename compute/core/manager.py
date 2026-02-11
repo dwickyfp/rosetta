@@ -14,9 +14,9 @@ from typing import Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from compute.core.engine import PipelineEngine
-from compute.core.repository import PipelineRepository, PipelineMetadataRepository
-from compute.core.database import init_connection_pool, close_connection_pool
+from core.engine import PipelineEngine
+from core.repository import PipelineRepository, PipelineMetadataRepository
+from core.database import init_connection_pool, close_connection_pool
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +108,16 @@ class PipelineManager:
     - Handles pipeline deletions
     """
 
-    def __init__(self):
+    def __init__(self, register_signals: bool = True):
         """Initialize pipeline manager."""
         self._processes: dict[int, PipelineProcess] = {}
         self._shutdown_event = Event()
         self._logger = logging.getLogger(__name__)
 
-        # Register signal handlers
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # Register signal handlers if requested
+        if register_signals:
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
@@ -327,17 +328,26 @@ class PipelineManager:
 
             # Check for pipelines to START
             for pipeline in db_pipelines:
-                if pipeline.status == "START":
+                if pipeline.status in ("START", "REFRESH"):
                     if pipeline.id not in self._processes:
                         self._logger.info(
-                            f"Found new pipeline to start: {pipeline.name}"
+                            f"Found new pipeline to start: {pipeline.name} (Status: {pipeline.status})"
                         )
                         self.start_pipeline(pipeline.id, pipeline.updated_at)
+                        
+                        # Reset status to START if it was REFRESH
+                        if pipeline.status == "REFRESH":
+                            PipelineRepository.update_status(pipeline.id, "START")
+
                     elif not self._processes[pipeline.id].is_alive:
                         self._logger.warning(
-                            f"Pipeline {pipeline.name} is START but process died. Restarting..."
+                            f"Pipeline {pipeline.name} is {pipeline.status} but process died. Restarting..."
                         )
                         self.restart_pipeline(pipeline.id, pipeline.updated_at)
+                        
+                        # Reset status to START if it was REFRESH
+                        if pipeline.status == "REFRESH":
+                            PipelineRepository.update_status(pipeline.id, "START")
 
         except Exception as e:
             self._logger.error(f"Error syncing pipeline states: {e}", exc_info=True)

@@ -29,6 +29,7 @@ class NotificationLog(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     iteration_check: Mapped[int] = mapped_column(Integer, default=0)
     is_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_force_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

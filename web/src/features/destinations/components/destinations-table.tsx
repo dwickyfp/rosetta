@@ -93,7 +93,7 @@ export function DestinationsTable({ data }: DataTableProps) {
                 table={table}
                 searchPlaceholder='Filter by name or account...'
             />
-            <div className='rounded-md border'>
+            <div className='rounded-md border border-border/50'>
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (

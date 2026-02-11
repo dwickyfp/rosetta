@@ -12,10 +12,12 @@ from contextlib import contextmanager
 import duckdb
 import psycopg2
 
-from compute.destinations.base import BaseDestination, CDCRecord
-from compute.core.models import Destination, PipelineDestinationTableSync
-from compute.core.exceptions import DestinationException
-from compute.core.security import decrypt_value
+from destinations.base import BaseDestination, CDCRecord
+from core.models import Destination, PipelineDestinationTableSync
+from core.exceptions import DestinationException
+from core.security import decrypt_value
+from core.notification import NotificationLogRepository, NotificationLogCreate
+from core.error_sanitizer import sanitize_for_db
 
 logger = logging.getLogger(__name__)
 
@@ -97,12 +99,54 @@ class PostgreSQLDestination(BaseDestination):
         """Get PostgreSQL connection string for DuckDB."""
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
-    def initialize(self) -> None:
+    def _check_connection_health(self) -> bool:
+        """
+        Check if existing PostgreSQL connection is healthy.
+
+        Returns:
+            True if connection is healthy and usable
+        """
+        if not self._pg_conn:
+            return False
+
+        try:
+            # Check if connection is closed
+            if self._pg_conn.closed:
+                self._logger.debug("PostgreSQL connection is closed")
+                return False
+
+            # Execute simple query to verify connection is alive
+            with self._pg_conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            return True
+
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            self._logger.debug(f"PostgreSQL connection health check failed: {e}")
+            return False
+        except Exception as e:
+            self._logger.warning(f"Unexpected error in connection health check: {e}")
+            return False
+
+    def initialize(self, force_reconnect: bool = False) -> None:
         """
         Initialize DuckDB connection with PostgreSQL extension.
+
+        Args:
+            force_reconnect: Force reconnection even if already initialized
         """
-        if self._is_initialized:
-            return
+        # If already initialized and connections are healthy, skip
+        if self._is_initialized and not force_reconnect:
+            # Check connection health
+            if self._check_connection_health():
+                return
+            else:
+                # Connection is stale/closed, need to reconnect
+                self._logger.info(
+                    f"Detected stale connection for {self._config.name}, reconnecting..."
+                )
+                self._cleanup_connections()
+                self._is_initialized = False
 
         try:
             # Create in-memory DuckDB connection
@@ -137,8 +181,10 @@ class PostgreSQLDestination(BaseDestination):
             )
 
         except Exception as e:
+            # Sanitize error message to avoid exposing credentials
+            sanitized_msg = sanitize_for_db(e, self._config.name, "POSTGRES")
             raise DestinationException(
-                f"Failed to initialize PostgreSQL destination: {e}",
+                sanitized_msg,
                 {"destination_id": self._config.id},
             )
 
@@ -380,39 +426,40 @@ class PostgreSQLDestination(BaseDestination):
     ) -> None:
         """
         Insert CDC records into DuckDB table with original table name.
-        
+
         Keeps raw Debezium-encoded values (dates as integers, etc.) to avoid
-        premature type conversion. These will be properly converted when 
+        premature type conversion. These will be properly converted when
         merging into PostgreSQL.
-        
+
         Args:
             records: CDC records to insert
             table_name: Original source table name (e.g., 'tbl_sales')
         """
         if not records:
             return
-        
+
         # Sanitize table name for DuckDB
-        safe_table_name = table_name.replace('.', '_').replace('-', '_')
-        
+        safe_table_name = table_name.replace(".", "_").replace("-", "_")
+
         # Drop existing table if exists
         self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
-        
+
         # Convert records to list of dicts for DuckDB
         # DuckDB can infer schema from Python dicts
         data = [record.value for record in records]
-        
+
         # Use DuckDB's automatic table creation from Python objects
         # This preserves types better than manual VARCHAR insertion
         import pandas as pd
+
         df = pd.DataFrame(data)
-        
+
         # Register the DataFrame as a DuckDB table
-        self._duckdb_conn.execute(
-            f"CREATE TABLE {safe_table_name} AS SELECT * FROM df"
+        self._duckdb_conn.execute(f"CREATE TABLE {safe_table_name} AS SELECT * FROM df")
+
+        self._logger.debug(
+            f"Inserted {len(records)} records into DuckDB table '{safe_table_name}'"
         )
-        
-        self._logger.debug(f"Inserted {len(records)} records into DuckDB table '{safe_table_name}'")
 
     def _apply_filters_in_duckdb(
         self,
@@ -421,34 +468,34 @@ class PostgreSQLDestination(BaseDestination):
     ) -> None:
         """
         Apply filter SQL directly in DuckDB by deleting non-matching rows.
-        
+
         Filter format: "column_1 = '11';column_2>1"
         Converts to: WHERE column_1 = '11' AND column_2>1
-        
+
         Args:
             table_name: DuckDB table name
             filter_sql: Semicolon-separated filter conditions
         """
         if not filter_sql:
             return
-        
+
         # Sanitize table name
-        safe_table_name = table_name.replace('.', '_').replace('-', '_')
-        
+        safe_table_name = table_name.replace(".", "_").replace("-", "_")
+
         # Parse filter conditions
         filters = self._parse_filter_sql(filter_sql)
         if not filters:
             return
-        
+
         # Build WHERE clause (AND all conditions together)
         where_conditions = " AND ".join([f"({condition})" for condition in filters])
-        
+
         # Delete rows that DON'T match the filter (keep only matching rows)
         delete_sql = f"""
             DELETE FROM {safe_table_name}
             WHERE NOT ({where_conditions})
         """
-        
+
         self._logger.debug(f"Applying filter in DuckDB: {delete_sql}")
         self._duckdb_conn.execute(delete_sql)
 
@@ -459,20 +506,20 @@ class PostgreSQLDestination(BaseDestination):
     ) -> list[dict]:
         """
         Execute custom SQL on DuckDB table.
-        
+
         User can directly reference table name in their SQL.
         If table name has dots (schema.table), it's already sanitized to underscores.
-        
+
         Args:
             table_name: DuckDB table name (e.g., 'tbl_sales')
             custom_sql: User's custom SQL query
-            
+
         Returns:
             Transformed records as dicts
         """
         # Sanitize table name
-        safe_table_name = table_name.replace('.', '_').replace('-', '_')
-        
+        safe_table_name = table_name.replace(".", "_").replace("-", "_")
+
         if not custom_sql:
             # Return all rows from table
             sql = f"SELECT * FROM {safe_table_name}"
@@ -481,23 +528,23 @@ class PostgreSQLDestination(BaseDestination):
             # This allows users to write: SELECT * FROM tbl_sales
             # Even if the actual DuckDB table is tbl_sales
             sql = custom_sql.replace(table_name, safe_table_name)
-            
+
             # Also handle case where table name has schema prefix
-            if '.' in table_name:
-                bare_name = table_name.split('.')[-1]
+            if "." in table_name:
+                bare_name = table_name.split(".")[-1]
                 sql = sql.replace(bare_name, safe_table_name)
-        
+
         self._logger.debug(f"Executing custom SQL: {sql}")
         result = self._duckdb_conn.execute(sql).fetchall()
-        
+
         # Get column names
         result_columns = [desc[0] for desc in self._duckdb_conn.description]
-        
+
         # Convert to dicts
         transformed = []
         for row in result:
             transformed.append(dict(zip(result_columns, row)))
-        
+
         return transformed
 
     def _apply_filters(
@@ -507,7 +554,7 @@ class PostgreSQLDestination(BaseDestination):
     ) -> list[CDCRecord]:
         """
         Apply filter conditions to records (legacy Python-based filtering).
-        
+
         DEPRECATED: Use _apply_filters_in_duckdb instead.
 
         Args:
@@ -605,7 +652,7 @@ class PostgreSQLDestination(BaseDestination):
     ) -> list[dict]:
         """
         Execute custom SQL transformation on records (legacy method).
-        
+
         DEPRECATED: Use _execute_custom_sql_from_duckdb instead.
 
         Creates a temporary table with records, then executes the custom SQL.
@@ -949,7 +996,7 @@ class PostgreSQLDestination(BaseDestination):
 
         source_table = table_sync.table_name  # e.g., 'tbl_sales'
         target_table = table_sync.table_name_target
-        safe_table_name = source_table.replace('.', '_').replace('-', '_')
+        safe_table_name = source_table.replace(".", "_").replace("-", "_")
 
         try:
             # Step 1: Insert batch into DuckDB with original table name
@@ -961,8 +1008,7 @@ class PostgreSQLDestination(BaseDestination):
 
             # Step 3: Execute custom SQL or select all
             transformed = self._execute_custom_sql_from_duckdb(
-                source_table,
-                table_sync.custom_sql
+                source_table, table_sync.custom_sql
             )
 
             # Validation: Filter out rows where all values are None
@@ -975,16 +1021,18 @@ class PostgreSQLDestination(BaseDestination):
                     valid_rows.append(row)
                 else:
                     skipped_count += 1
-            
+
             if skipped_count > 0:
                 self._logger.warning(
                     f"Skipped {skipped_count} rows with all null values for {target_table}"
                 )
-                
+
             if not valid_rows:
-                self._logger.info(f"No valid rows to write to {target_table} (all rows had null values)")
+                self._logger.info(
+                    f"No valid rows to write to {target_table} (all rows had null values)"
+                )
                 return 0
-                
+
             transformed = valid_rows
 
             # Get primary key columns from first record
@@ -996,12 +1044,73 @@ class PostgreSQLDestination(BaseDestination):
             self._logger.debug(f"Wrote {written} records to {target_table}")
             return written
 
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # Connection error (OperationalError) or closed connection (InterfaceError)
+            error_msg = str(e)
+            self._logger.error(f"PostgreSQL sync failed: {error_msg}")
+
+            # Mark connection as unhealthy
+            self._is_initialized = False
+
+            # Force send notification
+            try:
+                notification_repo = NotificationLogRepository()
+                notification_repo.upsert_notification_by_key(
+                    NotificationLogCreate(
+                        key_notification=f"destination_connection_error_{self.destination_id}",
+                        title=f"PostgreSQL Connection Error",
+                        message=f"Failed to connect to PostgreSQL destination {self._config.name}: {error_msg}",
+                        type="ERROR",
+                        is_force_sent=True,
+                    )
+                )
+            except Exception as notify_error:
+                self._logger.error(f"Failed to log notification: {notify_error}")
+
+            # Wrap in DestinationException for proper DLQ handling
+            raise DestinationException(
+                f"PostgreSQL sync failed: {error_msg}",
+                {"destination_id": self._config.id},
+            )
+
+        except Exception as e:
+            # Notify on error
+            try:
+                notification_repo = NotificationLogRepository()
+
+                # Check for connection issues in error message if generic exception caught
+                error_msg = str(e).lower()
+                is_force_sent = (
+                    "connection" in error_msg
+                    or "refused" in error_msg
+                    or "timeout" in error_msg
+                    or "operationalerror" in error_msg
+                )
+
+                notification_repo.upsert_notification_by_key(
+                    NotificationLogCreate(
+                        key_notification=f"destination_error_{self.destination_id}_{source_table}",
+                        title=f"PostgreSQL Sync Error: {target_table}",
+                        message=f"Failed to sync table {source_table} to {target_table}: {str(e)}",
+                        type="ERROR",
+                        is_force_sent=is_force_sent,
+                    )
+                )
+            except Exception as notify_error:
+                self._logger.error(f"Failed to log notification: {notify_error}")
+
+            # Re-raise original exception
+            raise e
+
         finally:
             # Step 5: Cleanup DuckDB table
             try:
-                self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
+                if self._duckdb_conn:
+                    self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
             except Exception as e:
-                self._logger.warning(f"Failed to cleanup DuckDB table {safe_table_name}: {e}")
+                self._logger.warning(
+                    f"Failed to cleanup DuckDB table {safe_table_name}: {e}"
+                )
 
     def create_table_if_not_exists(
         self,
@@ -1102,6 +1211,22 @@ class PostgreSQLDestination(BaseDestination):
 
         return columns
 
+    def _cleanup_connections(self) -> None:
+        """Internal method to cleanup connections without logging."""
+        if self._duckdb_conn:
+            try:
+                self._duckdb_conn.close()
+            except Exception:
+                pass
+            self._duckdb_conn = None
+
+        if self._pg_conn:
+            try:
+                self._pg_conn.close()
+            except Exception:
+                pass
+            self._pg_conn = None
+
     def close(self) -> None:
         """Close DuckDB and PostgreSQL connections."""
         if self._duckdb_conn:
@@ -1120,3 +1245,36 @@ class PostgreSQLDestination(BaseDestination):
 
         self._is_initialized = False
         self._logger.info(f"PostgreSQL destination closed: {self._config.name}")
+
+    def test_connection(self) -> bool:
+        """
+        Test if PostgreSQL connection is healthy.
+
+        Performs a lightweight connection test without full initialization.
+        Used by DLQ recovery worker to check destination health.
+
+        Returns:
+            True if connection is healthy
+        """
+        try:
+            # Quick connection test
+            test_conn = psycopg2.connect(
+                host=self.host,
+                port=self.port,
+                dbname=self.database,
+                user=self.user,
+                password=self.password,
+                connect_timeout=5,
+            )
+
+            # Execute simple query to verify connection
+            with test_conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+
+            test_conn.close()
+            return True
+
+        except Exception as e:
+            self._logger.debug(f"PostgreSQL connection test failed: {e}")
+            return False

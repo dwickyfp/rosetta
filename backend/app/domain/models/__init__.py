@@ -15,6 +15,7 @@ from app.domain.models.rosetta_setting_configuration import RosettaSettingConfig
 from app.domain.models.credit_snowflake_monitoring import CreditSnowflakeMonitoring
 from app.domain.models.table_metadata import TableMetadata
 from app.domain.models.job_metric import JobMetric
+from app.domain.models.queue_backfill import QueueBackfillData, BackfillStatus
 
 __all__ = [
     "Base",
@@ -29,4 +30,6 @@ __all__ = [
     "CreditSnowflakeMonitoring",
     "TableMetadata",
     "JobMetric",
+    "QueueBackfillData",
+    "BackfillStatus",
 ]

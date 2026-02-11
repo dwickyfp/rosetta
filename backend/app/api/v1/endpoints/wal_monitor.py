@@ -199,35 +199,7 @@ async def list_wal_monitors(
                 monitor.wal_threshold_status = "WARNING"
             else:
                 monitor.wal_threshold_status = "ERROR"
-            
-            # Send webhook notification if in WARNING or ERROR and webhook URL is set
-            if monitor.wal_threshold_status in ["WARNING", "ERROR"] and thresholds.webhook_url:
-                try:
-                    alert_name = f"WAL Size Alert - {monitor.wal_threshold_status}"
-                    alert_message = (
-                        f"Source #{monitor.source_id} ({monitor.source.name if monitor.source else 'Unknown'}) "
-                        f"has WAL size of {monitor.total_wal_size} ({wal_size_bytes} bytes). "
-                        f"Status: {monitor.wal_threshold_status}"
-                    )
-                    
-                    payload = {
-                        "ALERT_NAME": alert_name,
-                        "ALERT_MESSAGE": alert_message
-                    }
-                    
-                    async with httpx.AsyncClient(timeout=5.0) as client:
-                        await client.post(thresholds.webhook_url, json=payload)
-                    
-                    logger.info(
-                        f"Webhook notification sent for {monitor.wal_threshold_status} status",
-                        extra={"source_id": monitor.source_id, "wal_size": wal_size_bytes}
-                    )
-                except Exception as webhook_error:
-                    # Log but don't fail the request if webhook fails
-                    logger.warning(
-                        f"Failed to send webhook notification",
-                        extra={"error": str(webhook_error), "source_id": monitor.source_id}
-                    )
+    
         
         return WALMonitorListResponse(
             monitors=monitors,

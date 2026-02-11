@@ -26,7 +26,7 @@ export function DashboardPanel({
             )}
         >
             {(title || headerAction) && (
-                <div className='flex items-center justify-between border-b bg-muted/20 px-4 py-2'>
+                <div className='flex items-center justify-between border-b border-border/50 px-4 py-3'>
                     <div className='flex flex-col gap-0.5'>
                         {title && (
                             <h3 className='font-semibold leading-none tracking-tight text-sm'>

@@ -17,4 +17,9 @@ export const configurationRepo = {
         const { data } = await api.put<WALThresholdsConfig>('/configuration/wal-thresholds', config)
         return data
     },
+
+    testNotification: async (webhook_url?: string) => {
+        const { data } = await api.post('/configuration/wal-thresholds/test', { webhook_url })
+        return data
+    },
 }

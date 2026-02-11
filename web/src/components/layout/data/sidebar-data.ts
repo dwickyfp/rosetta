@@ -6,6 +6,7 @@ import {
   Command,
   Database,
   Activity,
+  BellRing,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -69,6 +70,11 @@ export const sidebarData: SidebarData = {
               title: 'WAL Monitor',
               url: '/settings/wal-monitor',
               icon: Activity,
+            },
+            {
+              title: 'Notification Setting',
+              url: '/settings/notifications',
+              icon: BellRing,
             },
           ],
         },

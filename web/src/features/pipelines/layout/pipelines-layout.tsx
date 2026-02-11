@@ -1,6 +1,6 @@
 import { PipelinesSidebar } from "@/features/pipelines/components/pipelines-sidebar"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { type PanelImperativeHandle } from "react-resizable-panels"
 import { ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -12,17 +12,36 @@ interface PipelinesLayoutProps {
 export function PipelinesLayout({ children }: PipelinesLayoutProps) {
     const [isCollapsed, setIsCollapsed] = useState(false)
     const [isAnimating, setIsAnimating] = useState(false)
+    const [containerWidth, setContainerWidth] = useState(0)
+    const containerRef = useRef<HTMLDivElement>(null)
     const panelRef = useRef<PanelImperativeHandle>(null)
+
+    useEffect(() => {
+        if (!containerRef.current) return
+
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0]
+            if (entry) {
+                setContainerWidth(entry.contentRect.width)
+            }
+        })
+
+        observer.observe(containerRef.current)
+        return () => observer.disconnect()
+    }, [])
+
+    const minSizePercentage = containerWidth > 0 ? (100 / containerWidth) * 100 : 0
+    const maxSizePercentage = 360 // Default to 30% if width unknown
 
     const handleExpand = () => {
         setIsAnimating(true)
-        panelRef.current?.resize(360)
+        panelRef.current?.resize(maxSizePercentage)
         // Disable animation after it completes
         setTimeout(() => setIsAnimating(false), 310)
     }
 
     return (
-        <div className="relative h-full w-full">
+        <div ref={containerRef} className="relative h-full w-full">
             {isCollapsed && (
                 <button
                     onClick={handleExpand}
@@ -41,12 +60,12 @@ export function PipelinesLayout({ children }: PipelinesLayoutProps) {
             >
                 <ResizablePanel
                     panelRef={panelRef}
-                    defaultSize={360}
-                    minSize={0}
-                    maxSize={360}
+                    defaultSize={maxSizePercentage}
+                    minSize={minSizePercentage}
+                    maxSize={maxSizePercentage}
                     collapsible
-                    onResize={(size: any) => {
-                        setIsCollapsed(size <= 50)
+                    onResize={(size) => {
+                        setIsCollapsed(size.asPercentage === 0)
                     }}
                 >
                     <PipelinesSidebar />

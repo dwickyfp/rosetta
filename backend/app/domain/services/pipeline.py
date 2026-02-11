@@ -39,6 +39,22 @@ class PipelineService:
         self.db = db
         self.repository = PipelineRepository(db)
 
+    def mark_ready_for_refresh(self, pipeline_id: int) -> None:
+        """
+        Mark pipeline as ready for refresh.
+        
+        Args:
+            pipeline_id: Pipeline identifier
+        """
+        try:
+            pipeline = self.repository.get_by_id(pipeline_id)
+            pipeline.ready_refresh = True
+            self.db.commit()
+            logger.info(f"Marked pipeline {pipeline_id} as ready for refresh")
+        except Exception as e:
+            logger.error(f"Failed to mark pipeline {pipeline_id} for refresh: {e}")
+
+
     def create_pipeline(self, pipeline_data: PipelineCreate) -> Pipeline:
         """
         Create a new pipeline with associated metadata.
@@ -115,6 +131,9 @@ class PipelineService:
         self.db.commit()
         self.db.refresh(pipeline)
 
+        # Mark for refresh
+        self.mark_ready_for_refresh(pipeline_id)
+
         return self.repository.get_by_id_with_relations(pipeline_id)
 
     def remove_pipeline_destination(self, pipeline_id: int, destination_id: int) -> Pipeline:
@@ -154,6 +173,9 @@ class PipelineService:
         self.db.delete(existing)
         self.db.commit()
         self.db.refresh(pipeline)
+
+        # Mark for refresh
+        self.mark_ready_for_refresh(pipeline_id)
 
         return self.repository.get_by_id_with_relations(pipeline_id)
 
@@ -381,6 +403,9 @@ class PipelineService:
             "Pipeline updated successfully",
             extra={"pipeline_id": updated_pipeline.id, "name": updated_pipeline.name},
         )
+
+        # Mark for refresh
+        self.mark_ready_for_refresh(pipeline_id)
 
         return updated_pipeline
 
@@ -1309,6 +1334,10 @@ class PipelineService:
             
             self.db.commit()
             self.db.refresh(existing)
+            
+            # Mark for refresh
+            self.mark_ready_for_refresh(pipeline_id)
+            
             return existing
         else:
             # Create NEW sync (Branch)
@@ -1329,6 +1358,10 @@ class PipelineService:
             self.db.add(new_sync)
             self.db.commit()
             self.db.refresh(new_sync)
+            
+            # Mark for refresh
+            self.mark_ready_for_refresh(pipeline_id)
+            
             return new_sync
 
     def save_table_syncs_bulk(
@@ -1390,6 +1423,9 @@ class PipelineService:
         if sync:
             self.db.delete(sync)
             self.db.commit()
+            
+            # Mark for refresh
+            self.mark_ready_for_refresh(pipeline_id)
 
     def delete_table_sync_by_id(
         self, pipeline_id: int, pipeline_destination_id: int, sync_config_id: int
@@ -1433,6 +1469,9 @@ class PipelineService:
 
         self.db.delete(sync)
         self.db.commit()
+
+        # Mark for refresh
+        self.mark_ready_for_refresh(pipeline_id)
 
     def init_snowflake_table(
         self, pipeline_id: int, pipeline_destination_id: int, table_name: str

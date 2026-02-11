@@ -8,7 +8,15 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from zoneinfo import ZoneInfo
 from app.domain.models.base import Base, TimestampMixin
@@ -82,6 +90,13 @@ class Pipeline(Base, TimestampMixin):
         comment="Pipeline operational status: START, PAUSE, or REFRESH",
     )
 
+    ready_refresh: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Flag indicating pipeline needs refresh due to configuration changes",
+    )
+
     # Relationships
     source: Mapped["Source"] = relationship(
         "Source", back_populates="pipelines", lazy="selectin"
@@ -113,6 +128,12 @@ class Pipeline(Base, TimestampMixin):
 
     data_flow_records: Mapped[list["DataFlowRecordMonitoring"]] = relationship(
         "DataFlowRecordMonitoring",
+        back_populates="pipeline",
+        cascade="all, delete-orphan",
+    )
+
+    backfill_jobs: Mapped[list["QueueBackfillData"]] = relationship(
+        "QueueBackfillData",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
@@ -383,7 +404,7 @@ class PipelineMetadata(Base, TimestampMixin):
     def set_running(self) -> None:
         """Set status to RUNNING."""
         self.status = PipelineMetadataStatus.RUNNING.value
-        self.last_start_at = datetime.now(ZoneInfo('Asia/Jakarta'))
+        self.last_start_at = datetime.now(ZoneInfo("Asia/Jakarta"))
 
     def set_paused(self) -> None:
         """Set status to PAUSED."""
@@ -398,7 +419,7 @@ class PipelineMetadata(Base, TimestampMixin):
         """
         self.status = PipelineMetadataStatus.ERROR.value
         self.last_error = error_message
-        self.last_error_at = datetime.now(ZoneInfo('Asia/Jakarta'))
+        self.last_error_at = datetime.now(ZoneInfo("Asia/Jakarta"))
 
     def clear_error(self) -> None:
         """Clear error state and set to RUNNING."""

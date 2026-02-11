@@ -176,9 +176,9 @@ export function SourceDetailsSchemaDrawer({
                                 </div>
                             ) : (
                                 <div className="flex-1 flex flex-col min-h-0 p-6">
-                                    <div className="rounded-md border bg-background overflow-auto shadow-sm max-h-[600px]">
+                                    <div className="rounded-md border border-border/50 bg-background overflow-auto shadow-sm max-h-[600px]">
                                         <Table>
-                                            <TableHeader className="bg-muted/30 sticky top-0 z-10 shadow-sm backdrop-blur-sm">
+                                            <TableHeader className="sticky top-0 z-10 shadow-sm backdrop-blur-sm">
                                                 <TableRow>
                                                     <TableHead className="w-[30%] pl-6">Column Name</TableHead>
                                                     <TableHead className="w-[20%]">Type</TableHead>
@@ -190,7 +190,7 @@ export function SourceDetailsSchemaDrawer({
                                             <TableBody>
                                                 {filteredSchema && filteredSchema.length > 0 ? (
                                                     filteredSchema.map((col, index) => (
-                                                        <TableRow key={index} className="hover:bg-muted/50">
+                                                        <TableRow key={index}>
                                                             <TableCell className='font-medium pl-6'>
                                                                 <div className="flex items-center gap-2">
                                                                     {col.is_primary_key && (

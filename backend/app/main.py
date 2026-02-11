@@ -12,6 +12,9 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import httpx
+from datetime import datetime
+
 
 from app import __version__
 from app.api.v1 import api_router
@@ -211,6 +214,25 @@ async def root():
     }
 
 
+async def check_compute_health() -> bool:
+    """
+    Check compute node health.
+    """
+    url = f"{settings.compute_node_url}/health"
+    try:
+        # TIMEOUT INCREASED to 5.0s to avoid flakiness
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            logger.info(f"Checking compute health at: {url}")
+            response = await client.get(url)
+            is_healthy = response.status_code == 200 and response.json().get("status") == "healthy"
+            if not is_healthy:
+                logger.warning(f"Compute health check returned {response.status_code}: {response.text}")
+            return is_healthy
+    except Exception as e:
+        logger.error(f"Compute health check failed for {url}: {e.__class__.__name__}: {e}")
+        return False
+
+
 # Health check endpoint (outside versioned API for monitoring)
 @app.get(
     "/health",
@@ -224,13 +246,21 @@ async def health_check():
 
     Used by load balancers and monitoring systems.
     """
-    db_healthy = await check_database_health()
+    db_healthy = await asyncio.to_thread(check_database_health)
+    compute_healthy = await check_compute_health()
+    
+    # Overall is healthy if DB is healthy. Compute can be down without affecting API.
+    # But usually we want to know if everything is up.
     overall_status = "healthy" if db_healthy else "unhealthy"
 
     return {
         "status": overall_status,
         "version": __version__,
-        "checks": {"database": db_healthy},
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {
+            "database": db_healthy,
+            "compute": compute_healthy,
+        },
     }
 
 

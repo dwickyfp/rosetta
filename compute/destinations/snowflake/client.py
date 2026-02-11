@@ -11,8 +11,8 @@ from typing import Any, Optional
 
 import httpx
 
-from compute.destinations.snowflake.auth import AuthManager
-from compute.destinations.snowflake.dto import OpenChannelResponse
+from destinations.snowflake.auth import AuthManager
+from destinations.snowflake.dto import OpenChannelResponse
 
 logger = logging.getLogger(__name__)
 

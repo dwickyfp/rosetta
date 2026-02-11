@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
 
 from app.core.config import get_settings
-from app.core.exceptions import DatabaseConnectionError, DatabaseError
+from app.core.exceptions import DatabaseConnectionError, DatabaseError, RosettaException
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -197,6 +197,10 @@ def get_db_session() -> Generator[Session, None, None]:
         yield session
         session.commit()
     except HTTPException:
+        session.rollback()
+        raise
+    except RosettaException:
+        # Let business logic exceptions propagate
         session.rollback()
         raise
     except SQLAlchemyError as e:

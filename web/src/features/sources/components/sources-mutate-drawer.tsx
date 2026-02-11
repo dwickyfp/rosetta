@@ -53,7 +53,7 @@ export function SourcesMutateDrawer({
                 pg_database: currentRow.pg_database,
                 pg_username: currentRow.pg_username,
                 publication_name: currentRow.publication_name,
-                replication_id: currentRow.replication_id,
+                replication_name: currentRow.replication_name,
                 pg_password: '',
             }
             : {
@@ -64,7 +64,7 @@ export function SourcesMutateDrawer({
                 pg_username: '',
                 pg_password: '',
                 publication_name: '',
-                replication_id: 0,
+                replication_name: '',
             }) as any,
     })
 
@@ -249,22 +249,19 @@ export function SourcesMutateDrawer({
                             />
                             <FormField
                                 control={form.control}
-                                name='replication_id'
+                                name='replication_name'
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Slot ID</FormLabel>
+                                        <FormLabel>Slot Name</FormLabel>
                                         <FormControl>
                                             <Input 
-                                                type='number' 
                                                 {...field} 
+                                                placeholder='dbz_replication_slot'
                                                 onChange={e => {
-                                                    const val = e.target.value;
-                                                    if (val.length <= 1) {
-                                                        field.onChange(Number(val));
-                                                    }
+                                                   // sanitize? Or just let zod handle it?
+                                                   // Let's allow typing and validat on submit, or basic restrict
+                                                   field.onChange(e.target.value);
                                                 }}
-                                                max={9}
-                                                min={0}
                                             />
                                         </FormControl>
                                         <FormMessage />
@@ -284,7 +281,7 @@ export function SourcesMutateDrawer({
                                     <div>
                                         <p className='mb-1'>1. Create Replication Slot:</p>
                                         <code className='relative block whitespace-pre-wrap break-all rounded bg-background px-[0.3rem] py-[0.2rem] font-mono font-semibold'>
-                                            SELECT pg_create_logical_replication_slot('supabase_etl_apply_{form.watch('replication_id') || 0}', 'pgoutput');
+                                            SELECT pg_create_logical_replication_slot('{form.watch('replication_name') || 'dbz_replication_slot'}', 'pgoutput');
                                         </code>
                                     </div>
 

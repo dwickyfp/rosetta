@@ -2,8 +2,8 @@
 # Note: Heavy imports (engine, manager) require pydbzengine to be installed
 # Import them directly when needed to avoid import errors when pydbzengine is not installed
 
-from compute.core.database import DatabaseSession, get_db_connection
-from compute.core.models import (
+from core.database import DatabaseSession, get_db_connection
+from core.models import (
     Source,
     Destination,
     Pipeline,
@@ -16,14 +16,14 @@ from compute.core.models import (
     DestinationType,
     MetadataStatus,
 )
-from compute.core.exceptions import (
+from core.exceptions import (
     RosettaException,
     DatabaseException,
     PipelineException,
     SourceException,
     DestinationException,
 )
-from compute.core.repository import (
+from core.repository import (
     SourceRepository,
     DestinationRepository,
     PipelineRepository,
@@ -71,18 +71,18 @@ __all__ = [
 def __getattr__(name: str):
     """Lazy import for modules that require pydbzengine."""
     if name == "CDCEventHandler":
-        from compute.core.event_handler import CDCEventHandler
+        from core.event_handler import CDCEventHandler
         return CDCEventHandler
     elif name == "PipelineEngine":
-        from compute.core.engine import PipelineEngine
+        from core.engine import PipelineEngine
         return PipelineEngine
     elif name == "run_pipeline":
-        from compute.core.engine import run_pipeline
+        from core.engine import run_pipeline
         return run_pipeline
     elif name == "PipelineManager":
-        from compute.core.manager import PipelineManager
+        from core.manager import PipelineManager
         return PipelineManager
     elif name == "CDCRecord":
-        from compute.destinations.base import CDCRecord
+        from destinations.base import CDCRecord
         return CDCRecord
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -12,6 +12,7 @@ from enum import Enum
 
 class PipelineStatus(str, Enum):
     """Pipeline status enum."""
+
     START = "START"
     PAUSE = "PAUSE"
     REFRESH = "REFRESH"
@@ -19,20 +20,33 @@ class PipelineStatus(str, Enum):
 
 class DestinationType(str, Enum):
     """Destination type enum."""
+
     SNOWFLAKE = "SNOWFLAKE"
     POSTGRES = "POSTGRES"
 
 
 class MetadataStatus(str, Enum):
     """Pipeline metadata status enum."""
+
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
     ERROR = "ERROR"
 
 
+class BackfillStatus(str, Enum):
+    """Backfill job status enum."""
+
+    PENDING = "PENDING"
+    EXECUTING = "EXECUTING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
 @dataclass
 class Source:
     """Source configuration model (sources table)."""
+
     id: int
     name: str
     pg_host: str
@@ -41,14 +55,14 @@ class Source:
     pg_username: str
     pg_password: Optional[str]
     publication_name: str
-    replication_id: int
+    replication_name: str
     is_publication_enabled: bool = False
     is_replication_enabled: bool = False
     last_check_replication_publication: Optional[datetime] = None
     total_tables: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "Source":
         """Create Source from database row dict."""
@@ -61,10 +75,12 @@ class Source:
             pg_username=data["pg_username"],
             pg_password=data.get("pg_password"),
             publication_name=data["publication_name"],
-            replication_id=data["replication_id"],
+            replication_name=data["replication_name"],
             is_publication_enabled=data.get("is_publication_enabled", False),
             is_replication_enabled=data.get("is_replication_enabled", False),
-            last_check_replication_publication=data.get("last_check_replication_publication"),
+            last_check_replication_publication=data.get(
+                "last_check_replication_publication"
+            ),
             total_tables=data.get("total_tables", 0),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
@@ -74,13 +90,14 @@ class Source:
 @dataclass
 class Destination:
     """Destination configuration model (destinations table)."""
+
     id: int
     name: str
     type: str
     config: dict[str, Any] = field(default_factory=dict)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "Destination":
         """Create Destination from database row dict."""
@@ -92,12 +109,12 @@ class Destination:
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
         )
-    
+
     @property
     def is_snowflake(self) -> bool:
         """Check if destination is Snowflake."""
         return self.type.upper() == DestinationType.SNOWFLAKE.value
-    
+
     @property
     def is_postgres(self) -> bool:
         """Check if destination is PostgreSQL."""
@@ -107,17 +124,18 @@ class Destination:
 @dataclass
 class Pipeline:
     """Pipeline configuration model (pipelines table)."""
+
     id: int
     name: str
     source_id: int
     status: str = PipelineStatus.PAUSE.value
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     # Loaded relations
     source: Optional[Source] = None
     destinations: list["PipelineDestination"] = field(default_factory=list)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "Pipeline":
         """Create Pipeline from database row dict."""
@@ -129,12 +147,12 @@ class Pipeline:
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
         )
-    
+
     @property
     def is_running(self) -> bool:
         """Check if pipeline should be running."""
         return self.status == PipelineStatus.START.value
-    
+
     @property
     def is_paused(self) -> bool:
         """Check if pipeline is paused."""
@@ -144,6 +162,7 @@ class Pipeline:
 @dataclass
 class PipelineDestination:
     """Pipeline destination mapping (pipelines_destination table)."""
+
     id: int
     pipeline_id: int
     destination_id: int
@@ -152,11 +171,11 @@ class PipelineDestination:
     last_error_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     # Loaded relations
     destination: Optional[Destination] = None
     table_syncs: list["PipelineDestinationTableSync"] = field(default_factory=list)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "PipelineDestination":
         """Create PipelineDestination from database row dict."""
@@ -175,6 +194,7 @@ class PipelineDestination:
 @dataclass
 class PipelineDestinationTableSync:
     """Table sync configuration (pipelines_destination_table_sync table)."""
+
     id: int
     pipeline_destination_id: int
     table_name: str
@@ -189,7 +209,7 @@ class PipelineDestinationTableSync:
     error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "PipelineDestinationTableSync":
         """Create PipelineDestinationTableSync from database row dict."""
@@ -214,6 +234,7 @@ class PipelineDestinationTableSync:
 @dataclass
 class PipelineMetadata:
     """Pipeline runtime metadata (pipeline_metadata table)."""
+
     id: int
     pipeline_id: int
     status: str = MetadataStatus.RUNNING.value
@@ -222,7 +243,7 @@ class PipelineMetadata:
     last_start_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "PipelineMetadata":
         """Create PipelineMetadata from database row dict."""
@@ -241,6 +262,7 @@ class PipelineMetadata:
 @dataclass
 class TableMetadataList:
     """Table metadata from source (table_metadata_list table)."""
+
     id: int
     source_id: int
     table_name: str
@@ -248,7 +270,7 @@ class TableMetadataList:
     is_changes_schema: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "TableMetadataList":
         """Create TableMetadataList from database row dict."""
@@ -266,6 +288,7 @@ class TableMetadataList:
 @dataclass
 class DataFlowRecordMonitoring:
     """Data flow record monitoring (data_flow_record_monitoring table)."""
+
     id: Optional[int] = None
     pipeline_id: int = 0
     pipeline_destination_id: Optional[int] = None
@@ -275,7 +298,7 @@ class DataFlowRecordMonitoring:
     record_count: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "DataFlowRecordMonitoring":
         """Create DataFlowRecordMonitoring from database row dict."""
@@ -284,15 +307,56 @@ class DataFlowRecordMonitoring:
             pipeline_id=data["pipeline_id"],
             pipeline_destination_id=data.get("pipeline_destination_id"),
             source_id=data["source_id"],
-            pipeline_destination_table_sync_id=data["pipeline_destination_table_sync_id"],
+            pipeline_destination_table_sync_id=data[
+                "pipeline_destination_table_sync_id"
+            ],
             table_name=data["table_name"],
             record_count=data.get("record_count", 0),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
         )
-    
+
     def to_insert_dict(self) -> dict:
         """Convert to dict for INSERT."""
+        return {
+            "pipeline_id": self.pipeline_id,
+            "pipeline_destination_id": self.pipeline_destination_id,
+            "source_id": self.source_id,
+            "pipeline_destination_table_sync_id": self.pipeline_destination_table_sync_id,
+            "table_name": self.table_name,
+            "record_count": self.record_count,
+        }
+
+
+@dataclass
+class QueueBackfillData:
+    """Queue backfill data model (queue_backfill_data table)."""
+
+    id: int
+    pipeline_id: int
+    source_id: int
+    table_name: str
+    filter_sql: Optional[str] = None
+    status: str = BackfillStatus.PENDING.value
+    count_record: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "QueueBackfillData":
+        """Create QueueBackfillData from database row dict."""
+        return cls(
+            id=data["id"],
+            pipeline_id=data["pipeline_id"],
+            source_id=data["source_id"],
+            table_name=data["table_name"],
+            filter_sql=data.get("filter_sql"),
+            status=data.get("status", BackfillStatus.PENDING.value),
+            count_record=data.get("count_record", 0),
+            created_at=data.get("created_at"),
+            updated_at=data.get("updated_at"),
+        )
+
         return {
             "pipeline_id": self.pipeline_id,
             "pipeline_destination_id": self.pipeline_destination_id,

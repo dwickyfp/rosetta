@@ -5,7 +5,10 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
+  SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar'
+import * as React from 'react'
 // import { AppTitle } from './app-title'
 import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
@@ -14,6 +17,8 @@ import { TeamSwitcher } from './team-switcher'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
+  const { state } = useSidebar()
+
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
       <SidebarHeader>
@@ -24,8 +29,13 @@ export function AppSidebar() {
         {/* <AppTitle /> */}
       </SidebarHeader>
       <SidebarContent>
-        {sidebarData.navGroups.map((props) => (
-          <NavGroup key={props.title} {...props} />
+        {sidebarData.navGroups.map((props, index) => (
+          <React.Fragment key={props.title}>
+            {index > 0 && state === 'collapsed' && (
+              <SidebarSeparator className='mx-auto w-6' />
+            )}
+            <NavGroup {...props} />
+          </React.Fragment>
         ))}
       </SidebarContent>
       <SidebarFooter>

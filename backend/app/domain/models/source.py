@@ -79,8 +79,8 @@ class Source(Base, TimestampMixin):
         String(255), nullable=False, comment="PostgreSQL publication name for CDC"
     )
 
-    replication_id: Mapped[int] = mapped_column(
-        Integer, nullable=False, comment="Replication slot identifier"
+    replication_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="Replication slot name"
     )
 
     is_publication_enabled: Mapped[bool] = mapped_column(
@@ -98,8 +98,6 @@ class Source(Base, TimestampMixin):
     total_tables: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False, comment="Total tables in publication"
     )
-
-
 
     # Relationships
     pipelines: Mapped[list["Pipeline"]] = relationship(
@@ -142,6 +140,12 @@ class Source(Base, TimestampMixin):
         # back_populates="source", # Enable if added to Preset
         cascade="all, delete-orphan",
         lazy="select",
+    )
+
+    backfill_jobs: Mapped[list["QueueBackfillData"]] = relationship(
+        "QueueBackfillData",
+        back_populates="source",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

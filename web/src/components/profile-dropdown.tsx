@@ -32,12 +32,8 @@ export function ProfileDropdown() {
           <DropdownMenuLabel className='font-normal'>
             <div className='flex flex-col gap-1.5'>
               <p className='text-sm leading-none font-medium'>Rosetta</p>
-              <p className='text-xs leading-none text-muted-foreground'>
-                rosetta@rosetta.com
-              </p>
             </div>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
               <Link to='/settings'>
