@@ -326,8 +326,11 @@ class SnowflakeDestination(BaseDestination):
                     return value
 
             # TIMESTAMP Handling - Multiple Debezium types
+            # These types come from PostgreSQL TIMESTAMP (without timezone)
+            # Target Snowflake column is TIMESTAMP_NTZ, so output WITHOUT timezone
+            
             # MicroTimestamp: int64 microseconds since epoch UTC
-            # Output: ISO format WITHOUT timezone for TIMESTAMP_NTZ compatibility
+            # From PostgreSQL: timestamp without time zone
             if type_name == "io.debezium.time.MicroTimestamp":
                 if isinstance(value, int):
                     dt = datetime.fromtimestamp(value / 1_000_000, tz=timezone.utc)
@@ -335,6 +338,7 @@ class SnowflakeDestination(BaseDestination):
                     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
 
             # NanoTimestamp: int64 nanoseconds since epoch UTC
+            # From PostgreSQL: timestamp without time zone
             if type_name == "io.debezium.time.NanoTimestamp":
                 if isinstance(value, int):
                     dt = datetime.fromtimestamp(value / 1_000_000_000, tz=timezone.utc)
@@ -342,6 +346,7 @@ class SnowflakeDestination(BaseDestination):
                     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
 
             # Timestamp (without timezone): int64 milliseconds since epoch
+            # From PostgreSQL: timestamp without time zone
             if type_name == "io.debezium.time.Timestamp":
                 if isinstance(value, int):
                     dt = datetime.fromtimestamp(value / 1_000, tz=timezone.utc)
@@ -349,31 +354,13 @@ class SnowflakeDestination(BaseDestination):
                     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
 
             # ZonedTimestamp: Already ISO-8601 string with timezone
-            # PostgreSQL TIMESTAMPTZ -> Strip timezone for Snowflake TIMESTAMP_NTZ
+            # From PostgreSQL: timestamp WITH time zone (TIMESTAMPTZ)
+            # Target Snowflake column is TIMESTAMP_TZ, so KEEP timezone
             if type_name == "io.debezium.time.ZonedTimestamp":
                 if isinstance(value, str):
-                    try:
-                        # Parse ISO timestamp - Python 3.11+ handles timezone offsets
-                        # Handle 'Z' suffix (UTC) which fromisoformat doesn't support
-                        parse_value = (
-                            value.replace("Z", "+00:00")
-                            if value.endswith("Z")
-                            else value
-                        )
-                        dt = datetime.fromisoformat(parse_value)
-                        # Convert to UTC and strip timezone for TIMESTAMP_NTZ
-                        if dt.tzinfo is not None:
-                            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-                        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
-                    except Exception:
-                        # Fallback: strip timezone suffix manually
-                        # Handle formats like "2024-01-15T10:30:00+07:00" or "2024-01-15 10:30:00+07"
-                        import re
-
-                        # Remove timezone offset pattern at end
-                        clean_value = re.sub(r"[+-]\d{2}:?\d{0,2}$", "", value)
-                        clean_value = clean_value.rstrip("Z")
-                        return clean_value
+                    # Return as-is with timezone for TIMESTAMP_TZ compatibility
+                    # Snowflake TIMESTAMP_TZ accepts ISO-8601 with timezone offset
+                    return value
                 return value
 
             # TIME Handling
@@ -426,25 +413,15 @@ class SnowflakeDestination(BaseDestination):
                     pass
 
             # Handle timestamp strings with timezone (fallback for missing schema)
-            # Detect ISO timestamp patterns with timezone: "2024-01-15T10:30:00+07:00" or "...Z"
+            # When schema is missing, we can't determine if target is TIMESTAMP_TZ or TIMESTAMP_NTZ
+            # Keep timezone as-is - Snowflake will handle conversion if needed
+            # Detect ISO timestamp patterns: "2024-01-15T10:30:00" or with TZ "...+07:00" or "...Z"
             import re
 
-            timestamp_tz_pattern = r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{0,2}|Z)$"
-            if re.match(timestamp_tz_pattern, value_stripped):
-                try:
-                    parse_value = (
-                        value_stripped.replace("Z", "+00:00")
-                        if value_stripped.endswith("Z")
-                        else value_stripped
-                    )
-                    dt = datetime.fromisoformat(parse_value)
-                    if dt.tzinfo is not None:
-                        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-                    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
-                except Exception:
-                    # Strip timezone suffix manually
-                    clean_value = re.sub(r"[+-]\d{2}:?\d{0,2}$", "", value_stripped)
-                    return clean_value.rstrip("Z")
+            timestamp_pattern = r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{0,2}|Z)?$"
+            if re.match(timestamp_pattern, value_stripped):
+                # Return as-is - Snowflake handles both formats
+                return value_stripped
 
         # Pass through other types (str, int, float, bool)
         return value
