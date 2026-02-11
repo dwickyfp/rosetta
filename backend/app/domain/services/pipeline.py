@@ -785,22 +785,29 @@ class PipelineService:
                     f"Table {table_name} has no columns defined. Please refresh source metadata."
                 )
 
-            # A. Landing Table
-            if not sync_record.is_exists_table_landing:
-                landing_table = f"LANDING_{table_name}"
-                landing_ddl = self._generate_landing_ddl(
-                    landing_db, landing_schema, landing_table, columns
-                )
-                cursor.execute(landing_ddl)
-                sync_record.is_exists_table_landing = True
+            # A. Landing Table (always recreate to ensure schema is up-to-date)
+            landing_table = f"LANDING_{table_name}"
+            logger.info(
+                f"Recreating landing table {landing_db}.{landing_schema}.{landing_table}"
+            )
+            # Drop existing landing table first (CASCADE to also drop dependent stream)
+            cursor.execute(
+                f"DROP TABLE IF EXISTS {landing_db}.{landing_schema}.{landing_table} CASCADE"
+            )
+            landing_ddl = self._generate_landing_ddl(
+                landing_db, landing_schema, landing_table, columns
+            )
+            cursor.execute(landing_ddl)
+            sync_record.is_exists_table_landing = True
 
-            # B. Stream
-            if not sync_record.is_exists_stream:
-                landing_table = f"LANDING_{table_name}"  # Reconstruct name just in case
-                stream_name = f"STREAM_{landing_table}"
-                stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
-                cursor.execute(stream_ddl)
-                sync_record.is_exists_stream = True
+            # B. Stream (always recreate after landing table recreation)
+            stream_name = f"STREAM_{landing_table}"
+            logger.info(
+                f"Recreating stream {landing_db}.{landing_schema}.{stream_name}"
+            )
+            stream_ddl = f"CREATE OR REPLACE STREAM {landing_db}.{landing_schema}.{stream_name} ON TABLE {landing_db}.{landing_schema}.{landing_table}"
+            cursor.execute(stream_ddl)
+            sync_record.is_exists_stream = True
 
             # C. Destination Table
             target_table = table_name
@@ -823,30 +830,35 @@ class PipelineService:
                     cursor.execute(target_ddl)
                     sync_record.is_exists_table_destination = True
 
-            # D. Merge Task
-            if not sync_record.is_exists_task:
-                landing_table = f"LANDING_{table_name}"
-                stream_name = f"STREAM_{landing_table}"
-                target_table = table_name
+            # D. Merge Task (always recreate to ensure task definition is up-to-date)
+            landing_table = f"LANDING_{table_name}"
+            stream_name = f"STREAM_{landing_table}"
+            target_table = table_name
+            task_name = f"TASK_MERGE_{table_name}"
 
-                task_name = f"TASK_MERGE_{table_name}"
-                task_ddl = self._generate_merge_task_ddl(
-                    pipeline,
-                    destination,
-                    landing_db,
-                    landing_schema,
-                    landing_table,
-                    stream_name,
-                    target_db,
-                    target_schema,
-                    target_table,
-                    columns,
-                )
-                cursor.execute(task_ddl)
-                cursor.execute(
-                    f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME"
-                )
-                sync_record.is_exists_task = True
+            logger.info(f"Recreating task {landing_db}.{landing_schema}.{task_name}")
+            # Drop existing task first
+            cursor.execute(
+                f"DROP TASK IF EXISTS {landing_db}.{landing_schema}.{task_name}"
+            )
+
+            task_ddl = self._generate_merge_task_ddl(
+                pipeline,
+                destination,
+                landing_db,
+                landing_schema,
+                landing_table,
+                stream_name,
+                target_db,
+                target_schema,
+                target_table,
+                columns,
+            )
+            cursor.execute(task_ddl)
+            cursor.execute(
+                f"ALTER TASK {landing_db}.{landing_schema}.{task_name} RESUME"
+            )
+            sync_record.is_exists_task = True
 
             self.db.commit()
 
