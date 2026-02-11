@@ -257,6 +257,22 @@ class PipelineEngine:
                 {"pipeline_id": self._pipeline_id},
             )
 
+        # Validate replication setup before starting
+        # This catches missing publication/replication slot issues early
+        if hasattr(self._source, "validate_replication_setup"):
+            is_valid, error_msg = self._source.validate_replication_setup(
+                self._pipeline.name
+            )
+            if not is_valid:
+                self._logger.error(f"Replication setup validation failed: {error_msg}")
+                raise PipelineException(
+                    f"Replication setup validation failed: {error_msg}",
+                    {
+                        "pipeline_id": self._pipeline_id,
+                        "pipeline_name": self._pipeline.name,
+                    },
+                )
+
         # Build Debezium properties
         offset_file = config.debezium.get_offset_file(self._pipeline.name)
         props = self._source.build_debezium_props(

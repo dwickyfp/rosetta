@@ -101,6 +101,91 @@ class PostgreSQLSource(BaseSource):
             if "conn" in locals():
                 conn.close()
 
+    def validate_replication_setup(self, pipeline_name: str) -> tuple[bool, str]:
+        """
+        Validate that publication and replication slot exist before starting pipeline.
+
+        This prevents Debezium from infinitely retrying when resources don't exist.
+
+        Args:
+            pipeline_name: Name of the pipeline being validated
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        conn = None
+        try:
+            conn = psycopg2.connect(
+                host=self._config.pg_host,
+                port=self._config.pg_port,
+                dbname=self._config.pg_database,
+                user=self._config.pg_username,
+                password=decrypt_value(self._config.pg_password or ""),
+            )
+
+            with conn.cursor() as cur:
+                # Check publication exists
+                cur.execute(
+                    "SELECT COUNT(*) FROM pg_publication WHERE pubname = %s",
+                    (self._config.publication_name,),
+                )
+                pub_exists = cur.fetchone()[0] > 0
+
+                if not pub_exists:
+                    error_msg = (
+                        f"Publication '{self._config.publication_name}' does not exist. "
+                        f"Create it with: CREATE PUBLICATION {self._config.publication_name} FOR ALL TABLES;"
+                    )
+                    logger.error(error_msg)
+                    return False, error_msg
+
+                # Check publication has tables
+                cur.execute(
+                    "SELECT COUNT(*) FROM pg_publication_tables WHERE pubname = %s",
+                    (self._config.publication_name,),
+                )
+                table_count = cur.fetchone()[0]
+
+                if table_count == 0:
+                    logger.warning(
+                        f"Publication '{self._config.publication_name}' exists but has no tables. "
+                        f"Add tables with: ALTER PUBLICATION {self._config.publication_name} ADD TABLE schema.table;"
+                    )
+
+                # Check replication slot exists
+                slot_name = self.get_slot_name(pipeline_name)
+                cur.execute(
+                    "SELECT COUNT(*) FROM pg_replication_slots WHERE slot_name = %s",
+                    (slot_name,),
+                )
+                slot_exists = cur.fetchone()[0] > 0
+
+                # If slot exists, verify it references the correct publication
+                if slot_exists:
+                    logger.info(
+                        f"Replication slot '{slot_name}' exists. "
+                        f"Debezium will use it with publication '{self._config.publication_name}'."
+                    )
+                else:
+                    logger.info(
+                        f"Replication slot '{slot_name}' does not exist. "
+                        f"Debezium will create it automatically."
+                    )
+
+                logger.info(
+                    f"Replication setup validated for pipeline '{pipeline_name}': "
+                    f"publication={self._config.publication_name}, slot={slot_name}, tables={table_count}"
+                )
+                return True, ""
+
+        except psycopg2.Error as e:
+            error_msg = f"Failed to validate replication setup: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+        finally:
+            if conn:
+                conn.close()
+
     def build_debezium_props(
         self,
         pipeline_name: str,
@@ -143,10 +228,16 @@ class PostgreSQLSource(BaseSource):
             "database.user": self._config.pg_username,
             "database.password": decrypt_value(self._config.pg_password or ""),
             "database.dbname": self._config.pg_database,
+            # Connection pooling and stability
+            "database.tcpKeepAlive": "true",
+            "database.connectTimeout": "30000",  # 30 seconds
+            "database.socketTimeout": "60000",  # 60 seconds - prevents hang on long queries
             # Replication settings
             "plugin.name": self.PLUGIN_NAME,
             "slot.name": slot_name,
             "publication.name": self._config.publication_name,
+            # Publication auto-create (disabled - publication must exist)
+            "publication.autocreate.mode": "disabled",
             # Snapshot behavior - skip initial data snapshot
             "snapshot.mode": "no_data",
             # Table filtering
@@ -163,8 +254,16 @@ class PostgreSQLSource(BaseSource):
             "slot.drop.on.stop": "false",
             "slot.max.retries": str(config.pipeline.slot_max_retries),
             "slot.retry.delay.ms": str(config.pipeline.slot_retry_delay_ms),
+            # Error handling - stop on unrecoverable errors
+            "errors.max.retries": "3",
+            "errors.retry.delay.initial.ms": "1000",
+            "errors.retry.delay.max.ms": "30000",
             # Topic prefix for routing
             "topic.prefix": f"rosetta_{pipeline_name}",
+            # Status update frequency
+            "status.update.interval.ms": "10000",  # 10 seconds
+            # Tombstone events
+            "tombstones.on.delete": "true",
         }
 
         return props
