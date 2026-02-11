@@ -46,6 +46,9 @@ FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
 
+# Install build dependencies needed for native modules
+RUN apk add --no-cache python3 make g++
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
