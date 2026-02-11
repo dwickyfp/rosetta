@@ -47,4 +47,6 @@ dist-ssr
 /compute/sources/__pycache__/*
 /compute/core/__pycache__/*
 /compute/dlq/*
+/compute/tmp/*
+/web/pnpm-lock.yaml
 
