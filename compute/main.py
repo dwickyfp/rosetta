@@ -17,7 +17,7 @@ import threading
 import time
 
 
-from config import get_config
+from config.config import get_config
 from core.database import (
     init_connection_pool,
     close_connection_pool,
