@@ -101,9 +101,11 @@ LABEL description="Rosetta Compute Node - Python Pipeline Manager"
 # Install runtime dependencies
 # libpq5: for psycopg2
 # default-jre-headless: for JPype1 (Debezium)
+# curl: for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     default-jre-headless \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
