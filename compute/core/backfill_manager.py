@@ -120,32 +120,45 @@ class BackfillManager:
         Returns:
             List of pending job records
         """
-        pool = get_connection_pool()
-        conn = None
+        max_retries = 3
+        retry_delay = 1
 
-        try:
-            conn = pool.getconn()
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(
-                    """
-                    SELECT qb.*, s.pg_host, s.pg_port, s.pg_database, 
-                           s.pg_username, s.pg_password
-                    FROM queue_backfill_data qb
-                    JOIN sources s ON qb.source_id = s.id
-                    WHERE qb.status = %s
-                    ORDER BY qb.created_at ASC
-                    LIMIT 10
-                    """,
-                    (BackfillStatus.PENDING.value,),
+        for attempt in range(max_retries):
+            pool = None
+            conn = None
+            try:
+                pool = get_connection_pool()
+                conn = pool.getconn()
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(
+                        """
+                        SELECT qb.*, s.pg_host, s.pg_port, s.pg_database, 
+                               s.pg_username, s.pg_password
+                        FROM queue_backfill_data qb
+                        JOIN sources s ON qb.source_id = s.id
+                        WHERE qb.status = %s
+                        ORDER BY qb.created_at ASC
+                        LIMIT 10
+                        """,
+                        (BackfillStatus.PENDING.value,),
+                    )
+                    jobs = cursor.fetchall()
+                    return [dict(job) for job in jobs]
+            except Exception as e:
+                logger.error(
+                    f"Error fetching pending jobs (attempt {attempt + 1}/{max_retries}): {e}"
                 )
-                jobs = cursor.fetchall()
-                return [dict(job) for job in jobs]
-        except Exception as e:
-            logger.error(f"Error fetching pending jobs: {e}")
-            return []
-        finally:
-            if conn:
-                pool.putconn(conn)
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+            finally:
+                if conn and pool:
+                    try:
+                        pool.putconn(conn)
+                    except Exception:
+                        pass
+
+        return []
 
     def _execute_backfill_job(self, job: dict) -> None:
         """

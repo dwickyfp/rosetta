@@ -127,8 +127,11 @@ ENV MODE=worker
 ENV PYTHONPATH=/app/compute
 ENV TZ=Asia/Jakarta
 
-# Create non-root user for security
-RUN useradd -m -u 1000 rosetta && chown -R rosetta:rosetta /app
+# Create directories with proper permissions
+RUN mkdir -p /app/tmp/offsets && \
+    useradd -m -u 1000 rosetta && \
+    chown -R rosetta:rosetta /app
+
 USER rosetta
 
 # Run the application
