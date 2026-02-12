@@ -36,6 +36,11 @@ class ErrorSanitizer:
         (r"Authorization:\s*Basic\s+([^\s]+)", r"Authorization: Basic ***"),
     ]
 
+    # Exception types that have empty string representation
+    EMPTY_ERROR_TYPES = {
+        TimeoutError: "Operation timed out - destination may be slow or overloaded",
+    }
+
     # Error type to user-friendly message mapping
     ERROR_MAPPINGS = {
         # Connection errors
@@ -91,6 +96,13 @@ class ErrorSanitizer:
         Returns:
             Sanitized, user-friendly error message
         """
+        # Handle exception types that have empty string representation
+        for error_type, friendly_msg in cls.EMPTY_ERROR_TYPES.items():
+            if isinstance(error, error_type):
+                if context:
+                    return f"{context}: {friendly_msg}"
+                return friendly_msg
+
         # Get original error message
         original_str = str(error).strip()
         
@@ -148,6 +160,11 @@ class ErrorSanitizer:
         Returns:
             User-friendly sanitized message for database storage
         """
+        # Handle exception types that have empty string representation
+        for error_type, friendly_msg in cls.EMPTY_ERROR_TYPES.items():
+            if isinstance(error, error_type):
+                return friendly_msg
+
         error_msg = str(error).strip().lower()
 
         # Handle empty error messages early

@@ -7,6 +7,7 @@ import {
   Database,
   Activity,
   BellRing,
+  Server,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -70,6 +71,11 @@ export const sidebarData: SidebarData = {
               title: 'WAL Monitor',
               url: '/settings/wal-monitor',
               icon: Activity,
+            },
+            {
+              title: 'Batch Configuration',
+              url: '/settings/batch-configuration',
+              icon: Server,
             },
             {
               title: 'Notification Setting',
