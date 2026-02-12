@@ -10,6 +10,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Trash2,
+  Square,
 } from 'lucide-react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
@@ -101,7 +103,7 @@ const STATUS_CONFIG = {
   },
   CANCELLED: {
     label: 'Cancelled',
-    color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
+    color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     icon: X,
   },
 }
@@ -474,13 +476,19 @@ export function BackfillDataTab({
   sourceId,
 }: BackfillDataTabProps) {
   const queryClient = useQueryClient()
+  const [tableFilter, setTableFilter] = useState<string>('')
 
   // Fetch backfill jobs
   const { data: jobsData, isLoading } = useQuery({
-    queryKey: ['backfill-jobs', pipelineId],
+    queryKey: ['backfill-jobs', pipelineId, tableFilter],
     queryFn: () => backfillApi.listJobs(pipelineId),
     refetchInterval: 5000, // Refresh every 5 seconds to show progress
   })
+
+  // Filter jobs by table name if filter is set
+  const filteredJobs = tableFilter
+    ? jobsData?.items.filter((job) => job.table_name === tableFilter)
+    : jobsData?.items
 
   // Cancel mutation
   const cancelMutation = useMutation({
@@ -534,109 +542,140 @@ export function BackfillDataTab({
           <CreateBackfillDialog pipelineId={pipelineId} sourceId={sourceId} />
         </div>
       ) : (
-        <div className='rounded-lg border'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Table Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Records</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead>Filters</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className='text-right'>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {jobsData?.items.map((job) => {
-                const StatusIcon = STATUS_CONFIG[job.status].icon
-                return (
-                  <TableRow key={job.id}>
-                    <TableCell className='font-medium'>
-                      {job.table_name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant='outline'
-                        className={STATUS_CONFIG[job.status].color}
-                      >
-                        <StatusIcon
-                          className={`mr-1 h-3 w-3 ${job.status === 'EXECUTING' ? 'animate-spin' : ''}`}
-                        />
-                        {STATUS_CONFIG[job.status].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {job.total_record > 0
-                        ? `${formatNumber(job.count_record)}/${formatNumber(job.total_record)}`
-                        : formatNumber(job.count_record)}
-                    </TableCell>
-                    <TableCell>
-                      <div className='flex items-center gap-2'>
-                        <Progress
-                          value={
-                            job.total_record > 0
-                              ? (job.count_record / job.total_record) * 100
-                              : 0
-                          }
-                          className='h-2 w-24'
-                        />
-                        <span className='text-xs whitespace-nowrap text-muted-foreground'>
-                          {job.total_record > 0
-                            ? `${Math.round((job.count_record / job.total_record) * 100)}%`
-                            : '0%'}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {job.filter_sql ? (
-                        <span className='text-xs text-muted-foreground'>
-                          {job.filter_sql.split(';').length} filter(s)
-                        </span>
-                      ) : (
-                        <span className='text-xs text-muted-foreground'>
-                          None
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className='text-sm text-muted-foreground'>
-                      {formatDistanceToNow(new Date(job.created_at), {
-                        addSuffix: true,
-                      })}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      <div className='flex justify-end gap-2'>
-                        {(job.status === 'PENDING' ||
-                          job.status === 'EXECUTING') && (
-                          <Button
-                            variant='outline'
-                            size='sm'
-                            onClick={() => cancelMutation.mutate(job.id)}
-                            disabled={cancelMutation.isPending}
-                          >
-                            Cancel
-                          </Button>
+        <>
+          {/* Table Filter */}
+          <div className='flex items-center gap-2'>
+            <Label htmlFor='table-filter' className='text-sm font-medium'>
+              Filter by Table:
+            </Label>
+            <Select
+              value={tableFilter || 'all'}
+              onValueChange={(value) =>
+                setTableFilter(value === 'all' ? '' : value)
+              }
+            >
+              <SelectTrigger id='table-filter' className='w-62.5'>
+                <SelectValue placeholder='All tables' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All tables</SelectItem>
+                {Array.from(
+                  new Set(jobsData?.items.map((job) => job.table_name) || [])
+                ).map((tableName) => (
+                  <SelectItem key={tableName} value={tableName}>
+                    {tableName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className='rounded-lg border'>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Table Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Records</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Filters</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className='text-right'>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredJobs?.map((job) => {
+                  const StatusIcon = STATUS_CONFIG[job.status].icon
+                  return (
+                    <TableRow key={job.id}>
+                      <TableCell className='font-medium'>
+                        {job.table_name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant='outline'
+                          className={STATUS_CONFIG[job.status].color}
+                        >
+                          <StatusIcon
+                            className={`mr-1 h-3 w-3 ${job.status === 'EXECUTING' ? 'animate-spin' : ''}`}
+                          />
+                          {STATUS_CONFIG[job.status].label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {job.total_record > 0
+                          ? `${formatNumber(job.count_record)}/${formatNumber(job.total_record)}`
+                          : formatNumber(job.count_record)}
+                      </TableCell>
+                      <TableCell>
+                        <div className='flex items-center gap-2'>
+                          <Progress
+                            value={
+                              job.total_record > 0
+                                ? (job.count_record / job.total_record) * 100
+                                : 0
+                            }
+                            className='h-2 w-24'
+                          />
+                          <span className='text-xs whitespace-nowrap text-muted-foreground'>
+                            {job.total_record > 0
+                              ? `${Math.round((job.count_record / job.total_record) * 100)}%`
+                              : '0%'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {job.filter_sql ? (
+                          <span className='text-xs text-muted-foreground'>
+                            {job.filter_sql.split(';').length} filter(s)
+                          </span>
+                        ) : (
+                          <span className='text-xs text-muted-foreground'>
+                            None
+                          </span>
                         )}
-                        {(job.status === 'COMPLETED' ||
-                          job.status === 'FAILED' ||
-                          job.status === 'CANCELLED') && (
-                          <Button
-                            variant='ghost'
-                            size='sm'
-                            onClick={() => deleteMutation.mutate(job.id)}
-                            disabled={deleteMutation.isPending}
-                          >
-                            Delete
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                      </TableCell>
+                      <TableCell className='text-sm text-muted-foreground'>
+                        {formatDistanceToNow(new Date(job.created_at), {
+                          addSuffix: true,
+                        })}
+                      </TableCell>
+                      <TableCell className='text-right'>
+                        <div className='flex justify-end gap-2'>
+                          {(job.status === 'PENDING' ||
+                            job.status === 'EXECUTING') && (
+                            <Button
+                              variant='outline'
+                              size='icon'
+                              onClick={() => cancelMutation.mutate(job.id)}
+                              disabled={cancelMutation.isPending}
+                              title='Cancel backfill'
+                            >
+                              <Square className='h-4 w-4' />
+                            </Button>
+                          )}
+                          {(job.status === 'COMPLETED' ||
+                            job.status === 'FAILED' ||
+                            job.status === 'CANCELLED') && (
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              onClick={() => deleteMutation.mutate(job.id)}
+                              disabled={deleteMutation.isPending}
+                              title='Delete backfill'
+                            >
+                              <Trash2 className='h-4 w-4' />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
     </div>
   )

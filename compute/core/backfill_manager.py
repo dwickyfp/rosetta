@@ -33,7 +33,13 @@ class BackfillManager:
 
     Polls queue_backfill_data table for PENDING jobs and processes them
     using DuckDB's PostgreSQL scanner for efficient batch processing.
+
+    Supports resume from checkpoint after compute engine restart.
     """
+
+    # Configuration constants
+    STALE_JOB_THRESHOLD_MINUTES = 2  # Jobs older than this are considered stale
+    MAX_RESUME_ATTEMPTS = 3  # Fail job after 3 resume attempts
 
     def __init__(self, check_interval: int = 5, batch_size: int = 10000):
         """
@@ -55,6 +61,10 @@ class BackfillManager:
     def start(self) -> None:
         """Start the backfill manager thread."""
         logger.info("Starting BackfillManager")
+
+        # Recover stale jobs from previous compute instance
+        self._recover_stale_jobs()
+
         monitor_thread = threading.Thread(target=self._monitor_queue, daemon=True)
         monitor_thread.start()
         logger.info("BackfillManager started")
@@ -72,6 +82,91 @@ class BackfillManager:
                     thread.join(timeout=30)
 
         logger.info("BackfillManager stopped")
+
+    def _recover_stale_jobs(self) -> None:
+        """
+        Recover stale EXECUTING jobs from previous compute instance.
+
+        Detects jobs that are stuck in EXECUTING state (likely due to restart)
+        and resets them to PENDING for retry, respecting MAX_RESUME_ATTEMPTS.
+        """
+        pool = get_connection_pool()
+        conn = None
+
+        try:
+            conn = pool.getconn()
+            with conn.cursor() as cursor:
+                # Find stale jobs (EXECUTING for > STALE_JOB_THRESHOLD_MINUTES)
+                cursor.execute(
+                    """
+                SELECT id, pipeline_id, count_record, total_record, resume_attempts
+                FROM queue_backfill_data
+                WHERE status = 'EXECUTING'
+                    AND updated_at < NOW() - INTERVAL '%s minutes'
+                ORDER BY created_at ASC
+            """,
+                    (self.STALE_JOB_THRESHOLD_MINUTES,),
+                )
+
+                stale_jobs = cursor.fetchall()
+
+                if not stale_jobs:
+                    logger.info("No stale backfill jobs found")
+                    return
+
+                logger.info(f"Found {len(stale_jobs)} stale backfill jobs")
+
+                for job in stale_jobs:
+                    job_id, pipeline_id, count_record, total_record, resume_attempts = (
+                        job
+                    )
+                    progress_pct = (
+                        (count_record / total_record * 100) if total_record > 0 else 0
+                    )
+
+                    # Check if max resume attempts exceeded
+                    if resume_attempts >= self.MAX_RESUME_ATTEMPTS:
+                        logger.warning(
+                            f"Backfill job {job_id} (pipeline {pipeline_id}) exceeded "
+                            f"max resume attempts ({self.MAX_RESUME_ATTEMPTS}). Marking as FAILED."
+                        )
+                        cursor.execute(
+                            """
+                        UPDATE queue_backfill_data
+                        SET status = 'FAILED',
+                            error_message = 'Maximum resume attempts exceeded after compute restart',
+                            updated_at = NOW()
+                        WHERE id = %s
+                    """,
+                            (job_id,),
+                        )
+                    else:
+                        # Reset to PENDING for retry
+                        logger.info(
+                            f"Recovering backfill job {job_id} (pipeline {pipeline_id}) "
+                            f"from checkpoint {count_record}/{total_record} ({progress_pct:.1f}%) "
+                            f"[Resume attempt {resume_attempts + 1}/{self.MAX_RESUME_ATTEMPTS}]"
+                        )
+                        cursor.execute(
+                            """
+                        UPDATE queue_backfill_data
+                        SET status = 'PENDING',
+                            updated_at = NOW()
+                        WHERE id = %s
+                    """,
+                            (job_id,),
+                        )
+
+                conn.commit()
+                logger.info("Stale job recovery completed")
+
+        except Exception as e:
+            logger.error(f"Error recovering stale jobs: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                pool.putconn(conn)
 
     def _monitor_queue(self) -> None:
         """Monitor queue for pending backfill jobs."""
@@ -171,8 +266,10 @@ class BackfillManager:
         job_id = job["id"]
 
         try:
-            # Update status to EXECUTING
-            self._update_job_status(job_id, BackfillStatus.EXECUTING.value)
+            # Update status to EXECUTING and increment resume_attempts
+            self._update_job_status(
+                job_id, BackfillStatus.EXECUTING.value, increment_resume_attempts=True
+            )
 
             # Check if DuckDB is available
             if not duckdb:
@@ -227,18 +324,22 @@ class BackfillManager:
         table_name = job["table_name"]
         filter_sql = job.get("filter_sql")
 
+        # Get checkpoint for resume (count_record tracks progress)
+        start_offset = job.get("count_record", 0) or 0
+        resume_attempts = job.get("resume_attempts", 0) or 0
+
         # Build PostgreSQL connection string
         pg_conn_str = self._build_postgres_connection(job)
 
         # Initialize DuckDB connection (in-memory)
         conn = duckdb.connect(":memory:")
 
-        total_processed = 0
+        total_processed = start_offset  # Start from checkpoint
 
         try:
-            # Install and load postgres_scanner extension
-            conn.execute("INSTALL postgres_scanner")
-            conn.execute("LOAD postgres_scanner")
+            # Install and load postgres extension
+            conn.execute("INSTALL postgres")
+            conn.execute("LOAD postgres")
 
             # Attach PostgreSQL database
             logger.info(f"Attaching to PostgreSQL: {job['pg_database']}")
@@ -263,13 +364,27 @@ class BackfillManager:
             # Count total rows first
             count_query = f"SELECT COUNT(1) as total FROM ({base_query}) t"
             total_rows = conn.execute(count_query).fetchone()[0]
-            logger.info(f"Job {job_id}: Total rows to process: {total_rows}")
 
-            # Update total_record in database
-            self._update_job_total_record(job_id, total_rows)
+            # Log resume info
+            if start_offset > 0:
+                progress_pct = (
+                    (start_offset / total_rows * 100) if total_rows > 0 else 0
+                )
+                logger.info(
+                    f"Job {job_id}: Resuming from checkpoint {start_offset}/{total_rows} "
+                    f"({progress_pct:.1f}%) [Attempt {resume_attempts + 1}]"
+                )
+            else:
+                logger.info(
+                    f"Job {job_id}: Starting new backfill - Total rows: {total_rows}"
+                )
 
-            # Process in batches
-            offset = 0
+            # Update total_record in database (only once)
+            if start_offset == 0:
+                self._update_job_total_record(job_id, total_rows)
+
+            # Process in batches, starting from checkpoint
+            offset = start_offset
             while not self.stop_event.is_set():
                 # Check if job was cancelled
                 if self._is_job_cancelled(job_id):
@@ -588,6 +703,7 @@ class BackfillManager:
         status: str,
         count_record: Optional[int] = None,
         error_message: Optional[str] = None,
+        increment_resume_attempts: bool = False,
     ) -> None:
         """
         Update backfill job status in database.
@@ -597,6 +713,7 @@ class BackfillManager:
             status: New status
             count_record: Optional record count
             error_message: Optional error message for failed jobs
+            increment_resume_attempts: Whether to increment resume_attempts counter
         """
         pool = get_connection_pool()
         conn = None
@@ -607,42 +724,32 @@ class BackfillManager:
         try:
             conn = pool.getconn()
             with conn.cursor() as cursor:
-                if count_record is not None and error_message is not None:
-                    cursor.execute(
-                        """
-                        UPDATE queue_backfill_data
-                        SET status = %s, count_record = %s, error_message = %s, is_error = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (status, count_record, error_message, is_error, job_id),
+                # Build SQL query dynamically based on parameters
+                update_fields = ["status = %s", "is_error = %s", "updated_at = NOW()"]
+                params = [status, is_error]
+
+                if count_record is not None:
+                    update_fields.append("count_record = %s")
+                    params.append(count_record)
+
+                if error_message is not None:
+                    update_fields.append("error_message = %s")
+                    params.append(error_message)
+
+                if increment_resume_attempts:
+                    update_fields.append(
+                        "resume_attempts = COALESCE(resume_attempts, 0) + 1"
                     )
-                elif count_record is not None:
-                    cursor.execute(
-                        """
-                        UPDATE queue_backfill_data
-                        SET status = %s, count_record = %s, is_error = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (status, count_record, is_error, job_id),
-                    )
-                elif error_message is not None:
-                    cursor.execute(
-                        """
-                        UPDATE queue_backfill_data
-                        SET status = %s, error_message = %s, is_error = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (status, error_message, is_error, job_id),
-                    )
-                else:
-                    cursor.execute(
-                        """
-                        UPDATE queue_backfill_data
-                        SET status = %s, is_error = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (status, is_error, job_id),
-                    )
+
+                params.append(job_id)
+
+                query = f"""
+                    UPDATE queue_backfill_data
+                    SET {', '.join(update_fields)}
+                    WHERE id = %s
+                """
+
+                cursor.execute(query, params)
                 conn.commit()
         except Exception as e:
             logger.error(f"Error updating job status: {e}")

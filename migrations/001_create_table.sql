@@ -291,6 +291,7 @@ CREATE TABLE IF NOT EXISTS queue_backfill_data(
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'EXECUTING', 'COMPLETED', 'FAILED', 'CANCELLED'
     count_record BIGINT NOT NULL DEFAULT 0,
     total_record BIGINT NOT NULL DEFAULT 0,
+    resume_attempts INTEGER NOT NULL DEFAULT 0,
     is_error BOOLEAN NOT NULL DEFAULT FALSE,
     error_message TEXT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -300,6 +301,7 @@ CREATE TABLE IF NOT EXISTS queue_backfill_data(
 -- Ensure error_message column exists (for existing deployments)
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS error_message TEXT NULL;
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS total_record BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS resume_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS is_error BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Drop Index if exists
