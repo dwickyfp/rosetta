@@ -291,10 +291,10 @@ class BackgroundScheduler:
         # Initialize Credit monitor
         self.credit_monitor = CreditMonitorService()
 
-        # Schedule Credit monitoring task (every 6 hours)
+        # Schedule Credit monitoring task (every 1 hour)
         self.scheduler.add_job(
             self._run_credit_monitor,
-            trigger=IntervalTrigger(hours=6),
+            trigger=IntervalTrigger(hours=1),
             id="credit_monitor",
             name="Credit Monitor",
             replace_existing=True,
@@ -305,7 +305,7 @@ class BackgroundScheduler:
         # Schedule Table List Refresh (every 10 minutes)
         self.scheduler.add_job(
             self._run_table_list_refresh,
-            trigger=IntervalTrigger(minutes=10),
+            trigger=IntervalTrigger(minutes=5),
             id="table_list_refresh",
             name="Table List Refresh",
             replace_existing=True,

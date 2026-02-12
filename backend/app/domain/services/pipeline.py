@@ -519,7 +519,7 @@ class PipelineService:
 
         pipeline = self.repository.get_by_id(pipeline_id)
         pipeline.refresh()
-        pipeline.last_refresh_at = datetime.now(timezone.utc)
+        pipeline.last_refresh_at = datetime.now(datetime.now(ZoneInfo("Asia/Jakarta")))
 
         self.db.commit()
         self.db.refresh(pipeline)
