@@ -12,7 +12,6 @@ import { SourceDetailsCreatePublicationDialog } from '../components/source-detai
 import { SourceDetailsListTable } from '../components/source-details-list-table'
 import { SourceDetailsPresets } from '../components/source-details-presets'
 import { Skeleton } from '@/components/ui/skeleton'
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CustomTabs, CustomTabsContent, CustomTabsList, CustomTabsTrigger } from '@/components/ui/custom-tabs'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
