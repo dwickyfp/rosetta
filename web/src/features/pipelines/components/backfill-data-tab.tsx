@@ -73,18 +73,43 @@ interface BackfillDataTabProps {
   pipeline?: Pipeline
 }
 
-const OPERATORS = [
-  { value: '=', label: 'Equals (=)' },
-  { value: '!=', label: 'Not Equals (!=)' },
-  { value: '>', label: 'Greater Than (>)' },
-  { value: '<', label: 'Less Than (<)' },
-  { value: '>=', label: 'Greater or Equal (>=)' },
-  { value: '<=', label: 'Less or Equal (<=)' },
-  { value: 'LIKE', label: 'Like (LIKE)' },
-  { value: 'ILIKE', label: 'Case Insensitive Like (ILIKE)' },
-  { value: 'IS NULL', label: 'Is Null' },
-  { value: 'IS NOT NULL', label: 'Is Not Null' },
-]
+// Operators grouped by data type
+const OPERATORS_BY_TYPE = {
+  boolean: [
+    { value: '=', label: 'Equals (=)' },
+    { value: '!=', label: 'Not Equals (!=)' },
+    { value: 'IS NULL', label: 'Is Null' },
+    { value: 'IS NOT NULL', label: 'Is Not Null' },
+  ],
+  string: [
+    { value: '=', label: 'Equals (=)' },
+    { value: '!=', label: 'Not Equals (!=)' },
+    { value: 'LIKE', label: 'Like (LIKE)' },
+    { value: 'ILIKE', label: 'Case Insensitive Like (ILIKE)' },
+    { value: 'IS NULL', label: 'Is Null' },
+    { value: 'IS NOT NULL', label: 'Is Not Null' },
+  ],
+  number: [
+    { value: '=', label: 'Equals (=)' },
+    { value: '!=', label: 'Not Equals (!=)' },
+    { value: '>', label: 'Greater Than (>)' },
+    { value: '<', label: 'Less Than (<)' },
+    { value: '>=', label: 'Greater or Equal (>=)' },
+    { value: '<=', label: 'Less or Equal (<=)' },
+    { value: 'IS NULL', label: 'Is Null' },
+    { value: 'IS NOT NULL', label: 'Is Not Null' },
+  ],
+  date: [
+    { value: '=', label: 'Equals (=)' },
+    { value: '!=', label: 'Not Equals (!=)' },
+    { value: '>', label: 'Greater Than (>)' },
+    { value: '<', label: 'Less Than (<)' },
+    { value: '>=', label: 'Greater or Equal (>=)' },
+    { value: '<=', label: 'Less or Equal (<=)' },
+    { value: 'IS NULL', label: 'Is Null' },
+    { value: 'IS NOT NULL', label: 'Is Not Null' },
+  ],
+}
 
 const STATUS_CONFIG = {
   PENDING: {
@@ -188,7 +213,24 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
     value: string
   ) => {
     const newFilters = [...filters]
-    newFilters[index] = { ...newFilters[index], [field]: value }
+    
+    // If updating column, reset operator and value to ensure compatibility
+    if (field === 'column') {
+      const validOperators = getOperatorsForColumn(value)
+      const currentOperator = newFilters[index].operator
+      
+      // Check if current operator is valid for new column type
+      const isOperatorValid = validOperators.some(op => op.value === currentOperator)
+      
+      newFilters[index] = {
+        column: value,
+        operator: isOperatorValid ? currentOperator : '=',
+        value: '', // Reset value when column changes
+      }
+    } else {
+      newFilters[index] = { ...newFilters[index], [field]: value }
+    }
+    
     setFilters(newFilters)
   }
 
@@ -211,6 +253,44 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
     return (col?.data_type || col?.real_data_type || '').toLowerCase()
   }
 
+  // Helper to determine column type category
+  const getColumnTypeCategory = (columnName: string): 'boolean' | 'string' | 'number' | 'date' => {
+    const type = getColumnType(columnName)
+    
+    // Boolean types
+    if (type.includes('bool')) {
+      return 'boolean'
+    }
+    
+    // Date/datetime types
+    if (type.includes('date') || type.includes('time')) {
+      return 'date'
+    }
+    
+    // Numeric types
+    if (
+      type.includes('int') ||
+      type.includes('numeric') ||
+      type.includes('decimal') ||
+      type.includes('float') ||
+      type.includes('double') ||
+      type.includes('real') ||
+      type.includes('money')
+    ) {
+      return 'number'
+    }
+    
+    // Default to string
+    return 'string'
+  }
+
+  // Helper to get operators for a column
+  const getOperatorsForColumn = (columnName: string) => {
+    if (!columnName) return OPERATORS_BY_TYPE.string
+    const category = getColumnTypeCategory(columnName)
+    return OPERATORS_BY_TYPE[category]
+  }
+
   // Helper to determine if column is date/datetime
   const isDateColumn = (columnName: string): boolean => {
     const type = getColumnType(columnName)
@@ -229,6 +309,12 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
       type.includes('real') ||
       type.includes('money')
     )
+  }
+
+  // Helper to determine if column is boolean
+  const isBooleanColumn = (columnName: string): boolean => {
+    const type = getColumnType(columnName)
+    return type.includes('bool')
   }
 
   const handleSubmit = () => {
@@ -395,7 +481,7 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {OPERATORS.map((op) => (
+                          {getOperatorsForColumn(filter.column).map((op) => (
                             <SelectItem key={op.value} value={op.value}>
                               {op.label}
                             </SelectItem>
@@ -411,6 +497,21 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                       {filter.operator === 'IS NULL' ||
                       filter.operator === 'IS NOT NULL' ? (
                         <Input className='h-8' placeholder='N/A' disabled />
+                      ) : filter.column && isBooleanColumn(filter.column) ? (
+                        <Select
+                          value={filter.value}
+                          onValueChange={(value) =>
+                            updateFilter(index, 'value', value)
+                          }
+                        >
+                          <SelectTrigger className='h-8'>
+                            <SelectValue placeholder='Select value' />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value='true'>True</SelectItem>
+                            <SelectItem value='false'>False</SelectItem>
+                          </SelectContent>
+                        </Select>
                       ) : filter.column && isDateColumn(filter.column) ? (
                         <DatePicker
                           selected={
