@@ -74,9 +74,24 @@ class SnowpipeClient:
 
         # Persistent HTTP client (like Rust's reqwest::Client)
         # Initialized once at construction for connection stability
+        # Set appropriate timeouts:
+        # - connect: 10s to establish connection
+        # - read: 120s for slow Snowflake responses (large batches)
+        # - write: 30s for sending request body
+        # - pool: 5s for getting a connection from pool
         self._http: httpx.AsyncClient = httpx.AsyncClient(
-            timeout=60.0,
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=120.0,
+                write=30.0,
+                pool=5.0,
+            ),
             headers={"User-Agent": "rosetta/0.1.0"},
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10,
+                keepalive_expiry=30.0,
+            ),
         )
 
     def _get_http_client(self) -> httpx.AsyncClient:

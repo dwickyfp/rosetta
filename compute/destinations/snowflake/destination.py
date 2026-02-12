@@ -436,7 +436,10 @@ class SnowflakeDestination(BaseDestination):
             timestamp_pattern = r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{0,2}|Z)?$"
             if re.match(timestamp_pattern, value_stripped):
                 # If it has a timezone offset or Z, convert to target timezone
-                if any(c in value_stripped for c in ('+', 'Z')) or value_stripped.count('-') > 2:
+                if (
+                    any(c in value_stripped for c in ("+", "Z"))
+                    or value_stripped.count("-") > 2
+                ):
                     return convert_iso_timestamp_to_target_tz(value_stripped)
                 # No timezone → return as-is for TIMESTAMP_NTZ
                 return value_stripped
@@ -610,17 +613,19 @@ class SnowflakeDestination(BaseDestination):
             self._write_batch_async(records, table_sync), self._loop
         )
 
-        # Timeout scales with batch size: base 60s + 1s per 100 records, max 300s
-        # This handles large CDC batches that may take longer to process
-        timeout_seconds = min(60 + (len(records) // 100), 300)
+        # Timeout: base 120s (matches HTTP read timeout) + 1s per 100 records, max 300s
+        # Must be >= HTTP timeout to let HTTP complete before future times out
+        timeout_seconds = min(120 + (len(records) // 100), 300)
 
         try:
             return future.result(timeout=timeout_seconds)
         except TimeoutError:
             self._logger.error(
                 f"[Snowflake] write_batch timed out after {timeout_seconds}s for {len(records)} records. "
-                f"Snowflake may be slow or overloaded."
+                f"Snowflake may be slow or overloaded. Check network connectivity."
             )
+            # Cancel the pending future to avoid resource leak
+            future.cancel()
             raise
         except Exception as e:
             self._logger.error(f"[Snowflake] write_batch failed: {e}", exc_info=True)
