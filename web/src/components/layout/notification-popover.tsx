@@ -120,6 +120,10 @@ export function NotificationPopover() {
                 <div className='flex items-start justify-between gap-2'>
                   <p
                     className={`min-w-0 flex-1 text-sm leading-tight font-medium break-words ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}
+                    style={{
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
+                    }}
                   >
                     {notification.title}
                   </p>
@@ -134,6 +138,10 @@ export function NotificationPopover() {
                   <HoverCardTrigger asChild>
                     <p
                       className={`text-sm ${!notification.is_read ? 'text-foreground/90' : 'text-muted-foreground'} line-clamp-2 cursor-default break-words`}
+                      style={{
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                      }}
                     >
                       {notification.message}
                     </p>
@@ -144,10 +152,22 @@ export function NotificationPopover() {
                     className='z-50 w-80'
                   >
                     <div className='space-y-2 text-sm'>
-                      <p className='font-semibold break-words'>
+                      <p
+                        className='font-semibold break-words'
+                        style={{
+                          wordBreak: 'break-word',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
                         {notification.title}
                       </p>
-                      <p className='break-words text-muted-foreground'>
+                      <p
+                        className='break-words text-muted-foreground'
+                        style={{
+                          wordBreak: 'break-word',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
                         {notification.message}
                       </p>
                     </div>
