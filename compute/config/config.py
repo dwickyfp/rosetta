@@ -101,9 +101,6 @@ class PipelineConfig:
                     if result:
                         self.max_queue_size = int(result[0])
 
-                    logger.info(
-                        f"Loaded batch config from database: batch_size={self.max_batch_size}, queue_size={self.max_queue_size}"
-                    )
             finally:
                 return_db_connection(conn)
         except Exception as e:

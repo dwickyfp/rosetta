@@ -4,12 +4,14 @@ import { DashboardPanel } from './dashboard-panel'
 import { jobMetricsRepo, JobMetric } from '@/repo/job-metrics'
 import { formatDistanceToNow } from 'date-fns'
 import { Activity } from 'lucide-react'
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 export function JobStatusCard() {
+  const { refreshInterval } = useRefreshInterval()
   const { data: metrics, isLoading } = useQuery({
     queryKey: ['job-metrics'],
     queryFn: jobMetricsRepo.getAll,
-    refetchInterval: 30000, // Refresh every 30s
+    refetchInterval: refreshInterval,
   })
 
   // Define expected intervals for health check (in seconds)

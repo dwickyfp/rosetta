@@ -19,6 +19,7 @@ import {
   Server,
   TrendingDown,
   TrendingUp,
+  RefreshCw,
 } from 'lucide-react'
 import {
   Area,
@@ -33,20 +34,57 @@ import {
 import { cn } from '@/lib/utils'
 import { DashboardGrid } from './components/dashboard-grid'
 import { DashboardPanel } from './components/dashboard-panel'
+import { useState, useEffect } from 'react'
+import { format } from 'date-fns'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { RefreshIntervalProvider, useRefreshInterval } from './context/refresh-interval-context'
 
-export function Dashboard() {
-  const { data: summary } = useQuery({
+const REFRESH_INTERVALS = [
+  { label: 'Auto', value: 5000 },
+  { label: '10s', value: 10000 },
+  { label: '15s', value: 15000 },
+  { label: '30s', value: 30000 },
+  { label: '60s', value: 60000 },
+] as const
+
+function DashboardContent() {
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+  const [, setTick] = useState(0)
+  const { refreshInterval, setRefreshInterval } = useRefreshInterval()
+
+  const { data: summary, dataUpdatedAt: summaryUpdatedAt } = useQuery({
     queryKey: ['dashboard', 'summary'],
     queryFn: dashboardRepo.getSummary,
-    refetchInterval: 10000,
+    refetchInterval: refreshInterval,
   })
 
   // Keep existing queries for consistency
   const { data: flowChart } = useQuery({
     queryKey: ['dashboard', 'flow-chart'],
     queryFn: () => dashboardRepo.getFlowChart(14),
-    refetchInterval: 60000,
+    refetchInterval: refreshInterval,
   })
+
+  // Update last refresh timestamp when data changes
+  useEffect(() => {
+    if (summaryUpdatedAt) {
+      setLastRefresh(new Date(summaryUpdatedAt))
+    }
+  }, [summaryUpdatedAt])
+
+  // Update the time display every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick((prev) => prev + 1)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Calculate trends
   const flowTrend =
@@ -71,8 +109,35 @@ export function Dashboard() {
           <h1 className='text-3xl font-bold tracking-tight'>
             Mission Control
           </h1>
-          <div className="text-sm text-muted-foreground">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          <div className="flex flex-col items-end gap-1">
+            <div className="text-sm text-muted-foreground">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <RefreshCw className="h-3 w-3 animate-spin-slow" />
+                <span>Last updated at {format(lastRefresh, 'HH:mm:ss')}</span>
+              </div>
+              <Select
+                value={refreshInterval.toString()}
+                onValueChange={(value) => setRefreshInterval(Number(value))}
+              >
+                <SelectTrigger className="h-7 w-[110px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REFRESH_INTERVALS.map((interval) => (
+                    <SelectItem
+                      key={interval.value}
+                      value={interval.value.toString()}
+                      className="text-xs"
+                    >
+                      {interval.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -246,5 +311,13 @@ export function Dashboard() {
         </DashboardGrid>
       </Main>
     </>
+  )
+}
+
+export function Dashboard() {
+  return (
+    <RefreshIntervalProvider>
+      <DashboardContent />
+    </RefreshIntervalProvider>
   )
 }

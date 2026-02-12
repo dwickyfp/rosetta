@@ -61,13 +61,11 @@ def _run_pipeline_process(pipeline_id: int, stop_event: EventClass) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     
     subprocess_logger = logging.getLogger(f"Pipeline_{pipeline_id}")
-    subprocess_logger.info(f"Subprocess started for pipeline {pipeline_id}")
     
     # Initialize database connection pool for this process with configurable size
     import os
     pipeline_pool_max_conn = int(os.getenv("PIPELINE_POOL_MAX_CONN", "3"))
     init_connection_pool(min_conn=1, max_conn=pipeline_pool_max_conn)
-    subprocess_logger.info(f"Pipeline connection pool initialized (max_conn={pipeline_pool_max_conn})")
 
     engine = None
     try:
@@ -125,9 +123,6 @@ class PipelineManager:
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
         signal_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
-        self._logger.info(f"\n{'='*60}")
-        self._logger.info(f"Received {signal_name} - Initiating graceful shutdown...")
-        self._logger.info(f"{'='*60}")
         self._shutdown_event.set()
 
     def start_pipeline(
@@ -179,7 +174,6 @@ class PipelineManager:
 
         # Start process
         proc.start()
-        self._logger.info(f"Started pipeline {pipeline.name} (PID: {proc.pid})")
 
         # Update pipeline status in DB to ensure it matches specific running state if needed
         # But usually we trust the START status from DB.
@@ -205,11 +199,8 @@ class PipelineManager:
         pipeline_proc = self._processes[pipeline_id]
 
         if not pipeline_proc.is_alive:
-            self._logger.info(f"Pipeline {pipeline_id} is not running")
             self._cleanup_process(pipeline_id)
             return True
-
-        self._logger.info(f"Stopping pipeline {pipeline_proc.pipeline_name}...")
 
         # Signal stop
         pipeline_proc.stop_event.set()
@@ -227,7 +218,6 @@ class PipelineManager:
         PipelineMetadataRepository.upsert(pipeline_id, "PAUSED")
 
         self._cleanup_process(pipeline_id)
-        self._logger.info(f"Stopped pipeline {pipeline_id}")
 
         return True
 
@@ -302,18 +292,12 @@ class PipelineManager:
 
                 # Case 2: Pipeline status changed to PAUSE
                 if pipeline.status == "PAUSE":
-                    self._logger.info(
-                        f"Pipeline {pipeline.name} status is PAUSE. Stopping..."
-                    )
                     self.stop_pipeline(pipeline_id)
                     continue
 
                 # Case 3: Pipeline configuration updated
                 # We interpret 'REFRESH' as an immediate restart signal too
                 if pipeline.status == "REFRESH":
-                    self._logger.info(
-                        f"Pipeline {pipeline.name} requested REFRESH. Restarting..."
-                    )
                     self.restart_pipeline(pipeline_id, pipeline.updated_at)
                     # Reset status to START after refresh signal
                     PipelineRepository.update_status(pipeline_id, "START")
@@ -324,18 +308,12 @@ class PipelineManager:
                 # Best to compare equality directly if both are same type
                 if pipeline.updated_at and proc.last_updated_at:
                     if pipeline.updated_at > proc.last_updated_at:
-                        self._logger.info(
-                            f"Pipeline {pipeline.name} configuration updated ({pipeline.updated_at} > {proc.last_updated_at}). Restarting..."
-                        )
                         self.restart_pipeline(pipeline_id, pipeline.updated_at)
 
             # Check for pipelines to START
             for pipeline in db_pipelines:
                 if pipeline.status in ("START", "REFRESH"):
                     if pipeline.id not in self._processes:
-                        self._logger.info(
-                            f"Found new pipeline to start: {pipeline.name} (Status: {pipeline.status})"
-                        )
                         self.start_pipeline(pipeline.id, pipeline.updated_at)
                         
                         # Reset status to START if it was REFRESH
@@ -362,7 +340,6 @@ class PipelineManager:
         Args:
             check_interval: Seconds between checks
         """
-        self._logger.info(f"Starting pipeline monitor (interval: {check_interval}s)")
 
         while not self._shutdown_event.is_set():
             self._sync_pipelines_state()
@@ -373,8 +350,6 @@ class PipelineManager:
                 if self._shutdown_event.is_set():
                     break
                 time.sleep(0.5)
-
-        self._logger.info("Monitor loop exited, cleaning up...")
 
     def shutdown(self, timeout: float = 30.0) -> None:
         """
@@ -388,16 +363,12 @@ class PipelineManager:
         # Stop all pipelines
         pk_list = list(self._processes.keys())
         if not pk_list:
-            self._logger.info("No active pipelines to shutdown")
             return
 
-        self._logger.info(f"Stopping {len(pk_list)} active pipeline(s)...")
         per_pipeline_timeout = timeout / max(len(pk_list), 1)
 
         for pipeline_id in pk_list:
             self.stop_pipeline(pipeline_id, timeout=per_pipeline_timeout)
-
-        self._logger.info("All pipelines stopped successfully")
 
     def run(self) -> None:
         """

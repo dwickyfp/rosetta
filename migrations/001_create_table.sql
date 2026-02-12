@@ -318,6 +318,53 @@ CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_pipeline_id ON queue_backfill
 CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_source_id ON queue_backfill_data(source_id);
 CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_created_at ON queue_backfill_data(created_at);
 CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_updated_at ON queue_backfill_data(updated_at);
+CREATE INDEX IF NOT EXISTS idx_queue_backfill_data_status ON queue_backfill_data(status);
+
+-- Performance indexes for dashboard queries (5 second refresh optimization)
+
+-- System metrics: filtered by recorded_at for date range queries
+CREATE INDEX IF NOT EXISTS idx_system_metrics_recorded_at ON system_metrics(recorded_at DESC);
+
+-- Pipelines destination: critical for error tracking and joins
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_pipeline_id ON pipelines_destination(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_is_error ON pipelines_destination(is_error) WHERE is_error = TRUE;
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_last_error_at ON pipelines_destination(last_error_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_destination_id ON pipelines_destination(destination_id);
+
+-- Pipeline destination table sync: for detailed sync monitoring
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_pipeline_dest_id ON pipelines_destination_table_sync(pipeline_destination_id);
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_is_error ON pipelines_destination_table_sync(is_error) WHERE is_error = TRUE;
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_table_name ON pipelines_destination_table_sync(table_name);
+
+-- Pipeline metadata: frequent status checks and activity feed
+CREATE INDEX IF NOT EXISTS idx_pipeline_metadata_updated_at ON pipeline_metadata(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pipeline_metadata_last_start_at ON pipeline_metadata(last_start_at DESC);
+
+-- Data flow monitoring: composite index for common date + table queries
+CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_created_table ON data_flow_record_monitoring(created_at DESC, table_name);
+CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_source_id ON data_flow_record_monitoring(source_id);
+
+-- Notification log: dashboard notification queries
+CREATE INDEX IF NOT EXISTS idx_notification_log_is_read ON notification_log(is_read) WHERE is_read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_notification_log_is_deleted ON notification_log(is_deleted) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_notification_log_created_at ON notification_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_log_is_sent ON notification_log(is_sent) WHERE is_sent = FALSE;
+
+-- WAL monitor: composite index for status filtering
+CREATE INDEX IF NOT EXISTS idx_wal_monitor_updated_at ON wal_monitor(updated_at DESC);
+
+-- Sources: for health monitoring and filtering
+CREATE INDEX IF NOT EXISTS idx_sources_is_publication_enabled ON sources(is_publication_enabled);
+CREATE INDEX IF NOT EXISTS idx_sources_is_replication_enabled ON sources(is_replication_enabled);
+
+-- Destinations: type-based filtering
+CREATE INDEX IF NOT EXISTS idx_destinations_type ON destinations(type);
+
+-- Presets: faster source-based lookups
+CREATE INDEX IF NOT EXISTS idx_presets_source_id ON presets(source_id);
+
+-- Job metrics: unique constraint already provides index, add updated_at
+CREATE INDEX IF NOT EXISTS idx_job_metrics_monitoring_updated_at ON job_metrics_monitoring(updated_at DESC);
 
 
 

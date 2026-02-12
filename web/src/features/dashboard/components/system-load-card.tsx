@@ -3,6 +3,7 @@ import { cn, formatBytes } from '@/lib/utils'
 import { Cpu, Zap } from 'lucide-react'
 import { systemMetricsRepo } from '@/repo/system-metrics'
 import { useQuery } from '@tanstack/react-query'
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 function CircularProgress({
   value,
@@ -96,10 +97,11 @@ function getLoadColor(percentage: number) {
 }
 
 export function SystemLoadCard() {
+  const { refreshInterval } = useRefreshInterval()
   const { data: metrics } = useQuery({
     queryKey: ['system-metrics', 'latest'],
     queryFn: systemMetricsRepo.getLatest,
-    refetchInterval: 5000,
+    refetchInterval: refreshInterval,
   })
 
   // Defaults if loading

@@ -28,7 +28,6 @@ def run_server(host: str, port: int) -> None:
         host: Host to bind to
         port: Port to bind to
     """
-    logger.info(f"Starting API server at http://{host}:{port}")
     try:
         uvicorn.run(app, host=host, port=port, log_level="info")
     except Exception as e:

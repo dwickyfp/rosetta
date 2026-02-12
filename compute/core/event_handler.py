@@ -227,7 +227,6 @@ class CDCEventHandler(BasePythonChangeHandler):
         Args:
             records: List of Debezium change events
         """
-        self._logger.info(f"Received batch of {len(records)} records")
 
         # Group records by table
         records_by_table: dict[str, list[CDCRecord]] = {}
@@ -241,18 +240,10 @@ class CDCEventHandler(BasePythonChangeHandler):
                 # Log what's being skipped for debugging
                 try:
                     value_data = record.value()
-                    dest_data = record.destination()
                     if value_data:
                         value_obj = json.loads(str(value_data))
                         op = value_obj.get("payload", {}).get("op", "unknown")
                         ops_seen.append(op)
-                        if op == "unknown":
-                            # Log full structure to understand the format
-                            self._logger.info(
-                                f"Unknown op record - destination: {dest_data}, "
-                                f"payload keys: {list(value_obj.get('payload', {}).keys())}, "
-                                f"full payload: {value_obj.get('payload', {})}"
-                            )
                     else:
                         ops_seen.append("empty_value")
                 except Exception as parse_ex:
@@ -267,9 +258,6 @@ class CDCEventHandler(BasePythonChangeHandler):
 
         # Process each table's records
         for table_name, table_records in records_by_table.items():
-            self._logger.info(
-                f"Processing {len(table_records)} records for table '{table_name}'"
-            )
             self._process_table_records(table_name, table_records)
 
     def _process_table_records(
@@ -290,9 +278,6 @@ class CDCEventHandler(BasePythonChangeHandler):
         routing_list = self._routing_table.get(table_name)
 
         if not routing_list:
-            self._logger.warning(
-                f"No routing configured for table: {table_name}. Available tables: {list(self._routing_table.keys())}"
-            )
             return
 
         # Process each destination independently with individual error handling
@@ -323,17 +308,9 @@ class CDCEventHandler(BasePythonChangeHandler):
                 else "unknown"
             )
             dest_name = routing.destination.name
-            self._logger.info(
-                f"Routing {len(records)} records to destination '{dest_name}' "
-                f"(type: {dest_type}, table: {table_name})"
-            )
 
             # Write to destination - this is where connection/table errors can occur
             written = routing.destination.write_batch(records, routing.table_sync)
-
-            self._logger.info(
-                f"✓ Successfully wrote {written} records to {dest_name} for table {table_name}"
-            )
 
             # Update data flow monitoring
             if written > 0:
@@ -343,9 +320,6 @@ class CDCEventHandler(BasePythonChangeHandler):
 
             # Clear error state if previously failed - destination is now healthy
             if routing.pipeline_destination.is_error or routing.table_sync.is_error:
-                self._logger.info(
-                    f"Clearing error state for destination {dest_name} - now running successfully"
-                )
                 PipelineDestinationRepository.update_error(
                     routing.pipeline_destination.id, False
                 )
@@ -359,11 +333,6 @@ class CDCEventHandler(BasePythonChangeHandler):
         except DestinationException as e:
             # Destination-specific error (e.g., table not exists, schema mismatch)
             log_msg = f"Destination error: {sanitize_for_log(e)}"
-            self._logger.error(
-                f"✗ Failed to write to destination {routing.destination.name} "
-                f"for table {table_name}: {log_msg}",
-                exc_info=False,
-            )
 
             # Sanitize error for database storage and user display
             db_error_msg = sanitize_for_db(

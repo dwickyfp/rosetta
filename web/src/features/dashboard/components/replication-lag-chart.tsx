@@ -8,7 +8,7 @@ export function ReplicationLagChart() {
   const { data: lagData } = useQuery({
     queryKey: ['dashboard', 'replication-lag'],
     queryFn: () => dashboardRepo.getReplicationLag(1), // 24 hours
-    refetchInterval: 60000,
+    refetchInterval: 5000,
   })
 
   // Pre-defined colors for different sources
