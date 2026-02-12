@@ -105,13 +105,13 @@ class ErrorSanitizer:
 
         # Get original error message
         original_str = str(error).strip()
-        
+
         # Handle empty error messages
         if not original_str:
             if context:
                 return f"{context}: Unknown error occurred"
             return "Unknown error occurred"
-        
+
         error_msg = original_str.lower()
 
         # First, try to match with user-friendly mappings
