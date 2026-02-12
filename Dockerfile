@@ -14,7 +14,7 @@
 # =============================================================================
 # STAGE 1: COMPUTE DEPENDENCIES (PYTHON)
 # =============================================================================
-FROM python:3.10-slim-bookworm AS compute-deps
+FROM python:3.12-slim-bookworm AS compute-deps
 
 WORKDIR /app
 
@@ -71,7 +71,7 @@ RUN pnpm build
 # =============================================================================
 # STAGE 3: BACKEND DEPENDENCIES
 # =============================================================================
-FROM python:3.10-slim-bookworm AS backend-deps
+FROM python:3.12-slim-bookworm AS backend-deps
 
 WORKDIR /app
 
@@ -93,7 +93,7 @@ RUN uv sync --no-install-project
 # =============================================================================
 # STAGE 4: COMPUTE-NODE (PYTHON RUNTIME)
 # =============================================================================
-FROM python:3.10-slim-bookworm AS compute-node
+FROM python:3.12-slim-bookworm AS compute-node
 
 LABEL maintainer="Rosetta Team"
 LABEL description="Rosetta Compute Node - Python Pipeline Manager"
@@ -147,7 +147,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # =============================================================================
 # STAGE 5: WEB (BACKEND + FRONTEND)
 # =============================================================================
-FROM python:3.10-slim-bookworm AS web
+FROM python:3.12-slim-bookworm AS web
 
 LABEL maintainer="Rosetta Team"
 LABEL description="Rosetta Web - FastAPI Backend + React Frontend"

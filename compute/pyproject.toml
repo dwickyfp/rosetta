@@ -3,7 +3,7 @@ name = "rosetta-compute"
 version = "0.1.0"
 description = "Modular CDC engine for data streaming"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "jpype1>=1.6.0",
     'pydbzengine @git+https://github.com/memiiso/pydbzengine.git',
