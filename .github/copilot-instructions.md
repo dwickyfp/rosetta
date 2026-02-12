@@ -53,11 +53,44 @@ features/<feature>/
 
 ### Compute: Event-Driven CDC Engine
 
-Compute service runs Debezium-based CDC pipelines:
+Compute service runs Debezium-based CDC pipelines with process isolation:
 
-- Polls config database for `status='START'` pipelines
+- Polls config database every **10 seconds** for `status='START'` pipelines
 - Uses `pydbzengine` for PostgreSQL WAL replication
-- Manages pipeline lifecycle through `PipelineManager` and `run_pipeline()`
+- Each pipeline runs in isolated `multiprocessing.Process` via `PipelineManager`
+- Process crash isolation - one pipeline failure doesn't affect others
+- Backfill jobs polled every **5 seconds** from `queue_backfill_data` table
+
+## Key Features
+
+### Multi-Destination Support
+
+Pipelines support multiple destinations through `pipeline_destinations` join table:
+
+- One pipeline (PostgreSQL source) → Many destinations (Snowflake/PostgreSQL)
+- Each destination has independent health tracking via `pipeline_metadata`
+- Destination-specific errors stored in `pipeline_destinations.error_message`
+- Web UI shows destinations array: `pipeline.destinations[].destination.name`
+
+### Backfill Feature
+
+Historical data sync using DuckDB for efficient batch processing:
+
+- Create jobs via `POST /pipelines/{id}/backfill` with optional WHERE filters (max 5)
+- Job lifecycle: PENDING → EXECUTING → COMPLETED/FAILED/CANCELLED
+- BackfillManager in compute polls `queue_backfill_data` every 5s
+- Processes 10,000 rows per batch (configurable) to prevent memory issues
+- Runs in separate threads with graceful cancellation support
+
+### Dead Letter Queue (DLQ)
+
+Redis Streams-based failure handling for CDC records:
+
+- Failed records stored in Redis with routing metadata (source_id, destination_id, table_name)
+- Separate streams per table/destination: `dlq:{source_id}:{table}:{dest_id}`
+- Consumer groups ensure at-least-once delivery during recovery
+- Managed by `compute/core/dlq_manager.py` with configurable retry strategies
+- Recovery endpoints: `POST /pipelines/{id}/destinations/{dest_id}/recover-dlq`
 
 ## Development Workflows
 
@@ -125,10 +158,13 @@ All three services read from shared PostgreSQL config tables (`sources`, `destin
 
 ```
 Backend API → Set pipeline.status='START'
-           → Creates pipeline_metadata record
-Compute    → Detects status='START'
-           → Spawns thread running Debezium
-           → Updates pipeline_metadata.health_status='HEALTHY|ERROR'
+           → Creates/updates pipeline_destinations records for each destination
+           → Each destination gets separate pipeline_metadata entry
+Compute    → Detects status='START' 
+           → Spawns isolated Process (multiprocessing.Process)
+           → Single Debezium connector replicates to ALL destinations
+           → Updates pipeline_metadata.health_status per destination
+           → Failed records sent to DLQ (Redis Streams)
 ```
 
 ### Snowflake Authentication
@@ -153,6 +189,11 @@ Uses **RSA key-pair authentication** (not passwords):
 ```bash
 docker-compose up -d    # Starts config PostgreSQL (port 5433) and source PostGIS (port 5434)
 ```
+
+This starts:
+- **Config DB** on port 5433 (for pipeline configurations)
+- **Source DB** on port 5434 (PostGIS-enabled, for CDC source)
+- **Redis** on port 6379 (for DLQ)
 
 Both DBs configured with `wal_level=logical` for CDC support.
 
@@ -184,5 +225,5 @@ Primarily manual testing via UI. Table components follow consistent patterns in 
 Each service has separate config:
 
 - **Backend**: `DATABASE_URL`, `SECRET_KEY`, `WAL_MONITOR_INTERVAL_SECONDS`
-- **Compute**: `CONFIG_DATABASE_URL`, `DEBUG`, `LOG_LEVEL`
+- **Compute**: `CONFIG_DATABASE_URL`, `DEBUG`, `LOG_LEVEL`, `REDIS_URL`, `DLQ_KEY_PREFIX`, `DLQ_CHECK_INTERVAL`, `PIPELINE_POOL_MAX_CONN`
 - **Web**: `VITE_API_URL` (defaults to http://localhost:8000/api/v1)
