@@ -62,28 +62,22 @@ class BackfillManager:
 
     def start(self) -> None:
         """Start the backfill manager thread."""
-        logger.info("Starting BackfillManager")
 
         # Recover stale jobs from previous compute instance
         self._recover_stale_jobs()
 
         monitor_thread = threading.Thread(target=self._monitor_queue, daemon=True)
         monitor_thread.start()
-        logger.info("BackfillManager started")
 
     def stop(self) -> None:
         """Stop the backfill manager."""
-        logger.info("Stopping BackfillManager")
         self.stop_event.set()
 
         # Wait for active jobs to complete (with timeout)
         with self.active_jobs_lock:
             for job_id, thread in list(self.active_jobs.items()):
                 if thread.is_alive():
-                    logger.info(f"Waiting for backfill job {job_id} to complete")
                     thread.join(timeout=30)
-
-        logger.info("BackfillManager stopped")
 
     def _recover_stale_jobs(self) -> None:
         """
@@ -125,10 +119,7 @@ class BackfillManager:
                 stale_jobs = cursor.fetchall()
 
                 if not stale_jobs:
-                    logger.info("No stale backfill jobs found")
                     return
-
-                logger.info(f"Found {len(stale_jobs)} stale backfill jobs")
 
                 for job in stale_jobs:
                     job_id, pipeline_id, count_record, total_record, resume_attempts = (
@@ -156,11 +147,6 @@ class BackfillManager:
                         )
                     else:
                         # Reset to PENDING for retry
-                        logger.info(
-                            f"Recovering backfill job {job_id} (pipeline {pipeline_id}) "
-                            f"from checkpoint {count_record}/{total_record} ({progress_pct:.1f}%) "
-                            f"[Resume attempt {resume_attempts + 1}/{self.MAX_RESUME_ATTEMPTS}]"
-                        )
                         cursor.execute(
                             """
                         UPDATE queue_backfill_data
@@ -172,7 +158,6 @@ class BackfillManager:
                         )
 
                 conn.commit()
-                logger.info("Stale job recovery completed")
 
         except Exception as e:
             logger.error(f"Error recovering stale jobs: {e}")
@@ -184,7 +169,6 @@ class BackfillManager:
 
     def _monitor_queue(self) -> None:
         """Monitor queue for pending backfill jobs."""
-        logger.info("Backfill queue monitor started")
 
         while not self.stop_event.is_set():
             try:
@@ -201,9 +185,6 @@ class BackfillManager:
                             continue
 
                     # Start job in background thread
-                    logger.info(
-                        f"Starting backfill job {job['id']} for table {job['table_name']}"
-                    )
                     job_thread = threading.Thread(
                         target=self._execute_backfill_job,
                         args=(job,),
@@ -220,8 +201,6 @@ class BackfillManager:
 
             # Sleep before next check
             time.sleep(self.check_interval)
-
-        logger.info("Backfill queue monitor stopped")
 
     def _get_pending_jobs(self) -> List[dict]:
         """
@@ -294,9 +273,6 @@ class BackfillManager:
 
             # Check if job was cancelled during processing
             if self._is_job_cancelled(job_id):
-                logger.info(
-                    f"Backfill job {job_id} was cancelled. Processed {total_records} records before cancellation."
-                )
                 # Status is already CANCELLED, just return
                 return
 
@@ -305,9 +281,6 @@ class BackfillManager:
                 job_id,
                 BackfillStatus.COMPLETED.value,
                 count_record=total_records,
-            )
-            logger.info(
-                f"Backfill job {job_id} completed successfully. Total records: {total_records}"
             )
 
         except Exception as e:
@@ -358,7 +331,6 @@ class BackfillManager:
             conn.execute("LOAD postgres")
 
             # Attach PostgreSQL database
-            logger.info(f"Attaching to PostgreSQL: {job['pg_database']}")
             conn.execute(
                 f"""
                 ATTACH '{pg_conn_str}' AS source_db (TYPE POSTGRES)
@@ -381,20 +353,6 @@ class BackfillManager:
             count_query = f"SELECT COUNT(1) as total FROM ({base_query}) t"
             total_rows = conn.execute(count_query).fetchone()[0]
 
-            # Log resume info
-            if start_offset > 0:
-                progress_pct = (
-                    (start_offset / total_rows * 100) if total_rows > 0 else 0
-                )
-                logger.info(
-                    f"Job {job_id}: Resuming from checkpoint {start_offset}/{total_rows} "
-                    f"({progress_pct:.1f}%) [Attempt {resume_attempts + 1}]"
-                )
-            else:
-                logger.info(
-                    f"Job {job_id}: Starting new backfill - Total rows: {total_rows}"
-                )
-
             # Update total_record in database if not already set
             # (This handles both new jobs and recovered jobs)
             if job.get("total_record") is None or job.get("total_record") == 0:
@@ -405,7 +363,6 @@ class BackfillManager:
             while not self.stop_event.is_set():
                 # Check if job was cancelled
                 if self._is_job_cancelled(job_id):
-                    logger.info(f"Job {job_id} was cancelled, stopping processing")
                     break
 
                 # Calculate dynamic batch size to not exceed total records
@@ -434,10 +391,6 @@ class BackfillManager:
                 # Update progress
                 total_processed += len(batch_records)
                 self._update_job_count(job_id, total_processed)
-
-                logger.info(
-                    f"Job {job_id}: Processed {total_processed}/{total_rows} records"
-                )
 
                 offset += len(batch_records)
 
@@ -576,10 +529,6 @@ class BackfillManager:
 
                     # Write batch to destination
                     written = destination.write_batch(cdc_records, table_sync)
-                    logger.info(
-                        f"✓ Wrote {written} records to destination {destination_config.name} "
-                        f"for table {table_name} -> {table_sync.table_name_target}"
-                    )
 
                     # Track data flow monitoring (same as CDC)
                     if written > 0:
@@ -592,10 +541,7 @@ class BackfillManager:
                                 table_name=f"LANDING_{table_name.upper()}",
                                 count=written,
                             )
-                            logger.debug(
-                                f"Tracked {written} records in data_flow_record_monitoring "
-                                f"for pipeline {pipeline_id}, destination {pd.id}"
-                            )
+
                         except Exception as monitoring_error:
                             logger.warning(
                                 f"Failed to update data flow monitoring: {monitoring_error}"

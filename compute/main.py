@@ -55,8 +55,6 @@ def run_migration(logger: logging.Logger) -> None:
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
 
-    logger.info(f"Running migration from {migration_file}")
-
     conn = None
     try:
         with open(migration_file, "r") as f:
@@ -66,8 +64,6 @@ def run_migration(logger: logging.Logger) -> None:
         with conn.cursor() as cursor:
             cursor.execute(sql_script)
             conn.commit()
-
-        logger.info("Migration completed successfully")
 
     except Exception as e:
         logger.error(f"Migration failed: {e}")
@@ -109,7 +105,6 @@ def main() -> int:
     # Initialize connection pool with configurable size
     main_pool_max_conn = int(os.getenv("MAIN_POOL_MAX_CONN", "8"))
     init_connection_pool(min_conn=1, max_conn=main_pool_max_conn)
-    logger.info(f"Main connection pool initialized (max_conn={main_pool_max_conn})")
     
     config = get_config()
 
@@ -117,9 +112,6 @@ def main() -> int:
     backfill_manager = None
 
     try:
-        logger.info("Starting Rosetta Compute Engine")
-        logger.info("Press Ctrl+C to shutdown gracefully")
-
         # Running Migration SQL
         run_migration(logger)
 
@@ -130,27 +122,21 @@ def main() -> int:
             daemon=True,
         )
         server_thread.start()
-        logger.info(
-            f"API Server started at http://{config.server.host}:{config.server.port}"
-        )
 
         # Start Pipeline Manager in a separate thread
         manager = PipelineManager(register_signals=False)
         manager_thread = threading.Thread(target=manager.run, daemon=True)
         manager_thread.start()
-        logger.info("Pipeline Manager started in background thread")
 
         # Start Backfill Manager in a separate thread
         backfill_manager = BackfillManager(check_interval=5, batch_size=10000)
         backfill_manager.start()
-        logger.info("Backfill Manager started in background thread")
 
         # Keep main thread alive to handle signals and facilitate clean shutdown
         while True:
             time.sleep(1)
 
     except KeyboardInterrupt:
-        logger.info("Shutdown requested via KeyboardInterrupt")
         return 0
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
@@ -162,15 +148,12 @@ def main() -> int:
         # Since threads are daemon, they will be killed when main exits,
         # but manager.shutdown() is cleaner if possible.
         if manager:
-            logger.info("Shutting down Pipeline Manager...")
             manager.shutdown()
 
         if backfill_manager:
-            logger.info("Shutting down Backfill Manager...")
             backfill_manager.stop()
 
         close_connection_pool()
-        logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":

@@ -58,7 +58,6 @@ def init_connection_pool(
         _connection_pool = pool.ThreadedConnectionPool(
             minconn=min_conn, maxconn=max_conn, **dsn
         )
-        logger.info("Database connection pool initialized with keepalive settings")
         return _connection_pool
     except psycopg2.Error as e:
         raise DatabaseException(f"Failed to initialize connection pool: {e}")
@@ -81,7 +80,6 @@ def close_connection_pool() -> None:
     if _connection_pool is not None:
         _connection_pool.closeall()
         _connection_pool = None
-        logger.info("Database connection pool closed")
 
 
 def get_db_connection() -> psycopg2.extensions.connection:
