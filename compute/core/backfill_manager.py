@@ -98,17 +98,29 @@ class BackfillManager:
         try:
             conn = pool.getconn()
             with conn.cursor() as cursor:
-                # Find stale jobs (EXECUTING for > STALE_JOB_THRESHOLD_MINUTES)
-                cursor.execute(
-                    """
-                SELECT id, pipeline_id, count_record, total_record, resume_attempts
-                FROM queue_backfill_data
-                WHERE status = 'EXECUTING'
-                    AND updated_at < NOW() - INTERVAL '%s minutes'
-                ORDER BY created_at ASC
-            """,
-                    (self.STALE_JOB_THRESHOLD_MINUTES,),
-                )
+                # Find stale jobs
+                # When threshold is 0, recover ALL EXECUTING jobs on startup
+                # Otherwise, recover jobs older than the threshold
+                if self.STALE_JOB_THRESHOLD_MINUTES == 0:
+                    cursor.execute(
+                        """
+                    SELECT id, pipeline_id, count_record, total_record, resume_attempts
+                    FROM queue_backfill_data
+                    WHERE status = 'EXECUTING'
+                    ORDER BY created_at ASC
+                """
+                    )
+                else:
+                    cursor.execute(
+                        """
+                    SELECT id, pipeline_id, count_record, total_record, resume_attempts
+                    FROM queue_backfill_data
+                    WHERE status = 'EXECUTING'
+                        AND updated_at < NOW() - INTERVAL '%s minutes'
+                    ORDER BY created_at ASC
+                """,
+                        (self.STALE_JOB_THRESHOLD_MINUTES,),
+                    )
 
                 stale_jobs = cursor.fetchall()
 
