@@ -49,4 +49,5 @@ dist-ssr
 /compute/dlq/*
 /compute/tmp/*
 /web/pnpm-lock.yaml
+/compute/uv.lcok
 

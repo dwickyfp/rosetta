@@ -32,11 +32,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy uv binary
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Copy pyproject.toml and uv.lock
-COPY compute/pyproject.toml compute/uv.lock ./
+# Copy pyproject.toml
+COPY compute/pyproject.toml ./
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-install-project
+# Install dependencies using uv (fresh resolution, no lock file)
+RUN uv sync --no-install-project
 
 
 # =============================================================================
@@ -81,14 +81,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy uv lock file and pyproject.toml
-COPY backend/pyproject.toml backend/uv.lock ./
+# Copy pyproject.toml
+COPY backend/pyproject.toml ./
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Install dependencies
-RUN uv sync --frozen --no-install-project
+# Install dependencies (fresh resolution, no lock file)
+RUN uv sync --no-install-project
 
 # =============================================================================
 # STAGE 4: COMPUTE-NODE (PYTHON RUNTIME)
