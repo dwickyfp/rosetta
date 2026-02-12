@@ -109,7 +109,17 @@ class PipelineEngine:
             BaseDestination instance
         """
         if destination_type.upper() == DestinationType.SNOWFLAKE.value:
-            return SnowflakeDestination(config)
+            # Get Snowflake timeout config from global config
+            cfg = get_config()
+            timeout_config = {
+                "connect_timeout": cfg.snowflake.connect_timeout,
+                "read_timeout": cfg.snowflake.read_timeout,
+                "write_timeout": cfg.snowflake.write_timeout,
+                "pool_timeout": cfg.snowflake.pool_timeout,
+                "batch_timeout_base": cfg.snowflake.batch_timeout_base,
+                "batch_timeout_max": cfg.snowflake.batch_timeout_max,
+            }
+            return SnowflakeDestination(config, timeout_config=timeout_config)
         elif destination_type.upper() == DestinationType.POSTGRES.value:
             return PostgreSQLDestination(config)
         else:

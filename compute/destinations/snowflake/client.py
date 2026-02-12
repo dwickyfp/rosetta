@@ -40,6 +40,10 @@ class SnowpipeClient:
         landing_database: Optional[str] = None,
         landing_schema: Optional[str] = None,
         passphrase: Optional[str] = None,
+        connect_timeout: float = 30.0,
+        read_timeout: float = 300.0,
+        write_timeout: float = 60.0,
+        pool_timeout: float = 10.0,
     ):
         """
         Initialize Snowpipe client.
@@ -54,6 +58,10 @@ class SnowpipeClient:
             landing_database: Override database for landing tables
             landing_schema: Override schema for landing tables
             passphrase: Optional passphrase for encrypted key
+            connect_timeout: Connection establishment timeout (seconds)
+            read_timeout: Response read timeout (seconds)
+            write_timeout: Request write timeout (seconds)
+            pool_timeout: Connection pool timeout (seconds)
         """
         self._auth = AuthManager(account_id, user, private_key_pem, passphrase)
         self._account_id = account_id
@@ -75,16 +83,16 @@ class SnowpipeClient:
         # Persistent HTTP client (like Rust's reqwest::Client)
         # Initialized once at construction for connection stability
         # Set appropriate timeouts:
-        # - connect: 10s to establish connection
-        # - read: 120s for slow Snowflake responses (large batches)
-        # - write: 30s for sending request body
-        # - pool: 5s for getting a connection from pool
+        # - connect: Connection establishment timeout
+        # - read: Timeout for slow Snowflake responses (large batches)
+        # - write: Timeout for sending request body
+        # - pool: Timeout for getting a connection from pool
         self._http: httpx.AsyncClient = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0,
-                read=120.0,
-                write=30.0,
-                pool=5.0,
+                connect=connect_timeout,
+                read=read_timeout,
+                write=write_timeout,
+                pool=pool_timeout,
             ),
             headers={"User-Agent": "rosetta/0.1.0"},
             limits=httpx.Limits(

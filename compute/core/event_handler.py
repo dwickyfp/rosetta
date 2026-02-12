@@ -265,14 +265,6 @@ class CDCEventHandler(BasePythonChangeHandler):
                 records_by_table[table_name] = []
             records_by_table[table_name].append(cdc_record)
 
-        self._logger.info(
-            f"Grouped into {len(records_by_table)} tables: {list(records_by_table.keys())} "
-            f"(skipped: {skipped_count}, ops: {ops_seen})"
-        )
-        self._logger.info(
-            f"Routing table has {len(self._routing_table)} tables: {list(self._routing_table.keys())}"
-        )
-
         # Process each table's records
         for table_name, table_records in records_by_table.items():
             self._logger.info(

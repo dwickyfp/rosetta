@@ -37,17 +37,33 @@ class SnowflakeDestination(BaseDestination):
     # Required config keys
     REQUIRED_CONFIG = ["account", "user", "private_key"]
 
-    def __init__(self, config: Destination):
+    def __init__(self, config: Destination, timeout_config: Optional[dict] = None):
         """
         Initialize Snowflake destination.
 
         Args:
             config: Destination configuration from database
+            timeout_config: Optional timeout configuration dict with keys:
+                - connect_timeout: Connection timeout (default: 30.0)
+                - read_timeout: Read timeout (default: 300.0)
+                - write_timeout: Write timeout (default: 60.0)
+                - pool_timeout: Pool timeout (default: 10.0)
+                - batch_timeout_base: Base batch timeout (default: 300)
+                - batch_timeout_max: Max batch timeout (default: 600)
         """
         super().__init__(config)
         self._client: Optional[SnowpipeClient] = None
         self._channel_tokens: dict[str, str] = {}  # table_name -> continuation_token
         self._validate_config()
+
+        # Store timeout configuration
+        self._timeout_config = timeout_config or {}
+        self._connect_timeout = self._timeout_config.get("connect_timeout", 30.0)
+        self._read_timeout = self._timeout_config.get("read_timeout", 300.0)
+        self._write_timeout = self._timeout_config.get("write_timeout", 60.0)
+        self._pool_timeout = self._timeout_config.get("pool_timeout", 10.0)
+        self._batch_timeout_base = self._timeout_config.get("batch_timeout_base", 300)
+        self._batch_timeout_max = self._timeout_config.get("batch_timeout_max", 600)
 
         # Background event loop for async operations
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -173,6 +189,10 @@ class SnowflakeDestination(BaseDestination):
                 landing_database=self.landing_database,
                 landing_schema=self.landing_schema,
                 passphrase=passphrase,
+                connect_timeout=self._connect_timeout,
+                read_timeout=self._read_timeout,
+                write_timeout=self._write_timeout,
+                pool_timeout=self._pool_timeout,
             )
             # Authenticate immediately to verify config
             await self._client.authenticate()
@@ -613,9 +633,11 @@ class SnowflakeDestination(BaseDestination):
             self._write_batch_async(records, table_sync), self._loop
         )
 
-        # Timeout: base 120s (matches HTTP read timeout) + 1s per 100 records, max 300s
+        # Timeout: configurable base + 1s per 100 records, up to max
         # Must be >= HTTP timeout to let HTTP complete before future times out
-        timeout_seconds = min(120 + (len(records) // 100), 300)
+        timeout_seconds = min(
+            self._batch_timeout_base + (len(records) // 100), self._batch_timeout_max
+        )
 
         try:
             return future.result(timeout=timeout_seconds)
@@ -697,12 +719,22 @@ class SnowflakeDestination(BaseDestination):
                 from destinations.snowflake.client import SnowpipeClient
 
                 # Create temporary client
-                private_key_content = self._get_private_key_content()
+                private_key = self._get_private_key_content()
+                passphrase = self._get_passphrase()
                 client = SnowpipeClient(
-                    account=self.account,
+                    account_id=self.account,
                     user=self.user,
-                    private_key_content=private_key_content,
+                    private_key_pem=private_key,
+                    database=self.database,
+                    schema=self.schema,
                     role=self.role,
+                    landing_database=self.landing_database,
+                    landing_schema=self.landing_schema,
+                    passphrase=passphrase,
+                    connect_timeout=self._connect_timeout,
+                    read_timeout=self._read_timeout,
+                    write_timeout=self._write_timeout,
+                    pool_timeout=self._pool_timeout,
                 )
 
                 try:

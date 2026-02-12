@@ -148,6 +148,20 @@ class DLQConfig:
 
 
 @dataclass
+class SnowflakeConfig:
+    """Snowflake destination timeout configuration."""
+
+    connect_timeout: float = 30.0  # Connection establishment timeout
+    read_timeout: float = 300.0  # Read response timeout (increased from 120s)
+    write_timeout: float = 60.0  # Write request timeout
+    pool_timeout: float = 10.0  # Connection pool timeout
+    batch_timeout_base: int = 300  # Base timeout for write_batch (increased from 120s)
+    batch_timeout_max: int = (
+        600  # Maximum timeout for write_batch (increased from 300s)
+    )
+
+
+@dataclass
 class Config:
     """
     Central configuration for Rosetta Compute Engine.
@@ -161,6 +175,7 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     dlq: DLQConfig = field(default_factory=DLQConfig)
+    snowflake: SnowflakeConfig = field(default_factory=SnowflakeConfig)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -206,6 +221,16 @@ class Config:
                 max_retry_count=int(os.getenv("DLQ_MAX_RETRY_COUNT", "10")),
                 max_age_days=int(os.getenv("DLQ_MAX_AGE_DAYS", "7")),
                 block_ms=int(os.getenv("DLQ_BLOCK_MS", "2000")),
+            ),
+            snowflake=SnowflakeConfig(
+                connect_timeout=float(os.getenv("SNOWFLAKE_CONNECT_TIMEOUT", "30.0")),
+                read_timeout=float(os.getenv("SNOWFLAKE_READ_TIMEOUT", "300.0")),
+                write_timeout=float(os.getenv("SNOWFLAKE_WRITE_TIMEOUT", "60.0")),
+                pool_timeout=float(os.getenv("SNOWFLAKE_POOL_TIMEOUT", "10.0")),
+                batch_timeout_base=int(
+                    os.getenv("SNOWFLAKE_BATCH_TIMEOUT_BASE", "300")
+                ),
+                batch_timeout_max=int(os.getenv("SNOWFLAKE_BATCH_TIMEOUT_MAX", "600")),
             ),
         )
 
