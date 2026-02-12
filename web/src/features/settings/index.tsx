@@ -1,7 +1,6 @@
 import { Outlet } from '@tanstack/react-router'
 import { Activity, BellRing, Server } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
@@ -34,7 +33,7 @@ export function Settings() {
         <Search />
         <div className='ms-auto flex items-center space-x-4'>
           <ThemeSwitch />
-          <ConfigDrawer />
+          
         </div>
       </Header>
 

@@ -9,7 +9,6 @@ import { DestinationsTable } from '../components/destinations-table'
 import { destinationsRepo } from '@/repo/destinations'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { ConfigDrawer } from '@/components/config-drawer'
 
 export function DestinationsPage() {
     const { data } = useQuery({
@@ -32,7 +31,7 @@ export function DestinationsPage() {
                 <Search />
                 <div className='ms-auto flex items-center space-x-4'>
                     <ThemeSwitch />
-                    <ConfigDrawer />
+                    
                 </div>
             </Header>
 

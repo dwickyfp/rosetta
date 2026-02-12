@@ -9,7 +9,6 @@ import { SourcesTable } from './components/sources-table'
 import { sourcesRepo } from '@/repo/sources'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { ConfigDrawer } from '@/components/config-drawer'
 
 export function Sources() {
     const { data } = useQuery({
@@ -33,7 +32,7 @@ export function Sources() {
                 <Search />
                 <div className='ms-auto flex items-center space-x-4'>
                     <ThemeSwitch />
-                    <ConfigDrawer />
+                    
                 </div>
             </Header>
 

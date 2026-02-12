@@ -31,7 +31,6 @@ import {
 } from '@/components/ui/custom-tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
@@ -146,7 +145,7 @@ export default function PipelineDetailsPage() {
         <Search />
         <div className='ms-auto flex items-center space-x-4'>
           <ThemeSwitch />
-          <ConfigDrawer />
+          
         </div>
       </Header>
 

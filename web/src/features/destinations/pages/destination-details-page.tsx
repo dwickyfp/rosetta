@@ -21,7 +21,6 @@ import { format, subDays, isSameDay } from 'date-fns'
 import { Header } from '@/components/layout/header'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { ConfigDrawer } from '@/components/config-drawer'
 
 import { useQuery } from '@tanstack/react-query'
 import { destinationsRepo } from '@/repo/destinations'
@@ -154,7 +153,7 @@ export function DestinationDetailsPage() {
                 <Search />
                 <div className='ms-auto flex items-center space-x-4'>
                     <ThemeSwitch />
-                    <ConfigDrawer />
+                    
                 </div>
             </Header>
 
