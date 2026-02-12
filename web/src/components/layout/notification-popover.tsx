@@ -119,7 +119,7 @@ export function NotificationPopover() {
               <div className='min-w-0 flex-1 space-y-1 overflow-hidden'>
                 <div className='flex items-start justify-between gap-2'>
                   <p
-                    className={`text-sm leading-tight font-medium break-words ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}
+                    className={`min-w-0 flex-1 text-sm leading-tight font-medium break-words ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}
                   >
                     {notification.title}
                   </p>
@@ -144,7 +144,9 @@ export function NotificationPopover() {
                     className='z-50 w-80'
                   >
                     <div className='space-y-2 text-sm'>
-                      <p className='font-semibold'>{notification.title}</p>
+                      <p className='font-semibold break-words'>
+                        {notification.title}
+                      </p>
                       <p className='break-words text-muted-foreground'>
                         {notification.message}
                       </p>
