@@ -1,10 +1,8 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from '@tanstack/react-router'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { sourcesRepo } from '@/repo/sources'
 import {
-  RefreshCcw,
   GitBranch,
   Table2,
   Database,
@@ -21,7 +19,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
-import { Button } from '@/components/ui/button'
 // import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs' // Replaced with CustomTabs
 import {
   CustomTabs,
@@ -38,13 +35,13 @@ import { BackfillDataTab } from '@/features/pipelines/components/backfill-data-t
 import { PipelineDataFlow } from '@/features/pipelines/components/pipeline-data-flow'
 import { PipelineFlowTab } from '@/features/pipelines/components/pipeline-flow-tab'
 import { PipelineStatusSwitch } from '@/features/pipelines/components/pipeline-status-switch'
+import { RestartButton } from '@/features/pipelines/components/restart-button'
 
 export default function PipelineDetailsPage() {
   const { pipelineId } = useParams({
     from: '/_authenticated/pipelines/$pipelineId',
   })
   const id = parseInt(pipelineId)
-  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // 1. Fetch Pipeline
   const {
@@ -69,17 +66,9 @@ export default function PipelineDetailsPage() {
 
   const handleRefresh = async () => {
     if (!pipeline) return
-    setIsRefreshing(true)
-    try {
-      await pipelinesRepo.refresh(id)
-      await sourcesRepo.refreshSource(pipeline.source_id)
-      toast.success('Pipeline and Source refreshed')
-    } catch (e) {
-      console.error(e)
-      toast.error('Failed to refresh')
-    } finally {
-      setIsRefreshing(false)
-    }
+    await pipelinesRepo.refresh(id)
+    await sourcesRepo.refreshSource(pipeline.source_id)
+    toast.success('Pipeline and Source restarted successfully')
   }
 
   if (pipelineError) {
@@ -161,18 +150,10 @@ export default function PipelineDetailsPage() {
             </div>
             <div className='flex items-center gap-3 pt-1'>
               {pipeline && <PipelineStatusSwitch pipeline={pipeline} />}
-              <Button
-                variant='outline'
-                size='sm'
-                onClick={handleRefresh}
-                disabled={isRefreshing || isLoading}
-                className='h-9'
-              >
-                <RefreshCcw
-                  className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')}
-                />
-                Refresh
-              </Button>
+              <RestartButton
+                onRestart={handleRefresh}
+                disabled={isLoading}
+              />
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Play, Pause, Loader2 } from 'lucide-react'
+import { Play, Pause } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { useState } from 'react'
@@ -17,7 +17,7 @@ export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
   const [optimisticState, setOptimisticState] = useState<boolean | null>(null)
   const displayState = optimisticState !== null ? optimisticState : isRunning
 
-  const { mutate, isPending } = useMutation({
+  const { mutate } = useMutation({
     mutationFn: async (checked: boolean) => {
       if (checked) {
         return pipelinesRepo.start(pipeline.id)

@@ -15,17 +15,7 @@ export default function PipelineList() {
     const { data: pipelines } = useQuery({
         queryKey: ['pipelines'],
         queryFn: pipelinesRepo.getAll,
-        refetchInterval: (query) => {
-            const data = query.state.data
-            if (!data) return false
-
-            const hasActiveInitialization = data.pipelines.some(p =>
-                p.pipeline_progress?.status === 'PENDING' ||
-                p.pipeline_progress?.status === 'IN_PROGRESS'
-            )
-
-            return hasActiveInitialization ? 2000 : false
-        }
+        refetchInterval: 5000, // Refetch every 5 seconds
     })
 
     useEffect(() => {

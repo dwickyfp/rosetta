@@ -1,0 +1,92 @@
+import { useState } from 'react'
+import { RotateCw } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+
+interface RestartButtonProps {
+  onRestart: () => Promise<void>
+  disabled?: boolean
+}
+
+export function RestartButton({ onRestart, disabled = false }: RestartButtonProps) {
+  const [isRestarting, setIsRestarting] = useState(false)
+
+  const handleClick = async () => {
+    if (disabled || isRestarting) return
+
+    setIsRestarting(true)
+    try {
+      await onRestart()
+    } catch (error) {
+      console.error('Restart failed:', error)
+      toast.error('Failed to restart. Please try again.')
+    } finally {
+      // Keep animation running for a bit longer for visual feedback
+      setTimeout(() => {
+        setIsRestarting(false)
+      }, 600)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={disabled || isRestarting}
+      className={cn(
+        'group relative inline-flex items-center overflow-hidden rounded-lg border-2 transition-all duration-500 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        isRestarting
+          ? 'h-10 w-auto gap-2.5 border-cyan-500 bg-cyan-500/10 px-4 py-2 text-cyan-600 shadow-md shadow-cyan-500/20 dark:text-cyan-400'
+          : 'h-10 w-10 justify-center border-cyan-600 bg-transparent text-cyan-600 hover:w-auto hover:justify-start hover:gap-2.5 hover:border-cyan-500 hover:bg-cyan-500/5 hover:px-4 hover:shadow-md hover:shadow-cyan-500/10 dark:text-cyan-400'
+      )}
+    >
+      {/* Simple Shine Effect on Hover */}
+      {!isRestarting && (
+        <span className='absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full' />
+      )}
+
+      {/* Subtle Particles Background */}
+      {isRestarting && (
+        <>
+          <span className='absolute left-0 top-0 h-full w-full'>
+            <span className='absolute left-[20%] top-[40%] h-1 w-1 animate-ping rounded-full bg-white/30' />
+          </span>
+          <span className='absolute left-0 top-0 h-full w-full'>
+            <span
+              className='absolute left-[70%] top-[55%] h-1 w-1 animate-ping rounded-full bg-white/30'
+              style={{ animationDelay: '0.3s' }}
+            />
+          </span>
+        </>
+      )}
+
+      {/* Icon with Rotation Animation */}
+      <span className='relative flex flex-shrink-0 items-center justify-center'>
+        <RotateCw
+          className={cn(
+            'h-4 w-4 transition-all duration-500',
+            isRestarting && 'animate-spin-slow'
+          )}
+        />
+      </span>
+
+      {/* Text with Slide-in and Slide-out Animation */}
+      <span
+        className={cn(
+          'relative whitespace-nowrap text-sm font-medium tracking-wide transition-all duration-500 ease-in-out',
+          isRestarting
+            ? 'max-w-[100px] translate-x-0 opacity-100'
+            : 'max-w-0 -translate-x-2 opacity-0 group-hover:max-w-[100px] group-hover:translate-x-0 group-hover:opacity-100'
+        )}
+      >
+        {isRestarting ? 'Restarting...' : 'Restart'}
+      </span>
+
+      {/* Single Progress Bar */}
+      {isRestarting && (
+        <span className='absolute bottom-0 left-0 h-0.5 w-full overflow-hidden rounded-b-lg bg-cyan-900/20'>
+          <span className='absolute left-0 top-0 h-full w-full origin-left animate-progress bg-gradient-to-r from-cyan-300 to-blue-300' />
+        </span>
+      )}
+    </button>
+  )
+}
