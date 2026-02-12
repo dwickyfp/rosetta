@@ -15,6 +15,7 @@ from psycopg2.extras import RealDictCursor
 from core.database import get_connection_pool
 from core.models import Source, QueueBackfillData, BackfillStatus
 from core.security import decrypt_value
+from core.timezone import convert_timestamp_to_target_tz, convert_time_to_target_tz
 from config.config import get_config
 
 try:
@@ -529,12 +530,12 @@ class BackfillManager:
                 #
                 # Snowflake expects:
                 # - TIMESTAMP_NTZ ← "2024-01-15T10:30:00.000000" (no TZ suffix)
-                # - TIMESTAMP_TZ ← "2024-01-15T10:30:00.000000+07:00" (with TZ suffix, PRESERVED)
+                # - TIMESTAMP_TZ ← "2024-01-15T10:30:00.000000+07:00" (converted to target TZ)
                 if value.tzinfo is not None:
                     # Has timezone info → TIMESTAMPTZ → TIMESTAMP_TZ
-                    # IMPORTANT: Preserve the original timezone, DO NOT convert to UTC
-                    # isoformat() keeps the original timezone offset
-                    serialized[key] = value.isoformat()
+                    # Convert to target timezone (Asia/Jakarta) for consistency
+                    converted = convert_timestamp_to_target_tz(value)
+                    serialized[key] = converted.isoformat()
                 else:
                     # No timezone info → TIMESTAMP → TIMESTAMP_NTZ
                     # Output without timezone for Snowflake TIMESTAMP_NTZ
@@ -545,8 +546,9 @@ class BackfillManager:
             elif isinstance(value, time):
                 # TIME → ISO format string with or without TZ
                 if value.tzinfo is not None:
-                    # TIME WITH TIME ZONE → preserve timezone
-                    serialized[key] = value.isoformat()
+                    # TIME WITH TIME ZONE → convert to target timezone offset
+                    converted = convert_time_to_target_tz(value)
+                    serialized[key] = converted.isoformat()
                 else:
                     # TIME WITHOUT TIME ZONE → no offset
                     serialized[key] = value.strftime("%H:%M:%S.%f")

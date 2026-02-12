@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Activity, BellRing } from 'lucide-react'
+import { Activity, BellRing, Server } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -13,6 +13,11 @@ const sidebarNavItems = [
     title: 'WAL Monitor',
     href: '/settings/wal-monitor',
     icon: <Activity size={18} />,
+  },
+  {
+    title: 'Batch Configuration',
+    href: '/settings/batch-configuration',
+    icon: <Server size={18} />,
   },
   {
     title: 'Notification Setting',

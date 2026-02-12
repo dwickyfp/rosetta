@@ -7,6 +7,11 @@ export interface WALThresholdsConfig {
     notification_iteration: number
 }
 
+export interface BatchConfiguration {
+    max_batch_size: number
+    max_queue_size: number
+}
+
 export const configurationRepo = {
     getWALThresholds: async () => {
         const { data } = await api.get<WALThresholdsConfig>('/configuration/wal-thresholds')
@@ -20,6 +25,16 @@ export const configurationRepo = {
 
     testNotification: async (webhook_url?: string) => {
         const { data } = await api.post('/configuration/wal-thresholds/test', { webhook_url })
+        return data
+    },
+
+    getBatchConfiguration: async () => {
+        const { data } = await api.get<BatchConfiguration>('/configuration/batch')
+        return data
+    },
+
+    updateBatchConfiguration: async (config: BatchConfiguration) => {
+        const { data } = await api.put<BatchConfiguration>('/configuration/batch', config)
         return data
     },
 }

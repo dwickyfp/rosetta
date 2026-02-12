@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 from functools import lru_cache
 from core.security import decrypt_value
+import logging
 
 # Try to load dotenv if available
 try:
@@ -18,6 +19,8 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -67,11 +70,41 @@ class PipelineConfig:
 
     max_batch_size: int = 2048
     max_queue_size: int = 8192
-    poll_interval_ms: int = 500
+    poll_interval_ms: int = 10000
     slot_max_retries: int = 6
     slot_retry_delay_ms: int = 10000
-    heartbeat_interval_ms: int = 10000
-
+    heartbeat_interval_ms: int = 10000    
+    def load_from_database(self):
+        """Load batch configuration from database."""
+        try:
+            from core.database import get_db_connection, return_db_connection
+            
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cursor:
+                    # Get batch size
+                    cursor.execute(
+                        "SELECT config_value FROM rosetta_setting_configuration WHERE config_key = %s",
+                        ("PIPELINE_MAX_BATCH_SIZE",)
+                    )
+                    result = cursor.fetchone()
+                    if result:
+                        self.max_batch_size = int(result[0])
+                    
+                    # Get queue size
+                    cursor.execute(
+                        "SELECT config_value FROM rosetta_setting_configuration WHERE config_key = %s",
+                        ("PIPELINE_MAX_QUEUE_SIZE",)
+                    )
+                    result = cursor.fetchone()
+                    if result:
+                        self.max_queue_size = int(result[0])
+                    
+                    logger.info(f"Loaded batch config from database: batch_size={self.max_batch_size}, queue_size={self.max_queue_size}")
+            finally:
+                return_db_connection(conn)
+        except Exception as e:
+            logger.warning(f"Failed to load batch config from database, using defaults: {e}")
 
 @dataclass
 class LoggingConfig:
@@ -177,5 +210,9 @@ def get_config() -> Config:
     Get singleton configuration instance.
 
     Uses lru_cache to ensure only one Config instance exists.
+    Loads batch configuration from database.
     """
-    return Config.from_env()
+    config = Config.from_env()
+    # Load batch configuration from database
+    config.pipeline.load_from_database()
+    return config

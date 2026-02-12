@@ -63,8 +63,11 @@ def _run_pipeline_process(pipeline_id: int, stop_event: EventClass) -> None:
     subprocess_logger = logging.getLogger(f"Pipeline_{pipeline_id}")
     subprocess_logger.info(f"Subprocess started for pipeline {pipeline_id}")
     
-    # Initialize database connection pool for this process
-    init_connection_pool(min_conn=1, max_conn=5)
+    # Initialize database connection pool for this process with configurable size
+    import os
+    pipeline_pool_max_conn = int(os.getenv("PIPELINE_POOL_MAX_CONN", "3"))
+    init_connection_pool(min_conn=1, max_conn=pipeline_pool_max_conn)
+    subprocess_logger.info(f"Pipeline connection pool initialized (max_conn={pipeline_pool_max_conn})")
 
     engine = None
     try:

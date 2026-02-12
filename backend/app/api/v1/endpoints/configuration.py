@@ -14,6 +14,7 @@ from app.domain.schemas.configuration import (
     ConfigurationUpdate,
     WALThresholds,
     TestNotificationRequest,
+    BatchConfiguration,
 )
 from app.domain.services.configuration import ConfigurationService
 
@@ -150,4 +151,74 @@ async def test_notification_webhook(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to test notification configuration",
+        )
+
+
+@router.get(
+    "/batch",
+    response_model=BatchConfiguration,
+    status_code=status.HTTP_200_OK,
+    summary="Get batch configuration",
+    description="Retrieve current CDC batch processing configuration",
+)
+async def get_batch_configuration(
+    db: Session = Depends(get_db),
+):
+    """
+    Get batch processing configuration.
+
+    Returns:
+        Batch configuration with max_batch_size and max_queue_size
+    """
+    try:
+        service = ConfigurationService(db)
+        config = service.get_batch_configuration()
+        return config
+    except Exception as e:
+        logger.error("Failed to get batch configuration", extra={"error": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve batch configuration",
+        )
+
+
+@router.put(
+    "/batch",
+    response_model=BatchConfiguration,
+    status_code=status.HTTP_200_OK,
+    summary="Update batch configuration",
+    description="Update CDC batch processing configuration",
+)
+async def update_batch_configuration(
+    config: BatchConfiguration,
+    db: Session = Depends(get_db),
+):
+    """
+    Update batch processing configuration.
+
+    Args:
+        config: New batch configuration values
+        db: Database session
+
+    Returns:
+        Updated batch configuration
+    """
+    try:
+        service = ConfigurationService(db)
+        updated_config = service.update_batch_configuration(config)
+        
+        logger.info(
+            "Batch configuration updated - all active pipelines marked for refresh",
+            extra={
+                "max_batch_size": config.max_batch_size,
+                "max_queue_size": config.max_queue_size,
+            }
+        )
+        
+        return updated_config
+    except Exception as e:
+        logger.error("Failed to update batch configuration", extra={"error": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update batch configuration",
         )

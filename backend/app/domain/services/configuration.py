@@ -5,8 +5,9 @@ Manages application configuration settings.
 """
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.domain.repositories.configuration_repo import ConfigurationRepository
-from app.domain.schemas.configuration import WALThresholds
+from app.domain.schemas.configuration import WALThresholds, BatchConfiguration
 
 
 class ConfigurationService:
@@ -64,3 +65,39 @@ class ConfigurationService:
             value: Configuration value
         """
         return self.repo.set_value(key, value)
+    
+    def get_batch_configuration(self) -> BatchConfiguration:
+        """
+        Get batch configuration settings.
+        
+        Returns:
+            Batch configuration with max_batch_size and max_queue_size
+        """
+        max_batch_size = int(self.repo.get_value('PIPELINE_MAX_BATCH_SIZE', '4096'))
+        max_queue_size = int(self.repo.get_value('PIPELINE_MAX_QUEUE_SIZE', '16384'))
+        
+        return BatchConfiguration(
+            max_batch_size=max_batch_size,
+            max_queue_size=max_queue_size
+        )
+    
+    def update_batch_configuration(self, config: BatchConfiguration) -> BatchConfiguration:
+        """
+        Update batch configuration settings and mark all pipelines for refresh.
+        
+        Args:
+            config: New batch configuration values
+            
+        Returns:
+            Updated batch configuration
+        """
+        self.repo.set_value('PIPELINE_MAX_BATCH_SIZE', str(config.max_batch_size))
+        self.repo.set_value('PIPELINE_MAX_QUEUE_SIZE', str(config.max_queue_size))
+        
+        # Mark all pipelines to be restarted with new configuration
+        self.repo.db.execute(
+            text("UPDATE pipelines SET ready_refresh = TRUE WHERE status = 'START'")
+        )
+        self.repo.db.commit()
+        
+        return config

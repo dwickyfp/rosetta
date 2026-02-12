@@ -49,3 +49,10 @@ class TestNotificationRequest(BaseModel):
     """Schema for test notification request."""
     
     webhook_url: str = Field(default=None, description="Optional webhook URL to test")
+
+
+class BatchConfiguration(BaseModel):
+    """Batch processing configuration."""
+    
+    max_batch_size: int = Field(..., description="Maximum batch size for CDC processing", ge=1024, le=16384)
+    max_queue_size: int = Field(..., description="Maximum queue size for CDC processing", ge=2048, le=65536)

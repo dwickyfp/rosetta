@@ -42,6 +42,7 @@ import { Route as ClerkauthSignInRouteImport } from './routes/clerk/(auth)/sign-
 import { Route as AuthenticatedSettingsWalMonitorRouteImport } from './routes/_authenticated/settings/wal-monitor'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
 import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_authenticated/settings/display'
+import { Route as AuthenticatedSettingsBatchConfigurationRouteImport } from './routes/_authenticated/settings/batch-configuration'
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedPipelinesPipelineIdRouteImport } from './routes/_authenticated/pipelines/$pipelineId'
@@ -224,6 +225,12 @@ const AuthenticatedSettingsDisplayRoute =
     path: '/display',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedSettingsBatchConfigurationRoute =
+  AuthenticatedSettingsBatchConfigurationRouteImport.update({
+    id: '/batch-configuration',
+    path: '/batch-configuration',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
 const AuthenticatedSettingsAppearanceRoute =
   AuthenticatedSettingsAppearanceRouteImport.update({
     id: '/appearance',
@@ -288,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
+  '/settings/batch-configuration': typeof AuthenticatedSettingsBatchConfigurationRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/wal-monitor': typeof AuthenticatedSettingsWalMonitorRoute
@@ -324,6 +332,7 @@ export interface FileRoutesByTo {
   '/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
+  '/settings/batch-configuration': typeof AuthenticatedSettingsBatchConfigurationRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/wal-monitor': typeof AuthenticatedSettingsWalMonitorRoute
@@ -367,6 +376,7 @@ export interface FileRoutesById {
   '/_authenticated/pipelines/$pipelineId': typeof AuthenticatedPipelinesPipelineIdRouteWithChildren
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
+  '/_authenticated/settings/batch-configuration': typeof AuthenticatedSettingsBatchConfigurationRoute
   '/_authenticated/settings/display': typeof AuthenticatedSettingsDisplayRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/wal-monitor': typeof AuthenticatedSettingsWalMonitorRoute
@@ -408,6 +418,7 @@ export interface FileRouteTypes {
     | '/pipelines/$pipelineId'
     | '/settings/account'
     | '/settings/appearance'
+    | '/settings/batch-configuration'
     | '/settings/display'
     | '/settings/notifications'
     | '/settings/wal-monitor'
@@ -444,6 +455,7 @@ export interface FileRouteTypes {
     | '/pipelines/$pipelineId'
     | '/settings/account'
     | '/settings/appearance'
+    | '/settings/batch-configuration'
     | '/settings/display'
     | '/settings/notifications'
     | '/settings/wal-monitor'
@@ -486,6 +498,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pipelines/$pipelineId'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
+    | '/_authenticated/settings/batch-configuration'
     | '/_authenticated/settings/display'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/wal-monitor'
@@ -753,6 +766,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsDisplayRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/settings/batch-configuration': {
+      id: '/_authenticated/settings/batch-configuration'
+      path: '/batch-configuration'
+      fullPath: '/settings/batch-configuration'
+      preLoaderRoute: typeof AuthenticatedSettingsBatchConfigurationRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
     '/_authenticated/settings/appearance': {
       id: '/_authenticated/settings/appearance'
       path: '/appearance'
@@ -857,6 +877,7 @@ const AuthenticatedPipelinesRouteRouteWithChildren =
 interface AuthenticatedSettingsRouteRouteChildren {
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedSettingsAppearanceRoute: typeof AuthenticatedSettingsAppearanceRoute
+  AuthenticatedSettingsBatchConfigurationRoute: typeof AuthenticatedSettingsBatchConfigurationRoute
   AuthenticatedSettingsDisplayRoute: typeof AuthenticatedSettingsDisplayRoute
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSettingsWalMonitorRoute: typeof AuthenticatedSettingsWalMonitorRoute
@@ -867,6 +888,8 @@ const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteCh
   {
     AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
     AuthenticatedSettingsAppearanceRoute: AuthenticatedSettingsAppearanceRoute,
+    AuthenticatedSettingsBatchConfigurationRoute:
+      AuthenticatedSettingsBatchConfigurationRoute,
     AuthenticatedSettingsDisplayRoute: AuthenticatedSettingsDisplayRoute,
     AuthenticatedSettingsNotificationsRoute:
       AuthenticatedSettingsNotificationsRoute,

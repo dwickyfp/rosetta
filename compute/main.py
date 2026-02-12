@@ -105,7 +105,12 @@ def main() -> int:
     # Setup logging
     setup_logging()
     logger = logging.getLogger(__name__)
-    init_connection_pool()
+    
+    # Initialize connection pool with configurable size
+    main_pool_max_conn = int(os.getenv("MAIN_POOL_MAX_CONN", "8"))
+    init_connection_pool(min_conn=1, max_conn=main_pool_max_conn)
+    logger.info(f"Main connection pool initialized (max_conn={main_pool_max_conn})")
+    
     config = get_config()
 
     manager = None

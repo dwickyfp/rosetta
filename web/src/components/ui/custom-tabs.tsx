@@ -69,7 +69,7 @@ const CustomTabsList = React.forwardRef<
         >
             {children}
             <div
-                className="absolute bottom-0 h-[2px] bg-[#5999f8] transition-all duration-300 ease-in-out"
+                className="absolute bottom-0 h-0.5 bg-[#5999f8] transition-all duration-300 ease-in-out"
                 style={{
                     left: `${indicatorStyle.left}px`,
                     width: `${indicatorStyle.width}px`,

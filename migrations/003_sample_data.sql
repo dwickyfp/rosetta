@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS tbl_sales (
+CREATE TABLE IF NOT EXISTS tbl_rosetta_sales (
     -- Identity & Keys
     sale_id             BIGSERIAL PRIMARY KEY,
     transaction_uuid    UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -8,9 +8,14 @@ CREATE TABLE IF NOT EXISTS tbl_sales (
     sales_channel       VARCHAR(50) DEFAULT 'Direct', -- e.g., Online, Retail, Reseller
     region_code         CHAR(3), -- e.g., IDN, USA, SGP
     
-    -- Temporal (Waktu)
+    -- Temporal (Waktu) — Multi-variant time types
     transaction_date    DATE NOT NULL,
     created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMP WITHOUT TIME ZONE,       -- Naive timestamp (no TZ info)
+    scheduled_at        TIMESTAMP WITH TIME ZONE,           -- TZ-aware timestamp
+    local_pickup_time   TIME WITHOUT TIME ZONE,             -- Time only, no TZ
+    support_call_time   TIME WITH TIME ZONE,                -- Time only, with TZ
+    expires_at          TIMESTAMPTZ,                        -- Another TZ-aware timestamp (explicit offset)
     
     -- Boolean & Status
     is_vip_customer     BOOLEAN DEFAULT FALSE,
@@ -35,14 +40,19 @@ CREATE TABLE IF NOT EXISTS tbl_sales (
 );
 
 -- Indexing untuk performa query (Opsional tapi recommended)
-CREATE INDEX idx_sales_date ON tbl_sales(transaction_date);
-CREATE INDEX idx_sales_metadata ON tbl_sales USING GIN (metadata);
+CREATE INDEX idx_sales_date ON tbl_sample_sales(transaction_date);
+CREATE INDEX idx_sales_metadata ON tbl_sample_sales USING GIN (metadata);
 
-INSERT INTO tbl_sales (
+INSERT INTO tbl_rosetta_sales (
     customer_name, 
     sales_channel, 
     region_code, 
     transaction_date, 
+    updated_at,
+    scheduled_at,
+    local_pickup_time,
+    support_call_time,
+    expires_at,
     is_vip_customer, 
     is_refunded, 
     quantity, 
@@ -70,6 +80,23 @@ SELECT
     
     -- Random Date (within last 365 days)
     CURRENT_DATE - (floor(random() * 365) || ' days')::interval AS transaction_date,
+    
+    -- TIMESTAMP WITHOUT TIME ZONE: random naive timestamp in the past 30 days
+    (NOW() AT TIME ZONE 'Asia/Jakarta') - (floor(random() * 30) || ' days')::interval
+        - (floor(random() * 86400) || ' seconds')::interval AS updated_at,
+    
+    -- TIMESTAMP WITH TIME ZONE: random TZ-aware timestamp (stored as UTC internally)
+    NOW() - (floor(random() * 60) || ' days')::interval
+        - (floor(random() * 86400) || ' seconds')::interval AS scheduled_at,
+    
+    -- TIME WITHOUT TIME ZONE: random time of day
+    (TIME '00:00:00' + (floor(random() * 86400) || ' seconds')::interval) AS local_pickup_time,
+    
+    -- TIME WITH TIME ZONE: random time with explicit Asia/Jakarta offset
+    ((TIME '00:00:00' + (floor(random() * 86400) || ' seconds')::interval) AT TIME ZONE 'Asia/Jakarta')::timetz AS support_call_time,
+    
+    -- TIMESTAMPTZ: future expiry date (7-90 days from now)
+    NOW() + ((floor(random() * 83) + 7) || ' days')::interval AS expires_at,
     
     -- Random Boolean
     (random() > 0.8) AS is_vip_customer, -- 20% chance true

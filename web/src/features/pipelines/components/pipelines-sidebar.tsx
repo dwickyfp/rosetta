@@ -9,11 +9,17 @@ import {
     HoverCardContent,
     HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import {
+    CustomTabs,
+    CustomTabsList,
+    CustomTabsTrigger,
+    CustomTabsContent,
+} from "@/components/ui/custom-tabs"
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { sourcesRepo, SourceDetailResponse } from '@/repo/sources'
 import { Link, useParams, useNavigate } from '@tanstack/react-router'
-import { Database, Table, Layers, Workflow, Loader2, Search, RefreshCw, X, FolderInput, FolderSync } from "lucide-react"
+import { Database, Table, Layers, Workflow, Loader2, Search, RefreshCw, X, FolderInput, FolderSync, Command } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useMemo, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -54,7 +60,7 @@ function TableItem({ name, isActive, highlight, type, sourceTable }: {
     return (
         <div className="relative group/table">
             <div className={cn(
-                "absolute left-[-4px] top-1/2 w-4 h-px bg-border -translate-y-1/2",
+                "absolute -left-1 top-1/2 w-4 h-px bg-border -translate-y-1/2",
                 // "group-hover/table:bg-accent-foreground/50 transition-colors"
             )} />
             <HoverCard openDelay={100} closeDelay={200}>
@@ -64,7 +70,7 @@ function TableItem({ name, isActive, highlight, type, sourceTable }: {
                         isActive && "bg-accent text-accent-foreground font-medium"
                     )}>
                         <Table className="h-3 w-3 shrink-0" />
-                        <div className="flex-1 min-w-0 truncate max-w-[170px]">
+                        <div className="flex-1 min-w-0 truncate max-w-42.5">
                             <HighlightedText text={name.toUpperCase()} highlight={highlight} />
                         </div>
                     </div>
@@ -75,12 +81,12 @@ function TableItem({ name, isActive, highlight, type, sourceTable }: {
                             <h4 className="text-sm font-semibold mb-1">{type === 'source' ? 'Source Table' : 'Destination Table'}</h4>
                             <div className="space-y-1 text-xs">
                                 <div className="flex items-start gap-2">
-                                    <span className="text-muted-foreground min-w-[80px]">Table Name:</span>
+                                    <span className="text-muted-foreground min-w-20">Table Name:</span>
                                     <span className="font-mono font-medium break-all">{name}</span>
                                 </div>
                                 {sourceTable && type === 'destination' && (
                                     <div className="flex items-start gap-2">
-                                        <span className="text-muted-foreground min-w-[80px]">Source Table:</span>
+                                        <span className="text-muted-foreground min-w-20">Source Table:</span>
                                         <span className="font-mono font-medium break-all">{sourceTable}</span>
                                     </div>
                                 )}
@@ -106,7 +112,7 @@ function SourceTables({ tables, searchQuery }: { tables: any[], searchQuery: str
     }
 
     return (
-        <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-[22px] pl-1">
+        <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-5.5 pl-1">
             {filteredTables.map((table) => (
                 <TableItem
                     key={table.id}
@@ -167,7 +173,7 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                                 <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-normal dark:text-[#bec4d6]">
                                     <div className="flex items-center gap-2 w-full overflow-hidden">
                                         <Database className="h-3.5 w-3.5 shrink-0" />
-                                        <div className="flex-1 min-w-0 truncate max-w-[200px]">
+                                        <div className="flex-1 min-w-0 truncate max-w-50">
                                             <HighlightedText text={sourceName} highlight={searchQuery} />
                                         </div>
                                     </div>
@@ -202,13 +208,13 @@ function PipelineItem({ pipeline, sourceDetails, checkExpanded, searchQuery }: {
                                         <AccordionTrigger chevronPosition="left" className="justify-start py-1 px-2 gap-1.5 hover:bg-muted/50 hover:no-underline rounded-md text-sm font-normal dark:text-[#bec4d6]">
                                             <div className="flex items-center gap-2 w-full overflow-hidden">
                                                 <Layers className="h-3.5 w-3.5 shrink-0" />
-                                                <div className="flex-1 min-w-0 truncate max-w-[200px]">
+                                                <div className="flex-1 min-w-0 truncate max-w-50">
                                                     <HighlightedText text={d.destination.name} highlight={searchQuery} />
                                                 </div>
                                             </div>
                                         </AccordionTrigger>
                                         <AccordionContent className="pb-0">
-                                            <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-[22px] pl-1">
+                                            <div className="flex flex-col gap-0.5 mt-1 border-l border-border ml-5.5 pl-1">
                                                 {d.table_syncs
                                                     ?.filter(sync => !searchQuery.trim() || (sync.table_name_target || sync.table_name).toLowerCase().includes(searchQuery.toLowerCase()))
                                                     ?.map(sync => (
@@ -402,29 +408,29 @@ export function PipelinesSidebar() {
         <div className="h-full flex flex-col bg-background border-r border-sidebar-border">
             {/* Header: Title & Branding */}
             <div className="px-4 pt-4 pb-0">
-                <h1 className="text-xl font-bold text-foreground dark:text-[#bec4d6] mb-2">Pipelines Explorer</h1>
+                <h1 className="text-xl font-bold text-foreground dark:text-[#bec4d6] ">Pipelines Explorer</h1>
                 <div className="flex items-center gap-2 mb-4">
-                    <Workflow className="h-4 w-4 text-cyan-500" />
+                    <Command className="h-4 w-4 text-cyan-500" />
                     <span className="text-sm font-semibold text-cyan-500">
                         ROSETTA CATALOG
                     </span>
                 </div>
             </div>
             {/* Pipelines Tab with Search */}
-            <div className="border-border">
-                <div className="px-4 pb-2">
-                    <h2 className="text-sm font-semibold text-[#3581f2] inline-block relative pb-2">
+            <CustomTabs defaultValue="pipelines" className="flex-1 flex flex-col ">
+                <CustomTabsList className="w-full justify-start border-b">
+                    <CustomTabsTrigger value="pipelines">
                         Pipelines
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#3581f2]" />
-                    </h2>
-                </div>
+                    </CustomTabsTrigger>
+                </CustomTabsList>
+                <CustomTabsContent value="pipelines" className="flex-1 flex flex-col mt-0">
                 <div className="p-3 pt-2">
                     <div className="flex items-center gap-2">
                         <div className="relative flex-1">
                             <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                             <Input
                                 placeholder="Search"
-                                className="h-8 pl-8 pr-8 text-xs bg-sidebar-accent/50 border-sidebar-border focus-visible:!border-[#3581f2] focus-visible:!ring-[#3581f2] focus-visible:!ring-1"
+                                className="h-8 pl-8 pr-8 text-xs bg-sidebar-accent/50 border-sidebar-border focus-visible:border-[#3581f2]! focus-visible:ring-[#3581f2]! focus-visible:ring-1!"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
@@ -460,9 +466,8 @@ export function PipelinesSidebar() {
                         </Button>
                     </div>
                 </div>
-            </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 mt-2">
                 <div className="p-2">
                     {filteredPipelines.length === 0 && (
                         <div className="p-4 text-center text-xs text-muted-foreground">
@@ -499,7 +504,7 @@ export function PipelinesSidebar() {
                                     >
                                         <div className="flex items-center gap-2 overflow-hidden flex-1">
                                             <Workflow className={cn("h-4 w-4 shrink-0", currentId === pipeline.id ? "text-[#5999f7]" : "text-primary")} />
-                                            <div className="flex-1 min-w-0 truncate max-w-[200px]">
+                                            <div className="flex-1 min-w-0 truncate max-w-50">
                                                 <HighlightedText text={pipeline.name} highlight={searchQuery} />
                                             </div>
                                         </div>
@@ -533,6 +538,8 @@ export function PipelinesSidebar() {
                     </Accordion>
                 </div>
             </ScrollArea>
+                </CustomTabsContent>
+            </CustomTabs>
         </div>
     )
 }

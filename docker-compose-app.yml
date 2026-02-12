@@ -44,7 +44,9 @@ services:
       DLQ_KEY_PREFIX: rosetta:dlq
       DLQ_CHECK_INTERVAL: 30
       DLQ_BATCH_SIZE: 100
+      # Timezone — IANA timezone for TZ-aware timestamp conversion
       TZ: Asia/Jakarta
+      ROSETTA_TIMEZONE: ${ROSETTA_TIMEZONE:-Asia/Jakarta}
     depends_on:
       rosetta-postgres:
         condition: service_healthy

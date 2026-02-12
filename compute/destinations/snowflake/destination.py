@@ -17,6 +17,12 @@ from core.models import Destination, PipelineDestinationTableSync
 from core.security import decrypt_value
 from core.notification import NotificationLogRepository, NotificationLogCreate
 from core.error_sanitizer import sanitize_for_db
+from core.timezone import (
+    convert_iso_timestamp_to_target_tz,
+    convert_iso_time_to_target_tz,
+    format_sync_timestamp,
+    get_target_timezone,
+)
 from destinations.base import BaseDestination, CDCRecord
 from destinations.snowflake.client import SnowpipeClient
 
@@ -269,7 +275,7 @@ class SnowflakeDestination(BaseDestination):
                     )
 
         row["OPERATION"] = operation
-        row["SYNC_TIMESTAMP_ROSETTA"] = datetime.now(timezone.utc).isoformat()
+        row["SYNC_TIMESTAMP_ROSETTA"] = format_sync_timestamp()
 
         return row
 
@@ -283,8 +289,9 @@ class SnowflakeDestination(BaseDestination):
         - Decimals (Base64 encoded bytes) -> Decimal/float/string
         - Date (int32 epoch days) -> 'YYYY-MM-DD'
         - Timestamp (int64 epoch micros/nanos) -> ISO format
-        - ZonedTimestamp (string) -> pass through
+        - ZonedTimestamp (string) -> convert to target TZ (Asia/Jakarta)
         - Time (int64 micros) -> 'HH:MM:SS.ffffff'
+        - ZonedTime (string) -> convert to target TZ offset
         - UUID (string) -> pass through
         - JSON/Array -> native Python types
         """
@@ -331,6 +338,8 @@ class SnowflakeDestination(BaseDestination):
 
             # MicroTimestamp: int64 microseconds since epoch UTC
             # From PostgreSQL: timestamp without time zone
+            # Note: Despite being stored as UTC epoch internally by Debezium,
+            # these represent "wall clock" values WITHOUT timezone — do NOT convert TZ.
             if type_name == "io.debezium.time.MicroTimestamp":
                 if isinstance(value, int):
                     dt = datetime.fromtimestamp(value / 1_000_000, tz=timezone.utc)
@@ -355,12 +364,20 @@ class SnowflakeDestination(BaseDestination):
 
             # ZonedTimestamp: Already ISO-8601 string with timezone
             # From PostgreSQL: timestamp WITH time zone (TIMESTAMPTZ)
-            # Target Snowflake column is TIMESTAMP_TZ, so KEEP timezone
+            # Target Snowflake column is TIMESTAMP_TZ
+            # Convert to target timezone (Asia/Jakarta) so all TZ-aware values
+            # are normalized to a consistent timezone in Snowflake
             if type_name == "io.debezium.time.ZonedTimestamp":
                 if isinstance(value, str):
-                    # Return as-is with timezone for TIMESTAMP_TZ compatibility
-                    # Snowflake TIMESTAMP_TZ accepts ISO-8601 with timezone offset
-                    return value
+                    return convert_iso_timestamp_to_target_tz(value)
+                return value
+
+            # ZonedTime: ISO-8601 time string with timezone offset
+            # From PostgreSQL: time WITH time zone (TIMETZ)
+            # Convert to target timezone offset (Asia/Jakarta +07:00)
+            if type_name == "io.debezium.time.ZonedTime":
+                if isinstance(value, str):
+                    return convert_iso_time_to_target_tz(value)
                 return value
 
             # TIME Handling
@@ -413,15 +430,21 @@ class SnowflakeDestination(BaseDestination):
                     pass
 
             # Handle timestamp strings with timezone (fallback for missing schema)
-            # When schema is missing, we can't determine if target is TIMESTAMP_TZ or TIMESTAMP_NTZ
-            # Keep timezone as-is - Snowflake will handle conversion if needed
             # Detect ISO timestamp patterns: "2024-01-15T10:30:00" or with TZ "...+07:00" or "...Z"
             import re
 
             timestamp_pattern = r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{0,2}|Z)?$"
             if re.match(timestamp_pattern, value_stripped):
-                # Return as-is - Snowflake handles both formats
+                # If it has a timezone offset or Z, convert to target timezone
+                if any(c in value_stripped for c in ('+', 'Z')) or value_stripped.count('-') > 2:
+                    return convert_iso_timestamp_to_target_tz(value_stripped)
+                # No timezone → return as-is for TIMESTAMP_NTZ
                 return value_stripped
+
+            # Handle time strings with timezone offset (fallback)
+            time_tz_pattern = r"^\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{0,2})$"
+            if re.match(time_tz_pattern, value_stripped):
+                return convert_iso_time_to_target_tz(value_stripped)
 
         # Pass through other types (str, int, float, bool)
         return value
