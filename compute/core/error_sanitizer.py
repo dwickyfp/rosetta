@@ -92,7 +92,15 @@ class ErrorSanitizer:
             Sanitized, user-friendly error message
         """
         # Get original error message
-        error_msg = str(error).lower()
+        original_str = str(error).strip()
+        
+        # Handle empty error messages
+        if not original_str:
+            if context:
+                return f"{context}: Unknown error occurred"
+            return "Unknown error occurred"
+        
+        error_msg = original_str.lower()
 
         # First, try to match with user-friendly mappings
         for pattern, friendly_msg in cls.ERROR_MAPPINGS.items():
@@ -103,7 +111,6 @@ class ErrorSanitizer:
                 return friendly_msg
 
         # If no specific mapping, sanitize sensitive data
-        original_str = str(error)
         sanitized = original_str
 
         for pattern, replacement in cls.SENSITIVE_PATTERNS:
@@ -141,7 +148,13 @@ class ErrorSanitizer:
         Returns:
             User-friendly sanitized message for database storage
         """
-        error_msg = str(error).lower()
+        error_msg = str(error).strip().lower()
+
+        # Handle empty error messages early
+        if not error_msg:
+            if destination_type:
+                return f"{destination_type}: Unknown error occurred"
+            return "Unknown error occurred"
 
         # Try to categorize the error
         if any(
