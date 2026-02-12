@@ -48,7 +48,7 @@ export const backfillApi = {
   listJobs: async (
     pipelineId: number,
     skip: number = 0,
-    limit: number = 10
+    limit: number = 100
   ): Promise<BackfillJobListResponse> => {
     const response = await api.get<BackfillJobListResponse>(
       `/pipelines/${pipelineId}/backfill`,

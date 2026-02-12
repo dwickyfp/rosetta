@@ -56,7 +56,7 @@ async def create_backfill_job(
 async def list_backfill_jobs(
     pipeline_id: int = Path(..., description="Pipeline ID", gt=0),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(10, ge=1, le=1000, description="Maximum number of records"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records"),
     service: BackfillService = Depends(get_backfill_service),
 ) -> BackfillJobListResponse:
     """

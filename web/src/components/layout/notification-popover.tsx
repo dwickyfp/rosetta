@@ -227,6 +227,7 @@ export function NotificationPopover() {
         >
           <Bell
             className={`h-4 w-4 ${unreadCount > 0 ? 'animate-bell-ring' : ''}`}
+            style={unreadCount > 0 ? { color: '#1b7df7' } : undefined}
           />
           {unreadCount > 0 && (
             <span className='pointer-events-none absolute -top-1.5 -right-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background'>

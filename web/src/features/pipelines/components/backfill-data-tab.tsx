@@ -575,9 +575,9 @@ export function BackfillDataTab({
             </Select>
           </div>
 
-          <div className='rounded-lg border'>
+          <div className='h-[400px] overflow-y-auto rounded-lg border'>
             <Table>
-              <TableHeader>
+              <TableHeader className='sticky top-0 z-10 bg-background'>
                 <TableRow>
                   <TableHead>Table Name</TableHead>
                   <TableHead>Status</TableHead>
@@ -678,7 +678,7 @@ export function BackfillDataTab({
                               onClick={() => cancelMutation.mutate(job.id)}
                               disabled={cancelMutation.isPending}
                               title='Cancel backfill'
-                              className='text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-500 dark:hover:text-red-400 dark:hover:bg-red-950'
+                              className='text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-500 dark:hover:bg-red-950 dark:hover:text-red-400'
                             >
                               <Square className='h-4 w-4' />
                             </Button>
@@ -692,7 +692,7 @@ export function BackfillDataTab({
                               onClick={() => deleteMutation.mutate(job.id)}
                               disabled={deleteMutation.isPending}
                               title='Delete backfill'
-                              className='text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-500 dark:hover:text-red-400 dark:hover:bg-red-950'
+                              className='text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-500 dark:hover:bg-red-950 dark:hover:text-red-400'
                             >
                               <Trash2 className='h-4 w-4' />
                             </Button>
