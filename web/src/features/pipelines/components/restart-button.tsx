@@ -33,17 +33,12 @@ export function RestartButton({ onRestart, disabled = false }: RestartButtonProp
       onClick={handleClick}
       disabled={disabled || isRestarting}
       className={cn(
-        'group relative inline-flex items-center overflow-hidden rounded-lg border-2 transition-all duration-500 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'group relative inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
         isRestarting
-          ? 'h-10 w-auto gap-2.5 border-cyan-500 bg-cyan-500/10 px-4 py-2 text-cyan-600 shadow-md shadow-cyan-500/20 dark:text-cyan-400'
-          : 'h-10 w-10 justify-center border-cyan-600 bg-transparent text-cyan-600 hover:w-auto hover:justify-start hover:gap-2.5 hover:border-cyan-500 hover:bg-cyan-500/5 hover:px-4 hover:shadow-md hover:shadow-cyan-500/10 dark:text-cyan-400'
+          ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 shadow-md shadow-cyan-500/20 dark:text-cyan-400'
+          : 'border-cyan-600 bg-transparent text-cyan-600 hover:border-cyan-500 hover:bg-cyan-500/5 hover:shadow-sm hover:shadow-cyan-500/10 dark:text-cyan-400'
       )}
     >
-      {/* Simple Shine Effect on Hover */}
-      {!isRestarting && (
-        <span className='absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full' />
-      )}
-
       {/* Subtle Particles Background */}
       {isRestarting && (
         <>
@@ -60,25 +55,13 @@ export function RestartButton({ onRestart, disabled = false }: RestartButtonProp
       )}
 
       {/* Icon with Rotation Animation */}
-      <span className='relative flex flex-shrink-0 items-center justify-center'>
+      <span className='relative flex items-center justify-center'>
         <RotateCw
           className={cn(
             'h-4 w-4 transition-all duration-500',
             isRestarting && 'animate-spin-slow'
           )}
         />
-      </span>
-
-      {/* Text with Slide-in and Slide-out Animation */}
-      <span
-        className={cn(
-          'relative whitespace-nowrap text-sm font-medium tracking-wide transition-all duration-500 ease-in-out',
-          isRestarting
-            ? 'max-w-[100px] translate-x-0 opacity-100'
-            : 'max-w-0 -translate-x-2 opacity-0 group-hover:max-w-[100px] group-hover:translate-x-0 group-hover:opacity-100'
-        )}
-      >
-        {isRestarting ? 'Restarting...' : 'Restart'}
       </span>
 
       {/* Single Progress Bar */}
