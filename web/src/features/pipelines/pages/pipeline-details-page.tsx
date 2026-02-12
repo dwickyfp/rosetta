@@ -94,6 +94,7 @@ export default function PipelineDetailsPage() {
       return await pipelinesRepo.get(id)
     },
     retry: false,
+    refetchInterval: 5000, // Refetch every 5 seconds
   })
 
   // 2. Fetch Source Details using pipeline.source_id

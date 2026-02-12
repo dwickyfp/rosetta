@@ -478,8 +478,3 @@ class PipelineProgress(Base, TimestampMixin):
         nullable=True,
         comment="Additional details about progress",
     )
-
-    # Relationships - disabled since Pipeline.pipeline_progress is disabled
-    # pipeline: Mapped["Pipeline"] = relationship(
-    #     "Pipeline", back_populates="pipeline_progress"
-    # )
