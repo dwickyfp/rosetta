@@ -2,12 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
 import { DashboardPanel } from './dashboard-panel'
 import { Database, CheckCircle, AlertOctagon, PauseCircle } from 'lucide-react'
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 export function SourceHealthCard() {
+  const { refreshInterval } = useRefreshInterval()
   const { data: health } = useQuery({
     queryKey: ['dashboard', 'source-health'],
     queryFn: dashboardRepo.getSourceHealth,
-    refetchInterval: 10000,
+    refetchInterval: refreshInterval,
   })
 
   return (

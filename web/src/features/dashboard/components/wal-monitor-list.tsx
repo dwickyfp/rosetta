@@ -5,12 +5,14 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Database, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { DashboardPanel } from './dashboard-panel'
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 export function WALMonitorList() {
+    const { refreshInterval } = useRefreshInterval()
     const { data } = useQuery({
         queryKey: ['wal-monitor', 'all'],
         queryFn: walMonitorRepo.getAll,
-        refetchInterval: 5000,
+        refetchInterval: refreshInterval,
     })
 
     const monitors = data?.monitors || []

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { DashboardPanel } from "./dashboard-panel"
 import { Activity, Database, Server, Cpu } from "lucide-react"
 import { api } from "@/repo/client"
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 interface HealthResponse {
   status: string
@@ -21,10 +22,11 @@ const getSystemHealth = async () => {
 }
 
 export function SystemHealthWidget() {
+  const { refreshInterval } = useRefreshInterval()
   const { data, isLoading, isError } = useQuery({
     queryKey: ["system-health"],
     queryFn: getSystemHealth,
-    refetchInterval: 5000, // Check every 5s
+    refetchInterval: refreshInterval,
   })
 
   const StatusIndicator = ({ healthy }: { healthy?: boolean }) => (

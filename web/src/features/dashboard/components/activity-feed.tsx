@@ -4,12 +4,14 @@ import { DashboardPanel } from './dashboard-panel'
 import { BellRing, AlertCircle, Info, CheckCircle2 } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 export function ActivityFeed() {
+  const { refreshInterval } = useRefreshInterval()
   const { data: activities } = useQuery({
     queryKey: ['dashboard', 'activity-feed'],
     queryFn: () => dashboardRepo.getActivityFeed(20),
-    refetchInterval: 10000,
+    refetchInterval: refreshInterval,
   })
 
   // Helper to get icon based on type or message content

@@ -2,12 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { dashboardRepo } from '@/repo/dashboard'
 import { DashboardPanel } from './dashboard-panel'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useRefreshInterval } from '../context/refresh-interval-context'
 
 export function TopTablesChart() {
+  const { refreshInterval } = useRefreshInterval()
   const { data: topTables } = useQuery({
     queryKey: ['dashboard', 'top-tables'],
     queryFn: () => dashboardRepo.getTopTables(5),
-    refetchInterval: 30000,
+    refetchInterval: refreshInterval,
   })
 
   return (
