@@ -4,10 +4,19 @@
 /backup
 
 # Backend (Python)
-/backend/**/__pycache__/
-/backend/**/*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
 /backend/venv/*
+venv/
+env/
+ENV/
 .env
+.env.local
 
 # Web / Node
 logs
@@ -41,13 +50,7 @@ dist-ssr
 
 /tmp/*
 /logs/*
-/compute/__pycache__/*
-/compute/config/__pycache__/*
-/compute/destinations/__pycache__/*
-/compute/sources/__pycache__/*
-/compute/core/__pycache__/*
 /compute/dlq/*
 /compute/tmp/*
 /web/pnpm-lock.yaml
 /compute/uv.lcok
-

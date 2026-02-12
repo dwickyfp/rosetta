@@ -62,17 +62,14 @@ class NotificationService:
            - is_sent = False
            - is_deleted = False
            - is_read = False
-        3. Send to webhook.
-        4. Mark as sent.
+        3. If webhook URL is configured, send to webhook.
+        4. Mark as sent (regardless of webhook availability to prevent duplicate frontend display).
 
         Returns:
-            Number of notifications sent.
+            Number of notifications processed.
         """
         # 1. Check configuration
         webhook_url = self.config_repo.get_value("ALERT_NOTIFICATION_WEBHOOK_URL")
-        if not webhook_url:
-            logger.debug("No webhook URL configured, skipping notification sending")
-            return 0
 
         iteration_limit_str = self.config_repo.get_value(
             "NOTIFICATION_ITERATION_DEFAULT", "3"
@@ -102,34 +99,42 @@ class NotificationService:
         if not pending_notifications:
             return 0
 
-        sent_count = 0
+        processed_count = 0
         now = datetime.now(timezone(timedelta(hours=7)))
 
         # 3. Process each
         for notification in pending_notifications:
-            payload = {
-                "key_notification": notification.key_notification,
-                "title": notification.title,
-                "message": notification.message,
-                "type": notification.type,
-                "timestamp": (
-                    notification.created_at.isoformat()
-                    if notification.created_at
-                    else None
-                ),
-            }
+            # If webhook URL is configured, attempt to send
+            if webhook_url:
+                payload = {
+                    "key_notification": notification.key_notification,
+                    "title": notification.title,
+                    "message": notification.message,
+                    "type": notification.type,
+                    "timestamp": (
+                        notification.created_at.isoformat()
+                        if notification.created_at
+                        else None
+                    ),
+                }
 
-            # Send (awaiting inside the loop, could be parallelized but sequential is safer for now)
-            success = await self._send_webhook(webhook_url, payload)
+                # Send (awaiting inside the loop, could be parallelized but sequential is safer for now)
+                success = await self._send_webhook(webhook_url, payload)
+                
+                if success:
+                    logger.info(f"Notification {notification.id} sent to webhook successfully")
+            else:
+                logger.debug(f"No webhook URL configured, marking notification {notification.id} as sent without sending")
+            
+            # 4. Mark as sent regardless of webhook availability or send status
+            # This ensures notifications only appear once in frontend
+            notification.is_sent = True
+            notification.updated_at = now
+            processed_count += 1
 
-            if success:
-                # 4. Update status
-                notification.is_sent = True
-                notification.updated_at = now
-                sent_count += 1
-
-        if sent_count > 0:
+        if processed_count > 0:
             self.db.commit()
+            logger.info(f"Processed {processed_count} notifications (marked as sent)")
 
         # Cleanup old notifications (older than 1 month)
         try:
@@ -141,7 +146,7 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Failed to cleanup old notifications: {e}")
 
-        return sent_count
+        return processed_count
 
     async def send_test_notification(self, webhook_url: Optional[str] = None) -> bool:
         """

@@ -22,7 +22,9 @@ from zoneinfo import ZoneInfo
 from app.domain.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.domain.models.data_flow_monitoring import DataFlowRecordMonitoring
     from app.domain.models.destination import Destination
+    from app.domain.models.queue_backfill import QueueBackfillData
     from app.domain.models.source import Source
 
 
@@ -122,15 +124,6 @@ class Pipeline(Base, TimestampMixin):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-
-    # Temporarily disabled - table does not exist
-    # pipeline_progress: Mapped["PipelineProgress"] = relationship(
-    #     "PipelineProgress",
-    #     back_populates="pipeline",
-    #     uselist=False,
-    #     cascade="all, delete-orphan",
-    #     lazy="select",
-    # )
 
     data_flow_records: Mapped[list["DataFlowRecordMonitoring"]] = relationship(
         "DataFlowRecordMonitoring",

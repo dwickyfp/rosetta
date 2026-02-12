@@ -385,22 +385,23 @@ class SchemaMonitorService:
         db: Session
     ) -> None:
         """
-        Apply schema evolution to connected pipelines.
+        Mark pipelines for refresh when schema changes are detected.
         
         When a schema change is detected, this method:
         1. Finds pipelines connected to the source
-        2. For each pipeline, applies the schema evolution to Snowflake
-        3. Updates pipeline status to REFRESH
+        2. Marks each pipeline with ready_refresh = True
+        3. Does NOT change the pipeline status
+        
+        The actual schema evolution will be applied when the pipeline is refreshed.
         """
         from app.domain.repositories.pipeline import PipelineRepository
-        from app.domain.services.schema_evolution import SchemaEvolutionService
         
         pipeline_repo = PipelineRepository(db)
         pipelines = pipeline_repo.get_by_source_id(source.id)
         
         if not pipelines:
             logger.info(
-                f"No pipelines connected to source {source.name}, skipping schema evolution",
+                f"No pipelines connected to source {source.name}, skipping ready_refresh marking",
                 extra={"source_id": source.id, "table_name": table.table_name}
             )
             return
@@ -410,28 +411,31 @@ class SchemaMonitorService:
             extra={"source_id": source.id, "table_name": table.table_name}
         )
         
-        evolution_service = SchemaEvolutionService(db)
-        
+        # Mark all connected pipelines as ready for refresh
         for pipeline in pipelines:
             try:
                 logger.info(
-                    f"Applying schema evolution to pipeline {pipeline.name}",
+                    f"Marking pipeline {pipeline.name} as ready_refresh due to schema change",
                     extra={
                         "pipeline_id": pipeline.id,
                         "table_name": table.table_name,
                         "change_type": change_type
                     }
                 )
-                await evolution_service.handle_schema_evolution(
-                    pipeline, table, old_schema, new_schema, change_type
-                )
+                
+                # Set ready_refresh flag without changing pipeline status
+                pipeline.ready_refresh = True
+                
                 logger.info(
-                    f"Schema evolution completed for pipeline {pipeline.name}",
-                    extra={"pipeline_id": pipeline.id}
+                    f"Pipeline {pipeline.name} marked for refresh (status unchanged)",
+                    extra={
+                        "pipeline_id": pipeline.id,
+                        "current_status": pipeline.status
+                    }
                 )
             except Exception as e:
                 logger.error(
-                    f"Schema evolution failed for pipeline {pipeline.name}: {e}",
+                    f"Failed to mark pipeline {pipeline.name} for refresh: {e}",
                     extra={
                         "pipeline_id": pipeline.id,
                         "table_name": table.table_name,
@@ -440,6 +444,21 @@ class SchemaMonitorService:
                     exc_info=True
                 )
                 # Continue with other pipelines even if one fails
+        
+        # Commit all changes at once
+        try:
+            db.commit()
+            logger.info(
+                f"Successfully marked {len(pipelines)} pipeline(s) as ready_refresh",
+                extra={"source_id": source.id, "table_name": table.table_name}
+            )
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                f"Failed to commit ready_refresh changes: {e}",
+                extra={"source_id": source.id, "table_name": table.table_name}
+            )
+            raise
 
     def stop(self):
         self._stop_event.set()
