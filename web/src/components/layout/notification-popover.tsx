@@ -119,7 +119,7 @@ export function NotificationPopover() {
               <div className='min-w-0 flex-1 space-y-1 overflow-hidden'>
                 <div className='flex items-start justify-between gap-2'>
                   <p
-                    className={`wrap-break-words text-sm leading-tight font-medium ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}
+                    className={`text-sm leading-tight font-medium break-words ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}
                   >
                     {notification.title}
                   </p>
@@ -133,7 +133,7 @@ export function NotificationPopover() {
                 <HoverCard openDelay={200}>
                   <HoverCardTrigger asChild>
                     <p
-                      className={`text-sm ${!notification.is_read ? 'text-foreground/90' : 'text-muted-foreground'} wrap-break-words line-clamp-2 cursor-default`}
+                      className={`text-sm ${!notification.is_read ? 'text-foreground/90' : 'text-muted-foreground'} line-clamp-2 cursor-default break-words`}
                     >
                       {notification.message}
                     </p>
@@ -145,7 +145,7 @@ export function NotificationPopover() {
                   >
                     <div className='space-y-2 text-sm'>
                       <p className='font-semibold'>{notification.title}</p>
-                      <p className='wrap-break-words text-muted-foreground'>
+                      <p className='break-words text-muted-foreground'>
                         {notification.message}
                       </p>
                     </div>

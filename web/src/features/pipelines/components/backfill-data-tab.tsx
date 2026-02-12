@@ -35,6 +35,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -626,9 +631,32 @@ export function BackfillDataTab({
                       </TableCell>
                       <TableCell>
                         {job.filter_sql ? (
-                          <span className='text-xs text-muted-foreground'>
-                            {job.filter_sql.split(';').length} filter(s)
-                          </span>
+                          <HoverCard>
+                            <HoverCardTrigger asChild>
+                              <span className='cursor-pointer text-xs text-muted-foreground underline decoration-dotted transition-colors hover:text-foreground'>
+                                {job.filter_sql.split(';').length} filter(s)
+                              </span>
+                            </HoverCardTrigger>
+                            <HoverCardContent className='w-96' align='start'>
+                              <div className='space-y-2'>
+                                <h4 className='text-sm font-semibold'>
+                                  Applied Filters
+                                </h4>
+                                <div className='space-y-1.5'>
+                                  {job.filter_sql
+                                    .split(';')
+                                    .map((filter, idx) => (
+                                      <div
+                                        key={idx}
+                                        className='rounded border bg-muted p-2 font-mono text-xs'
+                                      >
+                                        {filter.trim()}
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
+                            </HoverCardContent>
+                          </HoverCard>
                         ) : (
                           <span className='text-xs text-muted-foreground'>
                             None
