@@ -88,7 +88,7 @@ class Settings(BaseSettings):
         default=True, description="Enable WAL monitoring background task"
     )
     wal_monitor_interval_seconds: int = Field(
-        default=30, ge=60, le=3600, description="Interval between WAL checks (seconds)"
+        default=60, ge=60, le=3600, description="Interval between WAL checks (seconds)"
     )
     wal_monitor_timeout_seconds: int = Field(
         default=60, ge=5, le=300, description="Timeout for WAL query execution"
