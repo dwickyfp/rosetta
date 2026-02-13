@@ -183,7 +183,6 @@ class SchemaMonitorService:
                             source_id=source.id,
                             table_name=new_table,
                             schema_table=schema_dict,  # Set schema immediately
-                            is_exists_table_landing=False,
                             is_changes_schema=False,
                         )
                         db.add(new_metadata)
