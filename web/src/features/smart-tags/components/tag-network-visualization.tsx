@@ -271,12 +271,12 @@ export function TagNetworkVisualization() {
       </ReactFlow>
 
       {/* Info overlay */}
-      <div className={isDark ? "absolute top-4 left-4 rounded-lg border border-indigo-900/30 bg-[#0d0d1f]/90 px-4 py-3 backdrop-blur-sm" : "absolute top-4 left-4 rounded-lg border border-slate-300 bg-white/90 px-4 py-3 backdrop-blur-sm shadow-md"}>
-        <h3 className={isDark ? "text-sm font-semibold text-indigo-300" : "text-sm font-semibold text-blue-700"}>Tag Network</h3>
-        <p className={isDark ? "mt-1 text-xs text-indigo-400/70" : "mt-1 text-xs text-slate-600"}>
+      <div className={isDark ? "absolute top-4 left-4 rounded-lg border bg-card px-4 py-3 shadow-lg" : "absolute top-4 left-4 rounded-lg border border-slate-300 bg-white/90 px-4 py-3 backdrop-blur-sm shadow-md"}>
+        <h3 className={isDark ? "text-sm font-semibold text-card-foreground" : "text-sm font-semibold text-blue-700"}>Tag Network</h3>
+        <p className={isDark ? "mt-1 text-xs text-muted-foreground" : "mt-1 text-xs text-slate-600"}>
           {data.nodes.length} tags · {data.edges.length} connections
         </p>
-        <p className={isDark ? "mt-0.5 text-[10px] text-indigo-500/50" : "mt-0.5 text-[10px] text-slate-500"}>
+        <p className={isDark ? "mt-0.5 text-[10px] text-muted-foreground/70" : "mt-0.5 text-[10px] text-slate-500"}>
           Tags connected when sharing same tables.
           Click a node to highlight connections. Drag to rearrange.
         </p>
@@ -285,28 +285,28 @@ export function TagNetworkVisualization() {
       {/* Selected tag usage panel — slides in from right */}
       {selectedNode && (
         <div
-          className={isDark ? "absolute top-0 right-0 z-50 h-full w-[340px] border-l border-indigo-800/30 bg-[#0d0d1f]/95 shadow-2xl backdrop-blur-md transition-transform duration-300 ease-out" : "absolute top-0 right-0 z-50 h-full w-[340px] border-l border-slate-300 bg-white/95 shadow-2xl backdrop-blur-md transition-transform duration-300 ease-out"}
+          className={isDark ? "absolute top-0 right-0 z-50 h-full w-[340px] border-l bg-card shadow-2xl transition-transform duration-300 ease-out" : "absolute top-0 right-0 z-50 h-full w-[340px] border-l border-slate-300 bg-white/95 shadow-2xl backdrop-blur-md transition-transform duration-300 ease-out"}
           style={{
             transform: panelVisible ? 'translateX(0)' : 'translateX(100%)',
           }}
         >
           {/* Panel header */}
-          <div className={isDark ? "flex items-center justify-between border-b border-indigo-800/30 px-4 py-3" : "flex items-center justify-between border-b border-slate-300 px-4 py-3"}>
+          <div className={isDark ? "flex items-center justify-between border-b px-4 py-3" : "flex items-center justify-between border-b border-slate-300 px-4 py-3"}>
             <div className="flex items-center gap-2 min-w-0">
-              <Hash className={isDark ? "h-4 w-4 shrink-0 text-indigo-400" : "h-4 w-4 shrink-0 text-blue-600"} />
-              <span className={isDark ? "truncate font-semibold text-indigo-200" : "truncate font-semibold text-slate-900"}>
+              <Hash className={isDark ? "h-4 w-4 shrink-0 text-primary" : "h-4 w-4 shrink-0 text-blue-600"} />
+              <span className={isDark ? "truncate font-semibold text-card-foreground" : "truncate font-semibold text-slate-900"}>
                 {selectedNode.label}
               </span>
             </div>
             <button
               onClick={onPaneClick}
-              className={isDark ? "rounded-md p-1 text-indigo-400/70 hover:bg-indigo-800/30 hover:text-indigo-300 transition-colors" : "rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"}
+              className={isDark ? "rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" : "rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"}
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className={isDark ? "px-4 py-2 text-xs text-indigo-400/70 border-b border-indigo-800/20" : "px-4 py-2 text-xs text-slate-600 border-b border-slate-200"}>
+          <div className={isDark ? "px-4 py-2 text-xs text-muted-foreground border-b" : "px-4 py-2 text-xs text-slate-600 border-b border-slate-200"}>
             Used {selectedNode.usageCount} {selectedNode.usageCount === 1 ? 'time' : 'times'} ·{' '}
             {edges.filter((e) => e.animated).length} related tags
           </div>
@@ -315,12 +315,12 @@ export function TagNetworkVisualization() {
           <ScrollArea className="h-[calc(100%-90px)]">
             <div className="p-4 space-y-4">
               {isUsageLoading ? (
-                <div className={isDark ? "flex h-20 items-center justify-center text-indigo-400/70" : "flex h-20 items-center justify-center text-slate-600"}>
+                <div className={isDark ? "flex h-20 items-center justify-center text-muted-foreground" : "flex h-20 items-center justify-center text-slate-600"}>
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
                   <span className="text-xs">Loading usage...</span>
                 </div>
               ) : !usageData?.usage.length ? (
-                <div className={isDark ? "text-xs text-indigo-400/50 text-center py-4" : "text-xs text-slate-500 text-center py-4"}>
+                <div className={isDark ? "text-xs text-muted-foreground text-center py-4" : "text-xs text-slate-500 text-center py-4"}>
                   No active usage found for this tag.
                 </div>
               ) : (
@@ -329,26 +329,26 @@ export function TagNetworkVisualization() {
                     <Link
                       to="/pipelines/$pipelineId"
                       params={{ pipelineId: String(pipeline.pipeline_id) }}
-                      className={isDark ? "group/link flex items-center gap-2 text-sm font-medium text-indigo-200 hover:text-blue-400 transition-colors" : "group/link flex items-center gap-2 text-sm font-medium text-slate-900 hover:text-blue-600 transition-colors"}
+                      className={isDark ? "group/link flex items-center gap-2 text-sm font-medium text-card-foreground hover:text-primary transition-colors" : "group/link flex items-center gap-2 text-sm font-medium text-slate-900 hover:text-blue-600 transition-colors"}
                     >
-                      <Network className={isDark ? "h-4 w-4 text-indigo-400" : "h-4 w-4 text-blue-600"} />
+                      <Network className={isDark ? "h-4 w-4 text-primary" : "h-4 w-4 text-blue-600"} />
                       {pipeline.pipeline_name}
                       <ExternalLink className="h-3 w-3 opacity-50 shrink-0" />
                     </Link>
-                    <div className={isDark ? "ml-2 pl-4 border-l-2 border-indigo-800/40 space-y-2" : "ml-2 pl-4 border-l-2 border-slate-300 space-y-2"}>
+                    <div className={isDark ? "ml-2 pl-4 border-l-2 border-border space-y-2" : "ml-2 pl-4 border-l-2 border-slate-300 space-y-2"}>
                       {pipeline.destinations.map((dest, j) => (
                         <div key={j} className="space-y-1">
                           <Link
                             to="/pipelines/$pipelineId"
                             params={{ pipelineId: String(pipeline.pipeline_id) }}
                             state={{ highlightDestination: dest.destination_id } as HistoryState}
-                            className={isDark ? "group/link flex items-center gap-2 text-xs font-medium text-indigo-300/80 hover:text-blue-400 transition-colors cursor-pointer w-fit" : "group/link flex items-center gap-2 text-xs font-medium text-slate-700 hover:text-blue-600 transition-colors cursor-pointer w-fit"}
+                            className={isDark ? "group/link flex items-center gap-2 text-xs font-medium text-card-foreground/90 hover:text-primary transition-colors cursor-pointer w-fit" : "group/link flex items-center gap-2 text-xs font-medium text-slate-700 hover:text-blue-600 transition-colors cursor-pointer w-fit"}
                           >
                             <Database className="h-3 w-3" />
                             {dest.destination_name}
                             <ExternalLink className="h-2.5 w-2.5 opacity-50 shrink-0" />
                           </Link>
-                          <div className={isDark ? "space-y-0.5 ml-1 pl-3 border-l border-indigo-800/20" : "space-y-0.5 ml-1 pl-3 border-l border-slate-200"}>
+                          <div className={isDark ? "space-y-0.5 ml-1 pl-3 border-l border-border" : "space-y-0.5 ml-1 pl-3 border-l border-slate-200"}>
                             {dest.tables.map((table, k) => (
                               <Link
                                 key={k}
@@ -359,7 +359,7 @@ export function TagNetworkVisualization() {
                                   openDrawerDestinationId: dest.destination_id,
                                   highlightTable: table,
                                 } as HistoryState}
-                                className={isDark ? "group/link flex items-center gap-2 text-xs text-indigo-400/60 py-0.5 hover:text-blue-400 transition-colors cursor-pointer w-fit" : "group/link flex items-center gap-2 text-xs text-slate-600 py-0.5 hover:text-blue-600 transition-colors cursor-pointer w-fit"}
+                                className={isDark ? "group/link flex items-center gap-2 text-xs text-muted-foreground py-0.5 hover:text-primary transition-colors cursor-pointer w-fit" : "group/link flex items-center gap-2 text-xs text-slate-600 py-0.5 hover:text-blue-600 transition-colors cursor-pointer w-fit"}
                               >
                                 <Table2 className="h-3 w-3 opacity-70" />
                                 {table}
