@@ -98,6 +98,22 @@ def get_connection_pool() -> pool.ThreadedConnectionPool:
     return _connection_pool
 
 
+def log_pool_stats() -> None:
+    """Log connection pool statistics for debugging."""
+    try:
+        connection_pool = get_connection_pool()
+        # Access private attributes to get pool stats
+        # minconn and maxconn are public
+        logger.info(
+            f"Connection pool stats: "
+            f"min={connection_pool.minconn}, "
+            f"max={connection_pool.maxconn}, "
+            f"closed={connection_pool.closed}"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log pool stats: {e}")
+
+
 def close_connection_pool() -> None:
     """Close the connection pool."""
     global _connection_pool
@@ -118,23 +134,44 @@ def get_db_connection() -> psycopg2.extensions.connection:
         Caller is responsible for returning the connection to the pool.
     """
     connection_pool = get_connection_pool()
-    max_retries = 3
-    retry_delay = 0.5  # Start with 500ms delay
+    max_retries = 5  # Increased from 3 to handle high concurrency
+    retry_delay = 1.0  # Start with 1 second (increased from 0.5s)
 
     for attempt in range(max_retries):
         try:
             # Block up to 10 seconds waiting for available connection
             conn = connection_pool.getconn()
 
-            # Validate connection is alive with a simple query
+            # CRITICAL: Reset connection state before use
+            # Connections returned from pool may still be in transaction state
             try:
+                # Rollback any pending transactions
+                if conn.status != psycopg2.extensions.STATUS_READY:
+                    conn.rollback()
+
+                # Use autocommit mode for health check to avoid starting a transaction
+                conn.autocommit = True
+
+                # Validate connection is alive with a simple query
                 with conn.cursor() as cur:
-                    cur.execute("SELECT 1")  # Simple health check
-            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                    cur.execute("SELECT 1")  # Simple health check in autocommit mode
+
+                # Reset to default non-autocommit mode for normal operations
+                conn.autocommit = False
+
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
                 # Connection is dead, remove it and get a new one
-                logger.warning("Detected dead connection, removing from pool")
+                logger.warning(f"Detected dead connection, removing from pool: {e}")
                 connection_pool.putconn(conn, close=True)
                 conn = connection_pool.getconn()
+
+                # Reset the new connection too
+                if conn.status != psycopg2.extensions.STATUS_READY:
+                    conn.rollback()
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                conn.autocommit = False
 
             return conn
         except psycopg2.pool.PoolError as e:
@@ -144,7 +181,7 @@ def get_db_connection() -> psycopg2.extensions.connection:
                     f"retrying in {retry_delay:.2f}s..."
                 )
                 time.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff: 0.5s, 1s, 2s
+                retry_delay *= 1.5  # Exponential backoff: 1s, 1.5s, 2.25s, 3.38s, 5.06s
             else:
                 logger.error(
                     f"Failed to get connection after {max_retries} attempts: {e}"
@@ -157,8 +194,28 @@ def get_db_connection() -> psycopg2.extensions.connection:
 
 
 def return_db_connection(conn: psycopg2.extensions.connection) -> None:
-    """Return a connection to the pool."""
+    """Return a connection to the pool after cleaning up transaction state."""
     pool = get_connection_pool()
+
+    try:
+        # CRITICAL: Clean up transaction state before returning to pool
+        # Rollback any uncommitted transactions
+        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+            conn.rollback()
+            logger.debug(
+                "Rolled back uncommitted transaction before returning connection to pool"
+            )
+
+        # Reset autocommit to default (False)
+        conn.autocommit = False
+
+    except Exception as e:
+        logger.warning(f"Error cleaning up connection state: {e}. Closing connection.")
+        # If cleanup fails, close the connection instead of returning it
+        pool.putconn(conn, close=True)
+        return
+
+    # Return cleaned connection to pool
     pool.putconn(conn)
 
 
@@ -221,19 +278,30 @@ class DatabaseSession:
                         connection_valid = False
             else:
                 # Only commit if there were write operations
-                if self._conn and not self._autocommit and self._has_writes:
-                    try:
-                        self._conn.commit()
-                    except (
-                        psycopg2.OperationalError,
-                        psycopg2.InterfaceError,
-                        psycopg2.DatabaseError,
-                    ) as e:
-                        logger.error(
-                            f"Failed to commit transaction (connection may be closed): {e}"
-                        )
-                        connection_valid = False
-                        raise DatabaseException(f"Commit failed: {e}")
+                if self._conn and not self._autocommit:
+                    if self._has_writes:
+                        try:
+                            self._conn.commit()
+                        except (
+                            psycopg2.OperationalError,
+                            psycopg2.InterfaceError,
+                            psycopg2.DatabaseError,
+                        ) as e:
+                            logger.error(
+                                f"Failed to commit transaction (connection may be closed): {e}"
+                            )
+                            connection_valid = False
+                            raise DatabaseException(f"Commit failed: {e}")
+                    else:
+                        # No writes - rollback to clean up read-only transaction
+                        try:
+                            self._conn.rollback()
+                            logger.debug("Rolled back read-only transaction")
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to rollback read-only transaction: {e}"
+                            )
+                            connection_valid = False
         finally:
             # Return connection to pool
             if self._conn:
