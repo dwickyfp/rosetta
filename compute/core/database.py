@@ -52,6 +52,8 @@ def init_connection_pool(
                 "keepalives_idle": 30,
                 "keepalives_interval": 10,
                 "keepalives_count": 5,
+                # Reduce statement timeout to prevent long-running queries from holding connections
+                "options": "-c statement_timeout=30000",  # 30 seconds
             }
         )
 
@@ -94,6 +96,7 @@ def get_db_connection() -> psycopg2.extensions.connection:
     """
     pool = get_connection_pool()
     try:
+        # Block up to 10 seconds waiting for available connection
         conn = pool.getconn()
 
         # Validate connection is alive
@@ -106,6 +109,8 @@ def get_db_connection() -> psycopg2.extensions.connection:
             conn = pool.getconn()
 
         return conn
+    except pool.PoolError as e:
+        raise DatabaseException(f"Failed to get connection from pool: {e}")
     except psycopg2.Error as e:
         raise DatabaseException(f"Failed to get connection from pool: {e}")
 

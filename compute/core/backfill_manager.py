@@ -232,15 +232,28 @@ class BackfillManager:
                         (BackfillStatus.PENDING.value,),
                     )
                     jobs = cursor.fetchall()
-                    return [dict(job) for job in jobs]
+                    result = [dict(job) for job in jobs]
+                    # Return connection before returning result
+                    if conn and pool:
+                        pool.putconn(conn)
+                        conn = None
+                    return result
             except Exception as e:
                 logger.error(
                     f"Error fetching pending jobs (attempt {attempt + 1}/{max_retries}): {e}"
                 )
+                # Close stale connection to force pool to create a fresh one
+                if conn and pool:
+                    try:
+                        pool.putconn(conn, close=True)
+                        conn = None
+                    except Exception:
+                        pass
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
                     retry_delay *= 2
             finally:
+                # Ensure connection is returned even if exception in return path
                 if conn and pool:
                     try:
                         pool.putconn(conn)

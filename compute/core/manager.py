@@ -49,6 +49,7 @@ def _run_pipeline_process(pipeline_id: int, stop_event: EventClass) -> None:
     """
     # Configure logging for subprocess - CRITICAL: parent logging is not inherited
     import sys
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -59,13 +60,19 @@ def _run_pipeline_process(pipeline_id: int, stop_event: EventClass) -> None:
     logging.getLogger("jpype").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    
+
     subprocess_logger = logging.getLogger(f"Pipeline_{pipeline_id}")
-    
+
     # Initialize database connection pool for this process with configurable size
+    # Default to 10 connections to support concurrent operations:
+    # - Main engine repository queries (2-3 connections)
+    # - Backfill manager operations (3-4 connections)
+    # - DLQ recovery worker (1-2 connections)
+    # - Buffer for concurrent spikes (2 connections)
     import os
-    pipeline_pool_max_conn = int(os.getenv("PIPELINE_POOL_MAX_CONN", "3"))
-    init_connection_pool(min_conn=1, max_conn=pipeline_pool_max_conn)
+
+    pipeline_pool_max_conn = int(os.getenv("PIPELINE_POOL_MAX_CONN", "10"))
+    init_connection_pool(min_conn=2, max_conn=pipeline_pool_max_conn)
 
     engine = None
     try:
@@ -315,7 +322,7 @@ class PipelineManager:
                 if pipeline.status in ("START", "REFRESH"):
                     if pipeline.id not in self._processes:
                         self.start_pipeline(pipeline.id, pipeline.updated_at)
-                        
+
                         # Reset status to START if it was REFRESH
                         if pipeline.status == "REFRESH":
                             PipelineRepository.update_status(pipeline.id, "START")
@@ -325,7 +332,7 @@ class PipelineManager:
                             f"Pipeline {pipeline.name} is {pipeline.status} but process died. Restarting..."
                         )
                         self.restart_pipeline(pipeline.id, pipeline.updated_at)
-                        
+
                         # Reset status to START if it was REFRESH
                         if pipeline.status == "REFRESH":
                             PipelineRepository.update_status(pipeline.id, "START")
