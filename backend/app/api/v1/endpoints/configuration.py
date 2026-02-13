@@ -124,8 +124,8 @@ async def update_wal_thresholds(
 @router.post(
     "/wal-thresholds/test",
     status_code=status.HTTP_200_OK,
-    summary="Test notification webhook",
-    description="Send a test notification to the configured webhook URL or a provided one",
+    summary="Test notification webhook and/or Telegram",
+    description="Send a test notification to the configured webhook URL and/or Telegram",
 )
 async def test_notification_webhook(
     request: TestNotificationRequest = None,
@@ -135,7 +135,7 @@ async def test_notification_webhook(
     Trigger a test notification.
     
     Args:
-        request: Optional body containing webhook_url
+        request: Optional body containing webhook_url, telegram_bot_token, and telegram_chat_id
         db: Database session
         
     Returns:
@@ -145,12 +145,32 @@ async def test_notification_webhook(
         from app.domain.services.notification_service import NotificationService
         
         webhook_url = request.webhook_url if request else None
+        telegram_bot_token = request.telegram_bot_token if request else None
+        telegram_chat_id = request.telegram_chat_id if request else None
         
         service = NotificationService(db)
-        success = await service.send_test_notification(webhook_url)
         
-        if success:
-            return {"message": "Test notification sent successfully"}
+        # Send to webhook if provided
+        webhook_success = False
+        if webhook_url:
+            webhook_success = await service.send_test_notification(webhook_url=webhook_url)
+        
+        # Send to Telegram if provided
+        telegram_success = False
+        if telegram_bot_token and telegram_chat_id:
+            telegram_success = await service.send_test_telegram_notification(
+                bot_token=telegram_bot_token,
+                chat_id=telegram_chat_id
+            )
+        
+        # Return success if either succeeded
+        if webhook_success or telegram_success:
+            messages = []
+            if webhook_success:
+                messages.append("webhook")
+            if telegram_success:
+                messages.append("Telegram")
+            return {"message": f"Test notification sent successfully to {' and '.join(messages)}"}
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

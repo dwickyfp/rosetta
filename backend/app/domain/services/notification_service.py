@@ -246,3 +246,38 @@ class NotificationService:
         }
 
         return await self._send_webhook(webhook_url, payload)
+
+    async def send_test_telegram_notification(
+        self, bot_token: Optional[str] = None, chat_id: Optional[str] = None
+    ) -> bool:
+        """
+        Send a test notification to Telegram.
+
+        Args:
+            bot_token: Optional Telegram bot token. If not provided, uses configured token.
+            chat_id: Optional Telegram chat ID. If not provided, uses configured chat ID.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not bot_token:
+            bot_token = self.config_repo.get_value("ALERT_NOTIFICATION_TELEGRAM_KEY")
+
+        if not chat_id:
+            chat_id = self.config_repo.get_value("ALERT_NOTIFICATION_TELEGRAM_GROUP_ID")
+
+        if not bot_token:
+            raise ValueError("Telegram bot token is not configured")
+
+        if not chat_id:
+            raise ValueError("Telegram chat ID is not configured")
+
+        # Format test message for Telegram with HTML
+        message = (
+            "<b>Test Notification</b>\n\n"
+            "This is a test notification from Rosetta ETL Platform.\n\n"
+            "Type: TEST\n"
+            f"Time: {datetime.now(timezone(timedelta(hours=7))).strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+
+        return await self._send_telegram(bot_token, chat_id, message)

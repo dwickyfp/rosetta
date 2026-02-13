@@ -53,6 +53,8 @@ class TestNotificationRequest(BaseModel):
     """Schema for test notification request."""
     
     webhook_url: str = Field(default=None, description="Optional webhook URL to test")
+    telegram_bot_token: str = Field(default=None, description="Optional Telegram bot token to test")
+    telegram_chat_id: str = Field(default=None, description="Optional Telegram chat ID to test")
 
 
 class BatchConfiguration(BaseModel):

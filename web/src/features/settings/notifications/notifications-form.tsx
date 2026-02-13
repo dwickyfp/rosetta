@@ -308,14 +308,37 @@ export function NotificationsForm() {
                 render={({ field }) => (
                   <FormItem className='mt-6'>
                     <FormLabel>Telegram Chat/Group ID</FormLabel>
-                    <FormControl>
-                      <Input
-                        type='text'
-                        placeholder='-1001234567890'
+                    <div className='flex gap-2'>
+                      <FormControl>
+                        <Input
+                          type='text'
+                          placeholder='-1001234567890'
+                          disabled={!isTelegramEnabled}
+                          {...field}
+                        />
+                      </FormControl>
+                      <Button
+                        type='button'
+                        variant='secondary'
                         disabled={!isTelegramEnabled}
-                        {...field}
-                      />
-                    </FormControl>
+                        onClick={async () => {
+                          const botToken = form.getValues('telegram_bot_token')
+                          const chatId = form.getValues('telegram_chat_id')
+                          if (!botToken || !chatId) {
+                            toast.error('Please enter bot token and chat ID first')
+                            return
+                          }
+                          try {
+                            await configurationRepo.testNotification(undefined, botToken, chatId)
+                            toast.success('Test notification sent to Telegram successfully')
+                          } catch (e: any) {
+                            toast.error(e.response?.data?.detail || 'Failed to send Telegram test notification')
+                          }
+                        }}
+                      >
+                        Test
+                      </Button>
+                    </div>
                     <FormDescription>
                       Telegram chat or group ID where notifications will be sent. Use negative number for groups.
                     </FormDescription>
