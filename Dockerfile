@@ -184,6 +184,9 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# Create Snowflake connector directory with proper permissions
+RUN mkdir -p /root/.snowflake && chmod 755 /root/.snowflake
+
 # Set environment variables
 ENV MODE=web
 ENV HOST=0.0.0.0
