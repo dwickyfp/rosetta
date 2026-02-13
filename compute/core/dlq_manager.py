@@ -184,13 +184,9 @@ class DLQManager:
         self._groups_lock = threading.Lock()
 
         self._logger = logging.getLogger(f"{__name__}.DLQManager")
-        self._logger.info(
-            f"DLQ Manager initialized with Redis (prefix={key_prefix})"
-        )
+        self._logger.info(f"DLQ Manager initialized with Redis (prefix={key_prefix})")
 
-    def _stream_key(
-        self, source_id: int, table_name: str, destination_id: int
-    ) -> str:
+    def _stream_key(self, source_id: int, table_name: str, destination_id: int) -> str:
         """
         Build Redis stream key for specific source/table/destination.
 
@@ -206,9 +202,7 @@ class DLQManager:
         """
         if isinstance(key, bytes):
             key = key.decode("utf-8")
-        pattern = re.compile(
-            rf"^{re.escape(self._key_prefix)}:s(\d+):t(.+):d(\d+)$"
-        )
+        pattern = re.compile(rf"^{re.escape(self._key_prefix)}:s(\d+):t(.+):d(\d+)$")
         match = pattern.match(key)
         if not match:
             return None
@@ -259,7 +253,7 @@ class DLQManager:
                 return operation(*args, **kwargs)
             except (redis.ConnectionError, redis.TimeoutError) as e:
                 last_error = e
-                wait_time = _RETRY_BACKOFF_BASE * (2 ** attempt)
+                wait_time = _RETRY_BACKOFF_BASE * (2**attempt)
                 self._logger.warning(
                     f"Redis operation failed (attempt {attempt + 1}/{_MAX_RETRIES}): {e}. "
                     f"Retrying in {wait_time:.1f}s..."
@@ -298,6 +292,7 @@ class DLQManager:
             # Serialize table_sync to dict for storage
             table_sync_dict = {
                 "id": table_sync.id,
+                "pipeline_destination_id": table_sync.pipeline_destination_id,
                 "table_name": table_sync.table_name,
                 "table_name_target": table_sync.table_name_target,
                 "filter_sql": table_sync.filter_sql,
@@ -384,7 +379,11 @@ class DLQManager:
             for stream_name, entries in result:
                 for entry_id, entry_data in entries:
                     try:
-                        msg_id = entry_id.decode("utf-8") if isinstance(entry_id, bytes) else entry_id
+                        msg_id = (
+                            entry_id.decode("utf-8")
+                            if isinstance(entry_id, bytes)
+                            else entry_id
+                        )
                         msg = DLQMessage.from_stream_entry(entry_data)
                         messages.append((msg_id, msg))
                     except Exception as parse_err:
@@ -516,7 +515,11 @@ class DLQManager:
                 try:
                     if not entry_data:
                         continue
-                    msg_id = entry_id.decode("utf-8") if isinstance(entry_id, bytes) else entry_id
+                    msg_id = (
+                        entry_id.decode("utf-8")
+                        if isinstance(entry_id, bytes)
+                        else entry_id
+                    )
                     msg = DLQMessage.from_stream_entry(entry_data)
                     messages.append((msg_id, msg))
                 except Exception as parse_err:
@@ -571,9 +574,7 @@ class DLQManager:
             pattern = f"{self._key_prefix}:s*"
             cursor = 0
             while True:
-                cursor, keys = self._redis.scan(
-                    cursor=cursor, match=pattern, count=100
-                )
+                cursor, keys = self._redis.scan(cursor=cursor, match=pattern, count=100)
                 for key in keys:
                     parsed = self._parse_stream_key(key)
                     if parsed:
@@ -664,11 +665,17 @@ class DLQManager:
                         pass
 
                     if should_purge:
-                        msg_id = entry_id.decode("utf-8") if isinstance(entry_id, bytes) else entry_id
+                        msg_id = (
+                            entry_id.decode("utf-8")
+                            if isinstance(entry_id, bytes)
+                            else entry_id
+                        )
                         ids_to_purge.append(msg_id)
 
                 except Exception as parse_err:
-                    self._logger.error(f"Failed to parse message for purge: {parse_err}")
+                    self._logger.error(
+                        f"Failed to parse message for purge: {parse_err}"
+                    )
 
             if ids_to_purge:
                 # ACK + DEL the purged messages

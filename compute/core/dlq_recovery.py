@@ -17,6 +17,7 @@ from core.models import (
     PipelineDestinationTableSync,
 )
 from core.exceptions import DestinationException
+from core.repository import PipelineDestinationRepository, TableSyncRepository
 
 logger = logging.getLogger(__name__)
 
@@ -386,7 +387,28 @@ class DLQRecoveryWorker:
                 f"{destination.name} for table {table_name}"
             )
 
-            # Success! Acknowledge all messages (ACK + DEL)
+            # Success! Clear error flags (same as CDC behavior)
+            # Get pipeline_destination_id and table_sync_id from table_sync_config
+            pipeline_destination_id = first_msg.table_sync_config.get(
+                "pipeline_destination_id"
+            )
+            table_sync_id = first_msg.table_sync_config.get("id")
+
+            # Clear error flag on pipeline_destination
+            if pipeline_destination_id:
+                PipelineDestinationRepository.update_error(
+                    pipeline_destination_id, False
+                )
+                self._logger.debug(
+                    f"Cleared error flag for pipeline_destination {pipeline_destination_id}"
+                )
+
+            # Clear error flag on table_sync
+            if table_sync_id:
+                TableSyncRepository.update_error(table_sync_id, False)
+                self._logger.debug(f"Cleared error flag for table_sync {table_sync_id}")
+
+            # Acknowledge all messages (ACK + DEL)
             self._dlq_manager.acknowledge(
                 source_id, table_name, destination_id, message_ids
             )
@@ -411,9 +433,7 @@ class DLQRecoveryWorker:
             )
 
             # Update retry count for each message
-            self._handle_retry(
-                messages_with_ids, source_id, table_name, destination_id
-            )
+            self._handle_retry(messages_with_ids, source_id, table_name, destination_id)
 
     def _handle_retry(
         self,
@@ -474,6 +494,9 @@ class DLQRecoveryWorker:
         class TableSyncStub:
             def __init__(self, config_dict):
                 self.id = config_dict.get("id")
+                self.pipeline_destination_id = config_dict.get(
+                    "pipeline_destination_id"
+                )
                 self.table_name = config_dict.get("table_name")
                 self.table_name_target = config_dict.get("table_name_target")
                 self.filter_sql = config_dict.get("filter_sql")
@@ -494,12 +517,14 @@ class DLQRecoveryWorker:
         queue_stats = []
         for source_id, table_name, dest_id in queues:
             size = self._dlq_manager.get_queue_size(source_id, table_name, dest_id)
-            queue_stats.append({
-                "source_id": source_id,
-                "table_name": table_name,
-                "destination_id": dest_id,
-                "size": size,
-            })
+            queue_stats.append(
+                {
+                    "source_id": source_id,
+                    "table_name": table_name,
+                    "destination_id": dest_id,
+                    "size": size,
+                }
+            )
 
         with self._health_check_lock:
             health_stats = dict(self._destination_health)
