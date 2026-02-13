@@ -62,11 +62,13 @@ export interface SmartTagsFilterParams {
 }
 
 export interface DestinationUsage {
+  destination_id: number
   destination_name: string
   tables: string[]
 }
 
 export interface PipelineUsage {
+  pipeline_id: number
   pipeline_name: string
   destinations: DestinationUsage[]
 }

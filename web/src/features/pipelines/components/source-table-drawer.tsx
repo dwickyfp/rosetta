@@ -22,6 +22,7 @@ interface SourceTableDrawerProps {
   onOpenChange: (open: boolean) => void
   pipeline: Pipeline
   initialDestinationId?: number | null
+  initialHighlightTable?: string
 }
 
 export function SourceTableDrawer({
@@ -29,6 +30,7 @@ export function SourceTableDrawer({
   onOpenChange,
   pipeline,
   initialDestinationId,
+  initialHighlightTable,
 }: SourceTableDrawerProps) {
   const [selectedDestinationId, setSelectedDestinationId] = useState<
     number | null
@@ -36,6 +38,13 @@ export function SourceTableDrawer({
   const [tables, setTables] = useState<TableWithSyncInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Initialize search query from prop
+  useEffect(() => {
+    if (initialHighlightTable) {
+      setSearchQuery(initialHighlightTable)
+    }
+  }, [initialHighlightTable])
 
   // Floating Card State
   const [activeTable, setActiveTable] = useState<TableWithSyncInfo | null>(null)

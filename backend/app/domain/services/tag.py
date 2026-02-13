@@ -110,29 +110,34 @@ class TagService:
         structure = {}
         
         for row in rows:
+            p_id = row.pipeline_id
             p_name = row.pipeline_name
+            d_id = row.destination_id
             d_name = row.destination_name
             t_name = row.table_name
             
-            if p_name not in structure:
-                structure[p_name] = {}
+            p_key = (p_id, p_name)
+            d_key = (d_id, d_name)
             
-            if d_name not in structure[p_name]:
-                structure[p_name][d_name] = []
+            if p_key not in structure:
+                structure[p_key] = {}
+            
+            if d_key not in structure[p_key]:
+                structure[p_key][d_key] = []
                 
-            structure[p_name][d_name].append(t_name)
+            structure[p_key][d_key].append(t_name)
             
         # Convert to response schema
         usage_list = []
-        for p_name, dests in structure.items():
+        for (p_id, p_name), dests in structure.items():
             dest_list = []
-            for d_name, tables in dests.items():
+            for (d_id, d_name), tables in dests.items():
                 dest_list.append(
-                    DestinationUsage(destination_name=d_name, tables=tables)
+                    DestinationUsage(destination_id=d_id, destination_name=d_name, tables=tables)
                 )
             
             usage_list.append(
-                PipelineUsage(pipeline_name=p_name, destinations=dest_list)
+                PipelineUsage(pipeline_id=p_id, pipeline_name=p_name, destinations=dest_list)
             )
             
         return TagUsageResponse(tag=tag.tag, usage=usage_list)

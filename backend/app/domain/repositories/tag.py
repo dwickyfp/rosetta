@@ -148,7 +148,9 @@ class TagRepository(BaseRepository[TagList]):
         try:
             return self.db.execute(
                 select(
+                    Pipeline.id.label("pipeline_id"),
                     Pipeline.name.label("pipeline_name"),
+                    Destination.id.label("destination_id"),
                     Destination.name.label("destination_name"),
                     PipelineDestinationTableSync.table_name.label("table_name")
                 )

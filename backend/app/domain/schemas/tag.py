@@ -308,6 +308,7 @@ class SmartTagsResponse(BaseSchema):
 class DestinationUsage(BaseSchema):
     """Schema for destination usage details."""
     
+    destination_id: int
     destination_name: str
     tables: List[str]
 
@@ -315,6 +316,7 @@ class DestinationUsage(BaseSchema):
 class PipelineUsage(BaseSchema):
     """Schema for pipeline usage details."""
     
+    pipeline_id: int
     pipeline_name: str
     destinations: List[DestinationUsage]
 

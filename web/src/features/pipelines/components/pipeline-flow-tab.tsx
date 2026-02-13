@@ -3,7 +3,7 @@ import { Pipeline } from '@/repo/pipelines'
 import { ReactFlow, Background, Controls, Node, Edge, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Plus } from 'lucide-react'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useTheme } from '@/context/theme-provider'
 import { AddDestinationModal } from './add-destination-modal'
 import { PipelineNode, PipelineNodeData } from './pipeline-node'
@@ -11,6 +11,10 @@ import { SourceTableDrawer } from './source-table-drawer'
 
 interface PipelineFlowTabProps {
   pipeline: Pipeline
+  highlightDestination?: number
+  openDrawer?: boolean
+  highlightTable?: string
+  onClearHighlight?: () => void
 }
 
 // Register custom node types
@@ -18,11 +22,40 @@ const nodeTypes = {
   pipelineNode: PipelineNode,
 }
 
-export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
+export function PipelineFlowTab({
+  pipeline,
+  highlightDestination,
+  openDrawer,
+  highlightTable,
+  onClearHighlight,
+}: PipelineFlowTabProps) {
   const { theme } = useTheme()
   const [openAddDest, setOpenAddDest] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedDestId, setSelectedDestId] = useState<number | null>(null)
+  const [activeHighlight, setActiveHighlight] = useState<number | null>(null)
+  const [activeHighlightTable, setActiveHighlightTable] = useState<string | undefined>(undefined)
+
+  // Consume the highlight prop once into local state
+  useEffect(() => {
+    if (highlightDestination) {
+      setActiveHighlight(highlightDestination)
+      setActiveHighlightTable(highlightTable)
+    }
+  }, [highlightDestination, highlightTable])
+
+  // Handle auto-open drawer from navigation state
+  useEffect(() => {
+    if (openDrawer && highlightDestination && pipeline?.destinations) {
+      const dest = pipeline.destinations.find(
+        (d) => d.destination.id === highlightDestination
+      )
+      if (dest) {
+        setSelectedDestId(dest.id)
+        setDrawerOpen(true)
+      }
+    }
+  }, [openDrawer, highlightDestination, pipeline])
 
   // Determine existing destination IDs to exclude from add modal
   const existingDestinationIds = useMemo(() => {
@@ -38,6 +71,14 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
       return
     } else if (node.id.startsWith('dest-')) {
       const destId = parseInt(node.id.replace('dest-', ''))
+
+      // Clear highlight if clicking the highlighted node
+      if (activeHighlight === destId) {
+        setActiveHighlight(null)
+        setActiveHighlightTable(undefined)
+        onClearHighlight?.()
+      }
+
       // Find the pipeline_destination ID from the destination ID
       const pipelineDest = pipeline?.destinations?.find((d) => d.destination.id === destId)
 
@@ -46,7 +87,7 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
         setDrawerOpen(true)
       }
     }
-  }, [pipeline])
+  }, [pipeline, activeHighlight, onClearHighlight])
 
   // Build nodes and edges for React Flow
   const { nodes, edges } = useMemo(() => {
@@ -80,6 +121,8 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
 
     pipeline.destinations?.forEach((d, index) => {
       const destId = `dest-${d.destination.id}`
+      const isHighlighted = activeHighlight === d.destination.id
+
       nodes.push({
         id: destId,
         type: 'pipelineNode', // Use custom type
@@ -92,7 +135,8 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
           destinationId: d.destination.id,
           isError: d.is_error,
           errorMessage: d.error_message ?? undefined,
-          errorCount: d.table_syncs?.filter(t => t.is_error).length || 0
+          errorCount: d.table_syncs?.filter(t => t.is_error).length || 0,
+          isHighlighted,
         },
         targetPosition: Position.Left,
       })
@@ -111,7 +155,7 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
     })
 
     return { nodes, edges }
-  }, [pipeline])
+  }, [pipeline, activeHighlight])
 
   return (
     <div className="flex h-[500px] flex-col rounded-lg border bg-background">
@@ -158,6 +202,7 @@ export function PipelineFlowTab({ pipeline }: PipelineFlowTabProps) {
         onOpenChange={setDrawerOpen}
         pipeline={pipeline}
         initialDestinationId={selectedDestId}
+        initialHighlightTable={activeHighlightTable}
       />
     </div>
   )

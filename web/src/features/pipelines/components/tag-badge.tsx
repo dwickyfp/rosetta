@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { tagsRepo } from '@/repo/tags'
 import { useQuery } from '@tanstack/react-query'
+import { Link, type HistoryState } from '@tanstack/react-router'
 import {
   Database,
   Hash,
@@ -40,6 +41,11 @@ export function TagBadge({
     queryFn: () => tagsRepo.getUsage(tagId!),
     enabled: !!tagId && isOpen,
   })
+
+  // Prevent popover from closing when clicking links
+  const handleLinkClick = () => {
+    setIsOpen(false)
+  }
 
   const badgeContent = (
     <Badge
@@ -80,7 +86,7 @@ export function TagBadge({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>{badgeContent}</PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
+      <PopoverContent className="w-96 p-0" align="start">
         <div className="border-b px-4 py-3 bg-muted/50">
           <h4 className="font-semibold flex items-center gap-2">
             <Hash className="h-4 w-4 text-muted-foreground" />
@@ -104,26 +110,45 @@ export function TagBadge({
             ) : (
               usageData?.usage.map((pipeline, i) => (
                 <div key={i} className="space-y-3">
-                  <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                  <Link
+                    to="/pipelines/$pipelineId"
+                    params={{ pipelineId: String(pipeline.pipeline_id) }}
+                    className="flex items-center gap-2 font-medium text-sm text-foreground hover:text-blue-600 transition-colors"
+                    onClick={handleLinkClick}
+                  >
                     <Network className="h-4 w-4 text-primary" />
                     {pipeline.pipeline_name}
-                  </div>
+                  </Link>
                   <div className="ml-2 pl-4 border-l-2 border-muted space-y-3">
                     {pipeline.destinations.map((dest, j) => (
                       <div key={j} className="space-y-2">
-                        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                        <Link
+                          to="/pipelines/$pipelineId"
+                          params={{ pipelineId: String(pipeline.pipeline_id) }}
+                          state={{ highlightDestination: dest.destination_id } as HistoryState}
+                          className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-blue-500 transition-colors cursor-pointer w-fit"
+                          onClick={handleLinkClick}
+                        >
                           <Database className="h-3 w-3" />
                           {dest.destination_name}
-                        </div>
+                        </Link>
                         <div className="space-y-1 ml-1 pl-3 border-l border-muted/50">
                           {dest.tables.map((table, k) => (
-                            <div
+                            <Link
                               key={k}
-                              className="flex items-center gap-2 text-xs text-muted-foreground/80 py-0.5"
+                              to="/pipelines/$pipelineId"
+                              params={{ pipelineId: String(pipeline.pipeline_id) }}
+                              state={{
+                                highlightDestination: dest.destination_id,
+                                openDrawer: true,
+                                highlightTable: table,
+                              } as HistoryState}
+                              className="flex items-center gap-2 text-xs text-muted-foreground/80 py-0.5 hover:text-blue-500 transition-colors cursor-pointer w-fit"
+                              onClick={handleLinkClick}
                             >
                               <Table2 className="h-3 w-3 opacity-70" />
                               {table}
-                            </div>
+                            </Link>
                           ))}
                         </div>
                       </div>
