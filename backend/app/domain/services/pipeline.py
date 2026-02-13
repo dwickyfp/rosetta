@@ -274,108 +274,74 @@ class PipelineService:
                     # Check existence in DESTINATION database schema
                     pg_schema = destination.config.get("schema") or "public"
 
-                    # CRITICAL DEBUG: Verify actual database connection
-                    cursor.execute(
-                        "SELECT current_database(), current_user, inet_server_addr(), inet_server_port()"
-                    )
+                    # Set statement timeout to prevent hanging (5 seconds)
+                    cursor.execute("SET statement_timeout = '5s'")
+
+                    # CRITICAL DEBUG: Verify actual database connection (fast query)
+                    cursor.execute("SELECT current_database(), current_user")
                     conn_info = cursor.fetchone()
                     actual_db = conn_info[0]
                     actual_user = conn_info[1]
-                    actual_host = conn_info[2] if conn_info[2] else "unix_socket"
-                    actual_port = conn_info[3] if conn_info[3] else "N/A"
 
-                    logger.warning(
-                        f"🔍 ACTUAL PostgreSQL Connection: database='{actual_db}', user='{actual_user}', "
-                        f"host='{actual_host}', port='{actual_port}'"
-                    )
-                    logger.warning(
-                        f"🎯 EXPECTED Connection: database='{dest_database}', user='{dest_user}', "
-                        f"host='{dest_host}', port='{dest_port}'"
+                    logger.info(
+                        f"Validating in database='{actual_db}', schema='{pg_schema}', "
+                        f"table='{table_name}', user='{actual_user}'"
                     )
 
                     if actual_db != dest_database:
                         logger.error(
-                            f"❌ DATABASE MISMATCH! Connected to '{actual_db}' but expected '{dest_database}'. "
-                            f"Check your destination configuration!"
+                            f"DATABASE MISMATCH! Connected to '{actual_db}' but expected '{dest_database}'"
                         )
 
-                    # PostgreSQL table names are case-sensitive - check both exact match and lowercase
-                    # information_schema.tables stores unquoted table names in lowercase
+                    # OPTIMIZED: Single query using pg_catalog (much faster than information_schema)
+                    # Check both exact match and lowercase for table name
                     query = """
-                        SELECT EXISTS (
-                            SELECT 1 FROM information_schema.tables 
-                            WHERE table_schema = %s 
-                            AND (table_name = %s OR table_name = LOWER(%s))
+                        WITH target_check AS (
+                            SELECT EXISTS (
+                                SELECT 1 FROM pg_catalog.pg_tables 
+                                WHERE schemaname = %s 
+                                AND (tablename = %s OR tablename = LOWER(%s))
+                            ) as exists_in_schema
+                        ),
+                        other_schema_check AS (
+                            SELECT schemaname 
+                            FROM pg_catalog.pg_tables 
+                            WHERE (tablename = %s OR tablename = LOWER(%s))
+                            AND schemaname != %s
+                            LIMIT 1
                         )
+                        SELECT 
+                            tc.exists_in_schema,
+                            osc.schemaname as other_schema
+                        FROM target_check tc
+                        LEFT JOIN other_schema_check osc ON true
                     """
 
-                    logger.info(
-                        f"Checking table existence: schema='{pg_schema}', "
-                        f"table_name='{table_name}' (will also check lowercase: '{table_name.lower()}')"
+                    cursor.execute(
+                        query,
+                        (pg_schema, table_name, table_name, table_name, table_name, pg_schema)
                     )
-
-                    cursor.execute(query, (pg_schema, table_name, table_name))
                     result = cursor.fetchone()
                     exists = result[0] if result else False
-
-                    logger.info(f"Query result: exists={exists}")
-
-                    # Debug: List all tables in this schema to help troubleshoot
-                    if not exists:
-                        logger.warning(
-                            f"❌ Table '{table_name}' NOT FOUND in schema '{pg_schema}'"
-                        )
-
-                        # Show tables in the configured schema
-                        cursor.execute(
-                            "SELECT table_name FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name LIMIT 20",
-                            (pg_schema,),
-                        )
-                        available_tables = [row[0] for row in cursor.fetchall()]
-                        logger.warning(
-                            f"📋 Available tables in schema '{pg_schema}': {available_tables if available_tables else '(no tables found)'}"
-                        )
-
-                        # Also check if table exists in OTHER schemas
-                        cursor.execute(
-                            "SELECT table_schema, table_name FROM information_schema.tables "
-                            "WHERE (table_name = %s OR table_name = LOWER(%s)) LIMIT 5",
-                            (table_name, table_name),
-                        )
-                        other_schemas = cursor.fetchall()
-                        if other_schemas:
-                            schema_list = [
-                                f"{row[0]}.{row[1]}" for row in other_schemas
-                            ]
-                            logger.warning(
-                                f"💡 Table '{table_name}' found in OTHER schemas: {schema_list}. "
-                                f"You may need to change your destination schema setting."
-                            )
-                    else:
-                        logger.info(
-                            f"✅ Table '{table_name}' FOUND in schema '{pg_schema}'"
-                        )
+                    other_schema = result[1] if result and len(result) > 1 else None
 
                     if exists:
+                        logger.info(f"Table '{table_name}' FOUND in schema '{pg_schema}'")
                         return TableValidationResponse(
                             valid=True,
                             exists=True,
                             message=f"Table '{table_name}' already exists in DESTINATION database '{actual_db}' schema '{pg_schema}'. It will be used as target.",
                         )
                     else:
+                        logger.warning(f"Table '{table_name}' NOT FOUND in schema '{pg_schema}'")
+                        
                         # Build helpful message
                         msg = f"Table '{table_name}' does not exist in DESTINATION database '{actual_db}' schema '{pg_schema}' and will be created."
-
-                        # Add hint if found in other schema
-                        cursor.execute(
-                            "SELECT table_schema FROM information_schema.tables "
-                            "WHERE (table_name = %s OR table_name = LOWER(%s)) LIMIT 1",
-                            (table_name, table_name),
-                        )
-                        other_schema = cursor.fetchone()
+                        
                         if other_schema:
-                            msg += f" (Note: Table exists in schema '{other_schema[0]}' - check your destination schema configuration)"
-
+                            msg += f" (Note: Table exists in schema '{other_schema}' - check your destination schema configuration)"
+                            logger.warning(f"Table found in OTHER schema: '{other_schema}'")
+                        
                         return TableValidationResponse(
                             valid=False,
                             exists=False,
