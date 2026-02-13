@@ -5,6 +5,7 @@ Provides connection pooling and session management for PostgreSQL.
 """
 
 import logging
+import time
 from contextlib import contextmanager
 from typing import Generator, Any
 
@@ -42,27 +43,49 @@ def init_connection_pool(
 
     config = get_config()
 
-    try:
-        # Add keepalive and timeout settings to prevent connection drops
-        dsn = config.database.dsn.copy()
-        dsn.update(
-            {
-                "connect_timeout": 10,
-                "keepalives": 1,
-                "keepalives_idle": 30,
-                "keepalives_interval": 10,
-                "keepalives_count": 5,
-                # Reduce statement timeout to prevent long-running queries from holding connections
-                "options": "-c statement_timeout=30000",  # 30 seconds
-            }
-        )
+    # Retry logic for Docker startup timing issues
+    max_retries = 5
+    retry_delay = 2.0
+    last_error = None
 
-        _connection_pool = pool.ThreadedConnectionPool(
-            minconn=min_conn, maxconn=max_conn, **dsn
-        )
-        return _connection_pool
-    except psycopg2.Error as e:
-        raise DatabaseException(f"Failed to initialize connection pool: {e}")
+    for attempt in range(max_retries):
+        try:
+            # Add keepalive and timeout settings to prevent connection drops
+            dsn = config.database.dsn.copy()
+            dsn.update(
+                {
+                    "connect_timeout": 10,
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5,
+                    # Reduce statement timeout to prevent long-running queries from holding connections
+                    "options": "-c statement_timeout=30000",  # 30 seconds
+                }
+            )
+
+            _connection_pool = pool.ThreadedConnectionPool(
+                minconn=min_conn, maxconn=max_conn, **dsn
+            )
+            logger.info(
+                f"Connection pool initialized successfully on attempt {attempt + 1}"
+            )
+            return _connection_pool
+        except psycopg2.Error as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Failed to initialize connection pool (attempt {attempt + 1}/{max_retries}): {e}. "
+                    f"Retrying in {retry_delay:.1f}s..."
+                )
+                time.sleep(retry_delay)
+                retry_delay *= 1.5  # Exponential backoff: 2s, 3s, 4.5s, 6.75s, 10s
+            else:
+                logger.error(
+                    f"Failed to initialize connection pool after {max_retries} attempts: {e}"
+                )
+
+    raise DatabaseException(f"Failed to initialize connection pool: {last_error}")
 
 
 def get_connection_pool() -> pool.ThreadedConnectionPool:
@@ -99,9 +122,10 @@ def get_db_connection() -> psycopg2.extensions.connection:
         # Block up to 10 seconds waiting for available connection
         conn = pool.getconn()
 
-        # Validate connection is alive
+        # Validate connection is alive with a simple query
         try:
-            conn.isolation_level  # Quick check if connection is valid
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")  # Simple health check
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
             # Connection is dead, remove it and get a new one
             logger.warning("Detected dead connection, removing from pool")
@@ -110,7 +134,7 @@ def get_db_connection() -> psycopg2.extensions.connection:
 
         return conn
     except pool.PoolError as e:
-        raise DatabaseException(f"Failed to get connection from pool: {e}")
+        raise DatabaseException(f"Failed to get connection from pool (exhausted): {e}")
     except psycopg2.Error as e:
         raise DatabaseException(f"Failed to get connection from pool: {e}")
 

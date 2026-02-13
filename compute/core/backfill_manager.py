@@ -210,7 +210,7 @@ class BackfillManager:
             List of pending job records
         """
         max_retries = 3
-        retry_delay = 1
+        retry_delay = 2  # Start with 2 seconds
 
         for attempt in range(max_retries):
             pool = None
@@ -238,6 +238,22 @@ class BackfillManager:
                         pool.putconn(conn)
                         conn = None
                     return result
+            except psycopg2.OperationalError as e:
+                # Network/server error - connection was closed by server
+                logger.error(
+                    f"Database connection error fetching pending jobs (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                # Close stale connection to force pool to create a fresh one
+                if conn and pool:
+                    try:
+                        pool.putconn(conn, close=True)
+                        conn = None
+                    except Exception:
+                        pass
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 2s, 4s, 8s
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
             except Exception as e:
                 logger.error(
                     f"Error fetching pending jobs (attempt {attempt + 1}/{max_retries}): {e}"

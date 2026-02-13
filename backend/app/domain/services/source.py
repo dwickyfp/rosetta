@@ -836,67 +836,70 @@ class SourceService:
         Returns:
             New Source entity
         """
+        from sqlalchemy import select
+        from app.core.exceptions import DuplicateEntityError
+
         original_source = self.get_source(source_id)
 
-        # 1. Generate new name
+        # Prepare base names for duplication
         base_name = original_source.name
-        new_name = f"{base_name}-1"
-        counter = 1
-
-        while self.get_source_by_name(new_name):
-            counter += 1
-            new_name = f"{base_name}-{counter}"
-
-        # 2. Generate new replication_name
         base_rep_name = original_source.replication_name
-        # If original name ends with _1, _2 etc, strip it? Or just append?
-        # Let's keep it simple: append -1, -2 like name
-        new_rep_name = f"{base_rep_name}_1"
-        rep_counter = 1
+        base_pub_name = original_source.publication_name
 
-        # We need a way to check if replication_name exists.
-        # Since it's unique in DB, we can use repository.
-        # But SourceRepository might not have get_by_replication_name.
-        # However, checking uniqueness is good practice.
-        # For now, let's assume we can try catch insert or query.
-        # Better to add get_by_replication_name in repository if needed, or just query.
-        # Since I can't easily see repo interface right now without reading, I'll assume I can inspect DB or rely on the fact that if 'name' is unique, replication_name likely follows similar pattern if derived from name,
-        # BUT here replication_name is independent.
-        # Let's assume we can query `self.repository.get_by_replication_name(new_rep_name)` if I add it,
-        # or crudely loop like name.
-        # Actually, let's look at get_by_name usage above.
+        # Generate new name with "-copy" prefix
+        # Use a try-catch approach with retry logic in case of race conditions
+        counter = 1
+        max_retries = 100
+        created_source = None
 
-        # I'll rely on an loop similar to name, assuming I can query it.
-        # I will need to add `get_by_replication_name` to repository or use a custom query provided by repo.
-        # For now, let's optimistically set it, and if it fails, user has to retry? No, that's bad UX.
-        # I will create a loop but I need a check function.
-        # Let's use `self.db.query(Source).filter(Source.replication_name == new_rep_name).first()`
+        while created_source is None and counter <= max_retries:
+            new_name = (
+                f"{base_name}-copy" if counter == 1 else f"{base_name}-copy-{counter}"
+            )
+            # Update replication name for each attempt to avoid replication_name conflicts
+            attempt_rep_name = (
+                f"{base_rep_name}_copy"
+                if counter == 1
+                else f"{base_rep_name}_copy_{counter}"
+            )
+            # Update publication name with -copy suffix
+            attempt_pub_name = (
+                f"{base_pub_name}_copy"
+                if counter == 1
+                else f"{base_pub_name}_copy_{counter}"
+            )
 
-        while (
-            self.db.query(Source)
-            .filter(Source.replication_name == new_rep_name)
-            .first()
-        ):
-            rep_counter += 1
-            new_rep_name = f"{base_rep_name}_{rep_counter}"
+            try:
+                # 3. Create new source configuration
+                source_data = SourceCreate(
+                    name=new_name,
+                    pg_host=original_source.pg_host,
+                    pg_port=original_source.pg_port,
+                    pg_database=original_source.pg_database,
+                    pg_username=original_source.pg_username,
+                    pg_password=(
+                        decrypt_value(original_source.pg_password)
+                        if original_source.pg_password
+                        else None
+                    ),
+                    publication_name=attempt_pub_name,
+                    replication_name=attempt_rep_name,
+                )
 
-        # 3. Create new source configuration
-        # Copy connection details, referencing original source attributes
-        # Note: We do NOT enable publication/replication by default for safety
+                created_source = self.create_source(source_data)
 
-        source_data = SourceCreate(
-            name=new_name,
-            pg_host=original_source.pg_host,
-            pg_port=original_source.pg_port,
-            pg_database=original_source.pg_database,
-            pg_username=original_source.pg_username,
-            pg_password=(
-                decrypt_value(original_source.pg_password)
-                if original_source.pg_password
-                else None
-            ),
-            publication_name=original_source.publication_name,
-            replication_name=new_rep_name,
-        )
+            except DuplicateEntityError as e:
+                # Name or replication_name already exists, try with next counter
+                logger.debug(
+                    f"Duplicate detected for {new_name}, trying next counter",
+                    extra={"counter": counter, "error": str(e)},
+                )
+                counter += 1
+                if counter > max_retries:
+                    logger.error(
+                        "Failed to create duplicate source after max retries",
+                        extra={"original_id": source_id, "base_name": base_name},
+                    )
+                    raise
 
-        return self.create_source(source_data)
+        return created_source
