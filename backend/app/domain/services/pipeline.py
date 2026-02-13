@@ -248,42 +248,76 @@ class PipelineService:
             try:
                 import psycopg2
 
-                # Connect to Postgres
+                # IMPORTANT: Connect to DESTINATION database to check if table exists there
+                # (NOT the source database - we're validating the target table name)
+                dest_host = destination.config.get("host")
+                dest_port = destination.config.get("port")
+                dest_database = destination.config.get("database")
+                dest_user = destination.config.get("user")
+
+                logger.info(
+                    f"Validating table '{table_name}' in DESTINATION database "
+                    f"(host: {dest_host}:{dest_port}, database: {dest_database}, user: {dest_user})"
+                )
+
                 conn = psycopg2.connect(
-                    host=destination.config.get("host"),
-                    port=destination.config.get("port"),
-                    dbname=destination.config.get("database"),
-                    user=destination.config.get("user"),
+                    host=dest_host,
+                    port=dest_port,
+                    dbname=dest_database,
+                    user=dest_user,
                     password=decrypt_value(destination.config.get("password")),
                     connect_timeout=5,
                 )
                 cursor = conn.cursor()
 
                 try:
-                    # Check existence
-                    # Postgres doesn't have a simple "SHOW TABLES LIKE" that works exactly the same across all versions/schemas easily
-                    # querying information_schema is standard.
-                    # Default schema is usually public if not specified, but let's check config
+                    # Check existence in DESTINATION database schema
                     pg_schema = destination.config.get("schema") or "public"
 
-                    # Use SELECT 1 for better compatibility
-                    query = "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)"
-                    cursor.execute(query, (pg_schema, table_name))
+                    # PostgreSQL table names are case-sensitive - check both exact match and lowercase
+                    # information_schema.tables stores unquoted table names in lowercase
+                    query = """
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.tables 
+                            WHERE table_schema = %s 
+                            AND (table_name = %s OR table_name = LOWER(%s))
+                        )
+                    """
+
+                    logger.info(
+                        f"Checking table existence: schema='{pg_schema}', "
+                        f"table_name='{table_name}' (will also check lowercase: '{table_name.lower()}'), "
+                        f"database='{dest_database}' on host='{dest_host}'"
+                    )
+
+                    cursor.execute(query, (pg_schema, table_name, table_name))
                     result = cursor.fetchone()
-                    logger.error(f"Table '{table_name}' exists: {result}")
                     exists = result[0] if result else False
-                    logger.error(f"Table '{table_name}' exists: {exists}")
+
+                    logger.info(f"Query result: exists={exists}, result={result}")
+
+                    # Debug: List all tables in this schema to help troubleshoot
+                    if not exists:
+                        cursor.execute(
+                            "SELECT table_name FROM information_schema.tables WHERE table_schema = %s LIMIT 10",
+                            (pg_schema,),
+                        )
+                        available_tables = [row[0] for row in cursor.fetchall()]
+                        logger.info(
+                            f"Available tables in schema '{pg_schema}': {available_tables[:10]}"
+                        )
+
                     if exists:
                         return TableValidationResponse(
                             valid=True,
                             exists=True,
-                            message=f"Table '{table_name}' already exists in schema '{pg_schema}'. It will be used as target.",
+                            message=f"✓ Table '{table_name}' already exists in DESTINATION database schema '{pg_schema}'. It will be used as target.",
                         )
                     else:
                         return TableValidationResponse(
                             valid=False,
                             exists=False,
-                            message=f"Table '{table_name}' does not exist in schema '{pg_schema}' and will be created.",
+                            message=f"ℹ Table '{table_name}' does not exist in DESTINATION database schema '{pg_schema}' and will be created.",
                         )
                 finally:
                     cursor.close()
@@ -305,8 +339,14 @@ class PipelineService:
                 message="Validation only fully supported for Snowflake and Postgres currently. Basic syntax check passed.",
             )
 
-        # 3. Check existence in destination (Snowflake)
+        # 3. Check existence in DESTINATION (Snowflake)
         try:
+            logger.info(
+                f"Validating table '{table_name}' in DESTINATION Snowflake database "
+                f"(database: {destination.config.get('database')}, "
+                f"schema: {destination.config.get('schema')})"
+            )
+
             conn = self._get_snowflake_connection(destination)
             cursor = conn.cursor()
             try:
@@ -316,27 +356,31 @@ class PipelineService:
 
                 exists = self._check_table_exists(cursor, db, schema, table_name)
 
+                logger.info(
+                    f"Table '{table_name}' in destination {db}.{schema}: exists={exists}"
+                )
+
                 if exists:
                     return TableValidationResponse(
                         valid=True,
                         exists=True,
-                        message=f"Table '{table_name}' already exists in {db}.{schema}. It will be used as target.",
+                        message=f"✓ Table '{table_name}' already exists in DESTINATION database {db}.{schema}. It will be used as target.",
                     )
                 else:
                     return TableValidationResponse(
                         valid=True,
                         exists=False,
-                        message=f"Table '{table_name}' is valid and will be created in {db}.{schema}.",
+                        message=f"ℹ Table '{table_name}' is valid and will be created in DESTINATION database {db}.{schema}.",
                     )
             finally:
                 cursor.close()
                 conn.close()
         except Exception as e:
-            logger.error(f"Failed to validate table name: {e}")
+            logger.error(f"Failed to validate table name against destination: {e}")
             return TableValidationResponse(
                 valid=False,
                 exists=False,
-                message=f"Failed to validate against destination: {str(e)}",
+                message=f"Failed to validate against DESTINATION database: {str(e)}",
             )
 
     def get_pipeline(self, pipeline_id: int) -> Pipeline:
