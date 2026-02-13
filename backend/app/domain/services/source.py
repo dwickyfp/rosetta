@@ -779,13 +779,76 @@ class SourceService:
                 cur.execute(query)
             conn.close()
 
-            # Cleanup Metadata
+            # Cleanup pipeline table sync configurations for this source
+            # This will CASCADE delete associated tags via ondelete="CASCADE"
+            from app.domain.models.pipeline import Pipeline, PipelineDestination, PipelineDestinationTableSync
+            from app.domain.models.tag import PipelineDestinationTableSyncTag, TagList
+            
+            logger.info(f"Cleaning up pipeline table sync configurations for source {source_id}")
+            pipelines = self.db.query(Pipeline).filter(Pipeline.source_id == source_id).all()
+            
+            # Collect all tag IDs before deletion for cleanup
+            all_tag_ids = set()
+            for pipeline in pipelines:
+                # Get all destinations for this pipeline
+                pipeline_dest_ids = [pd.id for pd in pipeline.destinations]
+                
+                if pipeline_dest_ids:
+                    # Get all tag IDs associated with these table syncs
+                    tag_ids = (
+                        self.db.query(PipelineDestinationTableSyncTag.tag_id)
+                        .join(
+                            PipelineDestinationTableSync,
+                            PipelineDestinationTableSync.id == PipelineDestinationTableSyncTag.pipelines_destination_table_sync_id
+                        )
+                        .filter(PipelineDestinationTableSync.pipeline_destination_id.in_(pipeline_dest_ids))
+                        .distinct()
+                        .all()
+                    )
+                    all_tag_ids.update([tag_id[0] for tag_id in tag_ids])
+                    
+                    # Delete all table sync configurations for these destinations
+                    # CASCADE will automatically delete associated tag associations
+                    deleted_count = (
+                        self.db.query(PipelineDestinationTableSync)
+                        .filter(PipelineDestinationTableSync.pipeline_destination_id.in_(pipeline_dest_ids))
+                        .delete(synchronize_session=False)
+                    )
+                    logger.info(f"Deleted {deleted_count} table sync configurations for pipeline {pipeline.id}")
+            
+            self.db.commit()
+
+            # Cleanup unused tags after deletion
+            if all_tag_ids:
+                logger.info(f"Checking {len(all_tag_ids)} tags for cleanup")
+                for tag_id in all_tag_ids:
+                    # Check if tag is still used
+                    count = (
+                        self.db.query(PipelineDestinationTableSyncTag)
+                        .filter(PipelineDestinationTableSyncTag.tag_id == tag_id)
+                        .count()
+                    )
+                    
+                    if count == 0:
+                        # Tag is unused, delete it
+                        tag = self.db.query(TagList).filter(TagList.id == tag_id).first()
+                        if tag:
+                            logger.info(
+                                f"Auto-deleting unused tag: {tag.tag}",
+                                extra={"tag_id": tag_id, "tag_name": tag.tag},
+                            )
+                            self.db.delete(tag)
+                
+                self.db.commit()
+
+            # Cleanup Metadata (this CASCADE deletes history_schema_evolution)
             table_repo = TableMetadataRepository(self.db)
             table_repo.delete_by_source_id(source_id)
 
             self.refresh_source_metadata(source_id)
         except Exception as e:
             logger.error(f"Failed to drop publication: {e}")
+            self.db.rollback()
             raise ValueError(f"Failed to drop publication: {str(e)}")
 
     def create_replication_slot(self, source_id: int) -> None:

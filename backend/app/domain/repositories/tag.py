@@ -328,6 +328,34 @@ class TagRepository(BaseRepository[TagList]):
             logger.error("Failed to get tag relations", extra={"error": str(e)})
             raise DatabaseError("Failed to get tag relations") from e
 
+    def is_tag_unused(self, tag_id: int) -> bool:
+        """
+        Check if a tag is not associated with any table sync.
+
+        Args:
+            tag_id: Tag identifier
+
+        Returns:
+            True if tag is unused (no associations), False otherwise
+
+        Raises:
+            DatabaseError: If database operation fails
+        """
+        try:
+            count = self.db.execute(
+                select(func.count(PipelineDestinationTableSyncTag.id))
+                .where(PipelineDestinationTableSyncTag.tag_id == tag_id)
+            ).scalar()
+
+            return count == 0
+
+        except SQLAlchemyError as e:
+            logger.error(
+                "Failed to check if tag is unused",
+                extra={"tag_id": tag_id, "error": str(e)},
+            )
+            raise DatabaseError("Failed to check tag usage") from e
+
 
 class TableSyncTagRepository:
     """

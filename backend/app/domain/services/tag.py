@@ -251,6 +251,41 @@ class TagService:
 
         return SmartTagsResponse(groups=groups, total_tags=total_tags)
 
+    def cleanup_unused_tag(self, tag_id: int) -> bool:
+        """
+        Delete a tag if it's not associated with any table sync.
+
+        Args:
+            tag_id: Tag identifier
+
+        Returns:
+            True if tag was deleted, False if it's still in use
+        """
+        try:
+            if self.tag_repository.is_tag_unused(tag_id):
+                tag = self.tag_repository.get_by_id(tag_id)
+                logger.info(
+                    "Auto-deleting unused tag",
+                    extra={"tag_id": tag_id, "tag": tag.tag},
+                )
+                self.tag_repository.delete(tag_id)
+                self.db.commit()
+                logger.info(
+                    "Unused tag deleted successfully",
+                    extra={"tag_id": tag_id, "tag": tag.tag},
+                )
+                return True
+            else:
+                logger.debug(
+                    "Tag still in use, not deleting",
+                    extra={"tag_id": tag_id},
+                )
+                return False
+        except EntityNotFoundError:
+            # Tag already deleted, ignore
+            logger.debug("Tag already deleted", extra={"tag_id": tag_id})
+            return False
+
     def delete_tag(self, tag_id: int) -> None:
         """
         Delete a tag.
@@ -377,6 +412,9 @@ class TagService:
             "Tag removed from table sync successfully",
             extra={"table_sync_id": table_sync_id, "tag_id": tag_id},
         )
+
+        # Auto-cleanup: Delete tag if it's no longer used anywhere
+        self.cleanup_unused_tag(tag_id)
 
     def get_table_syncs_by_tag(self, tag_id: int) -> List[int]:
         """

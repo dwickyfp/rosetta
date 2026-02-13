@@ -72,6 +72,38 @@ class PipelineService:
         except Exception as e:
             logger.error(f"Failed to mark pipeline {pipeline_id} for refresh: {e}")
 
+    def _cleanup_unused_tags(self, tag_ids: list[int]) -> None:
+        """
+        Cleanup tags that are no longer associated with any table sync.
+
+        Args:
+            tag_ids: List of tag IDs to check and cleanup
+        """
+        from app.domain.models.tag import PipelineDestinationTableSyncTag, TagList
+
+        for tag_id in tag_ids:
+            # Check if tag is still used
+            count = (
+                self.db.query(PipelineDestinationTableSyncTag)
+                .filter(PipelineDestinationTableSyncTag.tag_id == tag_id)
+                .count()
+            )
+
+            if count == 0:
+                # Tag is unused, delete it
+                tag = self.db.query(TagList).filter(TagList.id == tag_id).first()
+                if tag:
+                    logger.info(
+                        f"Auto-deleting unused tag: {tag.tag}",
+                        extra={"tag_id": tag_id, "tag_name": tag.tag},
+                    )
+                    self.db.delete(tag)
+                    self.db.commit()
+                    logger.info(
+                        f"Unused tag deleted: {tag.tag}",
+                        extra={"tag_id": tag_id},
+                    )
+
     def create_pipeline(self, pipeline_data: PipelineCreate) -> Pipeline:
         """
         Create a new pipeline with associated metadata.
@@ -1665,8 +1697,17 @@ class PipelineService:
         )
 
         if sync:
+            # Get associated tag IDs before deletion for cleanup
+            tag_ids = [
+                assoc.tag_id for assoc in sync.tag_associations
+            ]
+            
             self.db.delete(sync)
             self.db.commit()
+
+            # Cleanup unused tags after deletion
+            if tag_ids:
+                self._cleanup_unused_tags(tag_ids)
 
             # Mark for refresh
             self.mark_ready_for_refresh(pipeline_id)
@@ -1710,8 +1751,17 @@ class PipelineService:
                 entity_type="PipelineDestinationTableSync", entity_id=sync_config_id
             )
 
+        # Get associated tag IDs before deletion for cleanup
+        tag_ids = [
+            assoc.tag_id for assoc in sync.tag_associations
+        ]
+
         self.db.delete(sync)
         self.db.commit()
+
+        # Cleanup unused tags after deletion
+        if tag_ids:
+            self._cleanup_unused_tags(tag_ids)
 
         # Mark for refresh
         self.mark_ready_for_refresh(pipeline_id)
