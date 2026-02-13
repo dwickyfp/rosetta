@@ -247,6 +247,69 @@ class PipelineEngine:
         )
         self._logger.info(f"DLQ manager initialized with Redis")
 
+    def _clean_stale_offset(self, offset_file: str) -> None:
+        """
+        Delete offset file if replication slot was dropped.
+
+        This handles the case where:
+        - Pipeline is deleted (slot dropped)
+        - Pipeline is recreated with same name
+        - Offset file still exists with old LSN position
+        - New slot has different LSN → mismatch error
+
+        Solution: Delete offset file so Debezium starts fresh.
+        """
+        import os
+        from pathlib import Path
+        import psycopg2
+        from core.security import decrypt_value
+
+        offset_path = Path(offset_file)
+
+        # If offset file doesn't exist, nothing to clean
+        if not offset_path.exists():
+            return
+
+        try:
+            # Check if replication slot exists
+            source_config = self._pipeline.source
+            conn = psycopg2.connect(
+                host=source_config.pg_host,
+                port=source_config.pg_port,
+                dbname=source_config.pg_database,
+                user=source_config.pg_username,
+                password=decrypt_value(source_config.pg_password or ""),
+            )
+
+            slot_name = self._source.get_slot_name(self._pipeline.name)
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM pg_replication_slots WHERE slot_name = %s",
+                    (slot_name,),
+                )
+                slot_exists = cur.fetchone() is not None
+
+            conn.close()
+
+            # If slot doesn't exist, offset is stale - delete it
+            if not slot_exists:
+                self._logger.warning(
+                    f"Replication slot '{slot_name}' not found. "
+                    f"Deleting stale offset file: {offset_file}"
+                )
+                offset_path.unlink()
+                self._logger.info(
+                    f"Deleted stale offset. Debezium will start fresh with snapshot mode."
+                )
+
+        except Exception as e:
+            # Log warning but don't fail - Debezium might recover from LSN mismatch
+            self._logger.warning(
+                f"Could not validate offset against replication slot: {e}. "
+                f"Proceeding with existing offset."
+            )
+
     def run(self) -> None:
         """
         Run the pipeline engine.
@@ -285,6 +348,11 @@ class PipelineEngine:
 
         # Build Debezium properties
         offset_file = config.debezium.get_offset_file(self._pipeline.name)
+
+        # Clean stale offset if replication slot was dropped
+        # This prevents LSN mismatch errors when slot is recreated
+        self._clean_stale_offset(offset_file)
+
         props = self._source.build_debezium_props(
             pipeline_name=self._pipeline.name,
             table_include_list=table_list,
