@@ -58,11 +58,13 @@ This migration:
 
 ### 2. Code Fixes Applied
 
-#### a. **sync_table_list() - Immediate Schema Fetch**
+#### a. **sync_table_list() - Immediate Schema Fetch & Auto-Healing**
 
 [schema_monitor.py](d:\Research\rosetta\backend\app\domain\services\schema_monitor.py)
 
-When a new table is detected:
+Enhanced to handle both new and existing tables:
+
+**For New Tables:**
 
 - Immediately fetches the schema using `fetch_table_schema()`
 - Validates schema is not empty before creating record
@@ -71,7 +73,39 @@ When a new table is detected:
 - Skips tables with no accessible columns
 - Rolls back on fetch errors
 
-#### b. **fetch_and_compare_schema() - Duplicate Prevention**
+**For Existing Tables (Auto-Healing):**
+
+- Checks all existing tables in publication for missing schemas
+- Identifies tables with `schema_table=NULL` or `schema_table={}`
+- Automatically fetches and saves schema for these tables
+- Creates or updates INITIAL_LOAD history record
+- Logs each fix for monitoring
+- Continues processing even if individual tables fail
+
+This ensures that tables added manually via SQL will have their schemas populated during the next monitor cycle (runs every 60 seconds by default).
+
+#### b. **\_sync_publication_tables() - Schema Healing on Refresh**
+
+[source.py](d:\Research\rosetta\backend\app\domain\services\source.py)
+
+Enhanced to fix existing tables without schemas:
+
+**For New Tables:**
+
+- Fetches schema immediately when creating table metadata
+- Validates schema is not empty
+- Creates INITIAL_LOAD history record
+- Logs the addition with schema size
+
+**For Existing Tables (Auto-Healing):**
+
+- Checks all tracked tables for missing schemas
+- Automatically fetches and saves schema for tables in publication
+- Creates or updates INITIAL_LOAD history if missing
+- Applies when user triggers manual "Refresh Source" in UI
+- Handles errors gracefully without blocking other tables
+
+#### c. **fetch_and_compare_schema() - Duplicate Prevention**
 
 [schema_monitor.py](d:\Research\rosetta\backend\app\domain\services\schema_monitor.py)
 
@@ -82,7 +116,7 @@ Added validation to prevent duplicates:
 - Checks if version already exists before creating history record
 - Prevents race condition duplicates
 
-#### c. **get_table_schema_by_version() - Correct Schema Retrieval**
+#### d. **get_table_schema_by_version() - Correct Schema Retrieval**
 
 [source.py](d:\Research\rosetta\backend\app\domain\services\source.py)
 
@@ -109,6 +143,64 @@ This script:
 - Re-fetches schemas for broken tables
 - Creates missing INITIAL_LOAD history records
 - Generates a summary report
+
+## Auto-Healing Mechanism
+
+After applying the code fixes, the system will **automatically detect and fix** tables without schemas:
+
+### When Auto-Healing Triggers
+
+1. **Periodic Schema Monitor** (Every 60 seconds by default)
+   - Scans all sources with publications enabled
+   - Checks each table in publication
+   - Detects missing schemas and fetches them automatically
+   
+2. **Manual Source Refresh** (User-triggered in UI)
+   - Click "Refresh" button on source details page
+   - System syncs publication tables
+   - Auto-heals any tables with missing schemas
+
+### What Auto-Healing Does
+
+When a table without schema is detected:
+
+```
+1. Check: Is table in publication? → Yes, continue
+2. Check: Does table have schema? → No (NULL or {})
+3. Action: Fetch schema from source database
+4. Action: Save schema to table_metadata_list.schema_table
+5. Action: Create/Update INITIAL_LOAD history record
+6. Log: "Fixed table [name]: Added schema ([N] columns)"
+```
+
+### Example Scenario
+
+**Problem:**
+```sql
+-- You manually add a table to publication
+ALTER PUBLICATION rosetta_publication ADD TABLE new_orders;
+```
+
+**Before Fix:** Table shows in UI with version 9 but empty schema
+
+**After Fix (Automatic):**
+1. Schema monitor detects table in publication
+2. Schema monitor sees empty schema
+3. Fetches schema: `SELECT column_name, data_type... FROM information_schema.columns...`
+4. Saves: `{"id": {...}, "customer": {...}, "total": {...}}`
+5. Creates history: INITIAL_LOAD version 1
+6. ✅ Table now shows version 1 with all columns visible
+
+**Timeline:** Within 60 seconds (next monitor cycle) or immediately if you click "Refresh Source"
+
+### Manual Healing (Optional)
+
+If you can't wait for auto-healing or want to fix all tables at once:
+
+```bash
+cd backend
+uv run python scripts/fix_schema_version_issues.py
+```
 
 ## How to Verify the Fix
 
@@ -154,7 +246,85 @@ WHERE schema_table IS NULL OR schema_table = '{}'::jsonb;
 
 Should return: 0 rows (all tables have schemas)
 
-### 4. Test Manual Table Addition
+### 4. Test Auto-Healing Mechanism
+
+**Test Case 1: New Table Added via SQL**
+
+1. Add a table to publication manually:
+```sql
+ALTER PUBLICATION rosetta_publication ADD TABLE test_auto_heal;
+```
+
+2. Wait 60 seconds for schema monitor cycle (or click "Refresh Source" in UI)
+
+3. Check backend logs for auto-healing:
+```bash
+tail -f backend/logs/app.log | grep "test_auto_heal"
+```
+
+Should see: 
+```
+Added new table tracking with schema: test_auto_heal (5 columns)
+```
+
+4. Verify in database:
+```sql
+SELECT 
+    t.table_name,
+    jsonb_array_length(jsonb_agg(jsonb_object_keys(t.schema_table))) as column_count,
+    h.changes_type,
+    h.version_schema
+FROM table_metadata_list t
+JOIN history_schema_evolution h ON h.table_metadata_list_id = t.id
+WHERE t.table_name = 'test_auto_heal'
+GROUP BY t.table_name, h.changes_type, h.version_schema;
+```
+
+Should return: `test_auto_heal`, column_count > 0, `INITIAL_LOAD`, version 1
+
+**Test Case 2: Existing Table Without Schema**
+
+1. Simulate a table with missing schema:
+```sql
+-- Create a table entry without schema
+INSERT INTO table_metadata_list (source_id, table_name, schema_table, is_changes_schema)
+VALUES (1, 'test_broken_schema', NULL, false);
+```
+
+2. Add table to publication:
+```sql
+ALTER PUBLICATION rosetta_publication ADD TABLE test_broken_schema;
+```
+
+3. Wait 60 seconds or click "Refresh Source" in UI
+
+4. Check logs for healing:
+```bash
+tail -f backend/logs/app.log | grep "test_broken_schema"
+```
+
+Should see:
+```
+Found table test_broken_schema without schema, fetching now...
+Fixed table test_broken_schema: Added schema and INITIAL_LOAD history (4 columns)
+```
+
+5. Verify schema was populated:
+```sql
+SELECT 
+    table_name,
+    CASE 
+        WHEN schema_table IS NOT NULL AND schema_table != '{}'::jsonb THEN 'FIXED'
+        ELSE 'STILL BROKEN'
+    END as status,
+    jsonb_object_keys(schema_table) as columns
+FROM table_metadata_list
+WHERE table_name = 'test_broken_schema';
+```
+
+Should return: `test_broken_schema`, `FIXED`, with all columns listed
+
+### 5. Test Manual Table Addition (Complete Flow)
 
 1. Add a table to publication manually:
 
@@ -185,7 +355,7 @@ Should show:
 - Single INITIAL_LOAD record (version 1)
 - All columns listed
 
-### 5. Check Version Display in UI
+### 6. Check Version Display in UI
 
 Navigate to Sources → [Your Source] → Tables
 
@@ -241,13 +411,16 @@ If it exists, skip the migration.
 ## Files Changed
 
 1. **backend/app/domain/services/schema_monitor.py**
-   - Enhanced `sync_table_list()` to fetch schemas immediately
+   - Enhanced `sync_table_list()` to fetch schemas immediately for new tables
+   - Added auto-healing for existing tables without schemas
    - Added validation in `fetch_and_compare_schema()`
    - Added duplicate prevention checks
 
 2. **backend/app/domain/services/source.py**
+   - Enhanced `_sync_publication_tables()` with auto-healing
    - Fixed `get_table_schema_by_version()` INITIAL_LOAD handling
    - Added schema data validation
+   - Added INITIAL_LOAD history creation for new tables
 
 3. **migrations/007_add_unique_constraint_schema_version.sql**
    - New migration for unique constraint
@@ -257,15 +430,20 @@ If it exists, skip the migration.
 
 ## Testing Checklist
 
-- [ ] Run database migration
+- [ ] Run database migration (`007_add_unique_constraint_schema_version.sql`)
 - [ ] Run cleanup script (if existing data issues)
+- [ ] Restart backend service to apply code changes
 - [ ] Add table manually to publication via SQL
-- [ ] Verify table appears with correct schema
+- [ ] Wait 60 seconds or click "Refresh Source" in UI
+- [ ] Check logs for auto-healing message
+- [ ] Verify table appears with correct schema in UI
 - [ ] Verify only one INITIAL_LOAD record created
-- [ ] Verify version 1 displays correctly in UI
+- [ ] Verify version 1 displays correctly in UI with all columns
+- [ ] Test existing table without schema gets auto-healed
 - [ ] Make schema change and verify version 2 created
-- [ ] Check no duplicate versions exist
+- [ ] Check no duplicate versions exist (SQL query)
 - [ ] Test concurrent schema monitor cycles (no duplicates)
+- [ ] Verify auto-healing works on both monitor cycle and manual refresh
 
 ## Support
 

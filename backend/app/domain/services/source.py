@@ -532,6 +532,13 @@ class SourceService:
                             conn_for_schema, table_name
                         )
 
+                        if not schema_list:
+                            logger.warning(
+                                f"Skipping table {table_name}: No schema columns found. "
+                                "Table may be empty or inaccessible."
+                            )
+                            continue
+
                         # Convert to dict format as expected by SchemaMonitor logic
                         schema_details = {
                             col["column_name"]: dict(col) for col in schema_list
@@ -539,15 +546,113 @@ class SourceService:
 
                         # Create new TableMetadata
                         try:
-                            table_repo.create(
+                            new_table = table_repo.create(
                                 source_id=source.id,
                                 table_name=table_name,
                                 schema_table=schema_details,
+                            )
+
+                            # Create INITIAL_LOAD history record
+                            from app.domain.models.history_schema_evolution import (
+                                HistorySchemaEvolution,
+                            )
+
+                            history = HistorySchemaEvolution(
+                                table_metadata_list_id=new_table.id,
+                                schema_table_old={},
+                                schema_table_new=schema_details,
+                                changes_type="INITIAL_LOAD",
+                                version_schema=1,
+                            )
+                            self.db.add(history)
+                            self.db.commit()
+
+                            logger.info(
+                                f"Added table {table_name} with schema ({len(schema_list)} columns)"
                             )
                         except Exception as e:
                             # Likely IntegrityError if race condition
                             logger.warning(f"Skipping creation of {table_name}: {e}")
                             self.db.rollback()
+
+                # 4. Fix existing tables without schemas
+                for table in existing_tables:
+                    # Only process tables still in publication
+                    if table.table_name not in registered_tables:
+                        continue
+
+                    # Check if schema is missing or empty
+                    if not table.schema_table or table.schema_table == {}:
+                        logger.info(
+                            f"Found existing table {table.table_name} without schema, fetching now..."
+                        )
+                        try:
+                            schema_list = monitor.fetch_table_schema(
+                                conn_for_schema, table.table_name
+                            )
+
+                            if not schema_list:
+                                logger.warning(
+                                    f"Could not fetch schema for {table.table_name}. "
+                                    "Table may be empty or inaccessible."
+                                )
+                                continue
+
+                            # Convert to dict format
+                            schema_dict = {
+                                col["column_name"]: dict(col) for col in schema_list
+                            }
+
+                            # Update table metadata
+                            table.schema_table = schema_dict
+                            table.is_changes_schema = False
+
+                            # Check if INITIAL_LOAD history exists
+                            from app.domain.models.history_schema_evolution import (
+                                HistorySchemaEvolution,
+                            )
+
+                            existing_history = (
+                                self.db.query(HistorySchemaEvolution)
+                                .filter(
+                                    HistorySchemaEvolution.table_metadata_list_id
+                                    == table.id,
+                                    HistorySchemaEvolution.changes_type
+                                    == "INITIAL_LOAD",
+                                )
+                                .first()
+                            )
+
+                            if not existing_history:
+                                # Create INITIAL_LOAD history record
+                                history = HistorySchemaEvolution(
+                                    table_metadata_list_id=table.id,
+                                    schema_table_old={},
+                                    schema_table_new=schema_dict,
+                                    changes_type="INITIAL_LOAD",
+                                    version_schema=1,
+                                )
+                                self.db.add(history)
+                                self.db.commit()
+                                logger.info(
+                                    f"Fixed table {table.table_name}: Added schema and history "
+                                    f"({len(schema_list)} columns)"
+                                )
+                            else:
+                                # Update existing INITIAL_LOAD with correct schema
+                                existing_history.schema_table_new = schema_dict
+                                self.db.commit()
+                                logger.info(
+                                    f"Fixed table {table.table_name}: Updated schema "
+                                    f"({len(schema_list)} columns)"
+                                )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to fetch schema for existing table {table.table_name}: {e}"
+                            )
+                            self.db.rollback()
+                            continue
+
             finally:
                 conn_for_schema.close()
 

@@ -211,6 +211,78 @@ class SchemaMonitorService:
                         db.rollback()
                         continue
 
+                # Check existing tables for missing schemas and fix them
+                for table in existing_tables:
+                    # Only process tables that are still in publication
+                    if table.table_name not in pub_table_names:
+                        continue
+
+                    # Check if schema is missing or empty
+                    if not table.schema_table or table.schema_table == {}:
+                        logger.info(
+                            f"Found table {table.table_name} without schema, fetching now..."
+                        )
+                        try:
+                            schema_list = self.fetch_table_schema(
+                                conn, table.table_name
+                            )
+
+                            if not schema_list:
+                                logger.warning(
+                                    f"Could not fetch schema for {table.table_name}. "
+                                    "Table may be empty or inaccessible."
+                                )
+                                continue
+
+                            # Convert to dict format
+                            schema_dict = {
+                                col["column_name"]: dict(col) for col in schema_list
+                            }
+
+                            # Update table metadata
+                            table.schema_table = schema_dict
+                            table.is_changes_schema = False
+
+                            # Check if INITIAL_LOAD history exists
+                            existing_history = (
+                                db.query(HistorySchemaEvolution)
+                                .filter(
+                                    HistorySchemaEvolution.table_metadata_list_id
+                                    == table.id,
+                                    HistorySchemaEvolution.changes_type
+                                    == "INITIAL_LOAD",
+                                )
+                                .first()
+                            )
+
+                            if not existing_history:
+                                # Create INITIAL_LOAD history record
+                                history = HistorySchemaEvolution(
+                                    table_metadata_list_id=table.id,
+                                    schema_table_old={},
+                                    schema_table_new=schema_dict,
+                                    changes_type="INITIAL_LOAD",
+                                    version_schema=1,
+                                )
+                                db.add(history)
+                                logger.info(
+                                    f"Fixed table {table.table_name}: Added schema and INITIAL_LOAD history "
+                                    f"({len(schema_list)} columns)"
+                                )
+                            else:
+                                # Update existing INITIAL_LOAD with correct schema
+                                existing_history.schema_table_new = schema_dict
+                                logger.info(
+                                    f"Fixed table {table.table_name}: Updated schema "
+                                    f"({len(schema_list)} columns)"
+                                )
+
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to fetch schema for existing table {table.table_name}: {e}"
+                            )
+                            continue
+
                 # Delete removed tables
                 for removed_table in existing_table_names - pub_table_names:
                     # User said: "if table not exist in list publication but exist in table then delete"
