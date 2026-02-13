@@ -52,13 +52,16 @@ export function TableCustomSqlCard({
         return () => observer.disconnect()
     }, [])
 
+    // Only reset SQL when drawer opens or table changes (by table name, not object reference)
     useEffect(() => {
+        if (!open) return // Don't reset when drawer is closed
+        
         if (table && table.sync_config?.custom_sql) {
             setSql(table.sync_config.custom_sql)
         } else {
             setSql(`SELECT * FROM ${table?.table_name || 'table_name'}`)
         }
-    }, [table, destinationName])
+    }, [open, table?.table_name, table?.sync_config?.custom_sql])
 
     // --- Configure Completer with Lazy Fetching ---
     useEffect(() => {

@@ -68,11 +68,12 @@ export function SourceTableDrawer({
   }, [open, destinations, selectedDestinationId, initialDestinationId])
 
   // Load tables when destination is selected
+  // Don't reload if custom SQL drawer (or other floating cards) are open
   useEffect(() => {
-    if (open && selectedDestinationId) {
+    if (open && selectedDestinationId && !activeMode) {
       loadTables()
     }
-  }, [open, selectedDestinationId])
+  }, [open, selectedDestinationId, activeMode])
 
   const loadTables = async () => {
     if (!selectedDestinationId) return
