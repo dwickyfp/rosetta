@@ -6,9 +6,9 @@ Handles database operations for tags and tag associations.
 
 from typing import List, Optional
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, and_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, aliased
 
 from app.core.exceptions import DatabaseError, DuplicateEntityError, EntityNotFoundError
 from app.core.logging import get_logger
@@ -267,6 +267,66 @@ class TagRepository(BaseRepository[TagList]):
         except SQLAlchemyError as e:
             logger.error("Failed to get tags with usage count", extra={"error": str(e)})
             raise DatabaseError("Failed to get tags with usage count") from e
+
+    def get_tag_relations(self) -> dict:
+        """
+        Get tag nodes and edges for visualization.
+        Two tags are related if they share the same table_sync.
+        
+        Returns:
+            dict with 'nodes' (list of tag info) and 'edges' (list of tag-pair relations)
+        """
+        try:
+            # Get all tags with usage count
+            tags_result = self.db.execute(
+                select(
+                    TagList.id,
+                    TagList.tag,
+                    func.count(PipelineDestinationTableSyncTag.id).label("usage_count"),
+                )
+                .outerjoin(
+                    PipelineDestinationTableSyncTag,
+                    PipelineDestinationTableSyncTag.tag_id == TagList.id,
+                )
+                .group_by(TagList.id)
+                .order_by(TagList.tag)
+            ).all()
+
+            nodes = [
+                {"id": row.id, "tag": row.tag, "usage_count": row.usage_count}
+                for row in tags_result
+            ]
+
+            # Find edges: two tags that share a table_sync
+            tag_a = aliased(PipelineDestinationTableSyncTag)
+            tag_b = aliased(PipelineDestinationTableSyncTag)
+
+            edges_result = self.db.execute(
+                select(
+                    tag_a.tag_id.label("source"),
+                    tag_b.tag_id.label("target"),
+                    func.count().label("shared_tables"),
+                )
+                .join(
+                    tag_b,
+                    and_(
+                        tag_a.pipelines_destination_table_sync_id == tag_b.pipelines_destination_table_sync_id,
+                        tag_a.tag_id < tag_b.tag_id,  # avoid duplicates & self-loops
+                    ),
+                )
+                .group_by(tag_a.tag_id, tag_b.tag_id)
+            ).all()
+
+            edges = [
+                {"source": row.source, "target": row.target, "shared_tables": row.shared_tables}
+                for row in edges_result
+            ]
+
+            return {"nodes": nodes, "edges": edges}
+
+        except SQLAlchemyError as e:
+            logger.error("Failed to get tag relations", extra={"error": str(e)})
+            raise DatabaseError("Failed to get tag relations") from e
 
 
 class TableSyncTagRepository:

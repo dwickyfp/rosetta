@@ -24,6 +24,7 @@ from app.domain.schemas.tag import (
     TagSuggestionResponse,
     TagWithUsageCount,
     TagUsageResponse,
+    TagRelationsResponse,
     PipelineUsage,
     DestinationUsage,
 )
@@ -266,6 +267,17 @@ class TagService:
 
         self.tag_repository.delete(tag_id)
         self.db.commit()
+
+    def get_tag_relations(self) -> TagRelationsResponse:
+        """
+        Get tag nodes and edges for network visualization.
+        
+        Returns:
+            TagRelationsResponse with nodes and edges
+        """
+        logger.info("Getting tag relations for visualization")
+        data = self.tag_repository.get_tag_relations()
+        return TagRelationsResponse(**data)
 
         logger.info("Tag deleted successfully", extra={"tag_id": tag_id})
 

@@ -20,6 +20,7 @@ from app.domain.schemas.tag import (
     TagResponse,
     TagSuggestionResponse,
     TagUsageResponse,
+    TagRelationsResponse,
     TagWithUsageCount,
 )
 from app.domain.services.tag import TagService
@@ -123,6 +124,23 @@ async def get_smart_tags(
         destination_id=destination_id,
         source_id=source_id,
     )
+
+
+@router.get(
+    "/relations",
+    response_model=TagRelationsResponse,
+    summary="Get tag relations",
+    description="Get tag nodes and edges for network graph visualization",
+)
+async def get_tag_relations(
+    service: TagService = Depends(get_tag_service),
+) -> TagRelationsResponse:
+    """
+    Get tag relations for network visualization.
+
+    Returns nodes (tags) and edges (shared table_sync connections).
+    """
+    return service.get_tag_relations()
 
 
 @router.get(

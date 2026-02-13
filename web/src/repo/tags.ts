@@ -78,6 +78,23 @@ export interface TagUsageResponse {
   usage: PipelineUsage[]
 }
 
+export interface TagRelationNode {
+  id: number
+  tag: string
+  usage_count: number
+}
+
+export interface TagRelationEdge {
+  source: number
+  target: number
+  shared_tables: number
+}
+
+export interface TagRelationsResponse {
+  nodes: TagRelationNode[]
+  edges: TagRelationEdge[]
+}
+
 export const tagsRepo = {
   // Tag CRUD operations
   getAll: async (skip: number = 0, limit: number = 100): Promise<TagListResponse> => {
@@ -117,6 +134,11 @@ export const tagsRepo = {
 
   getUsage: async (id: number): Promise<TagUsageResponse> => {
     const response: AxiosResponse<TagUsageResponse> = await api.get(`/tags/${id}/usage`)
+    return response.data
+  },
+
+  getRelations: async (): Promise<TagRelationsResponse> => {
+    const response: AxiosResponse<TagRelationsResponse> = await api.get('/tags/relations')
     return response.data
   },
 

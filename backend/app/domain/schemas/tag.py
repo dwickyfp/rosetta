@@ -326,3 +326,26 @@ class TagUsageResponse(BaseSchema):
     
     tag: str
     usage: List[PipelineUsage]
+
+
+class TagRelationNode(BaseSchema):
+    """Schema for a tag node in the relations graph."""
+    
+    id: int
+    tag: str
+    usage_count: int
+
+
+class TagRelationEdge(BaseSchema):
+    """Schema for an edge between two tags."""
+    
+    source: int
+    target: int
+    shared_tables: int
+
+
+class TagRelationsResponse(BaseSchema):
+    """Schema for tag relations graph response."""
+    
+    nodes: List[TagRelationNode]
+    edges: List[TagRelationEdge]
