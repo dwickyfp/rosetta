@@ -76,6 +76,7 @@ class PipelineRepository(BaseRepository[Pipeline]):
                 selectinload(Pipeline.pipeline_metadata),
                 # selectinload(Pipeline.pipeline_progress),
             )
+            .order_by(Pipeline.name.asc(), Pipeline.id.asc())
             .offset(skip)
             .limit(limit)
         )

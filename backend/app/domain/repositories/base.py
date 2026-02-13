@@ -154,7 +154,15 @@ class BaseRepository(Generic[ModelType]):
             DatabaseError: If database operation fails
         """
         try:
-            result = self.db.execute(select(self.model).offset(skip).limit(limit))
+            stmt = select(self.model)
+
+            # Order by name (if model has it) then id for consistent results
+            if hasattr(self.model, "name"):
+                stmt = stmt.order_by(self.model.name.asc(), self.model.id.asc())
+            else:
+                stmt = stmt.order_by(self.model.id.asc())
+
+            result = self.db.execute(stmt.offset(skip).limit(limit))
             return list(result.scalars().all())
 
         except SQLAlchemyError as e:
