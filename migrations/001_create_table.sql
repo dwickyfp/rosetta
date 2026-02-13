@@ -160,15 +160,11 @@ WHERE a.id > b.id
   AND a.version_schema = b.version_schema;
 
 -- Drop Constraint if exists
-DROP CONSTRAINT IF EXISTS uq_history_schema_table_version ON history_schema_evolution;
+ALTER TABLE history_schema_evolution DROP CONSTRAINT IF EXISTS uq_history_schema_table_version;
 
 ALTER TABLE history_schema_evolution
 ADD CONSTRAINT uq_history_schema_table_version 
 UNIQUE (table_metadata_list_id, version_schema);
-
--- Step 3: Add comment for documentation
-COMMENT ON CONSTRAINT uq_history_schema_table_version ON history_schema_evolution IS 
-'Ensures each table has unique version numbers, preventing duplicate schema history records';
 
 CREATE TABLE IF NOT EXISTS presets (
     id SERIAL PRIMARY KEY,
