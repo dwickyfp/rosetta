@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     job_metrics,
     notification_logs,
     backfill,
+    tags,
 )
 
 # Create v1 router
@@ -55,3 +56,5 @@ api_router.include_router(
 api_router.include_router(notification_logs.router, tags=["notification-logs"])
 
 api_router.include_router(backfill.router, tags=["backfill"])
+
+api_router.include_router(tags.router, prefix="/tags", tags=["tags"])

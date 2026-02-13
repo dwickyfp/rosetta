@@ -1,0 +1,221 @@
+"""
+Tag Pydantic schemas for request/response validation.
+
+Defines schemas for creating, updating, and retrieving tags.
+"""
+
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import Field, validator
+
+from app.domain.schemas.common import BaseSchema, TimestampSchema
+
+
+class TagBase(BaseSchema):
+    """Base tag schema with common fields."""
+
+    tag: str = Field(
+        ...,
+        min_length=1,
+        max_length=150,
+        description="Tag name",
+        examples=["high-priority", "customer-data", "analytics"],
+    )
+
+
+class TagCreate(TagBase):
+    """
+    Schema for creating a new tag.
+    """
+
+    @validator("tag")
+    def validate_tag(cls, v: str) -> str:
+        """Validate and normalize tag name."""
+        # Strip whitespace and convert to lowercase
+        v = v.strip().lower()
+        
+        # Validate format (letters, numbers, hyphens, underscores, spaces)
+        if not all(c.isalnum() or c in ["-", "_", " "] for c in v):
+            raise ValueError(
+                "Tag must contain only alphanumeric characters, "
+                "hyphens, underscores, and spaces"
+            )
+        
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "tag": "high-priority",
+            }
+        }
+
+
+class TagResponse(TimestampSchema):
+    """
+    Schema for tag responses.
+    """
+
+    id: int = Field(..., description="Tag unique identifier")
+    tag: str = Field(
+        ...,
+        min_length=1,
+        max_length=150,
+        description="Tag name",
+        examples=["high-priority", "customer-data", "analytics"],
+    )
+
+    class Config:
+        orm_mode = True
+        schema_extra = {
+            "example": {
+                "id": 1,
+                "tag": "high-priority",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+        }
+
+
+class TagListResponse(BaseSchema):
+    """
+    Schema for list of tags.
+    """
+
+    tags: List[TagResponse] = Field(
+        default_factory=list, description="List of tags"
+    )
+    total: int = Field(..., description="Total number of tags")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "tags": [
+                    {
+                        "id": 1,
+                        "tag": "high-priority",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                ],
+                "total": 1,
+            }
+        }
+
+
+class TableSyncTagAssociationCreate(BaseSchema):
+    """
+    Schema for creating tag association with table sync.
+    """
+
+    tag: str = Field(
+        ...,
+        min_length=1,
+        max_length=150,
+        description="Tag name (will be created if doesn't exist)",
+        examples=["high-priority"],
+    )
+
+    @validator("tag")
+    def validate_tag(cls, v: str) -> str:
+        """Validate and normalize tag name."""
+        v = v.strip().lower()
+        
+        if not all(c.isalnum() or c in ["-", "_", " "] for c in v):
+            raise ValueError(
+                "Tag must contain only alphanumeric characters, "
+                "hyphens, underscores, and spaces"
+            )
+        
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "tag": "high-priority",
+            }
+        }
+
+
+class TableSyncTagAssociationResponse(TimestampSchema):
+    """
+    Schema for tag association response.
+    """
+
+    id: int = Field(..., description="Association unique identifier")
+    pipelines_destination_table_sync_id: int = Field(
+        ..., description="Pipeline destination table sync ID"
+    )
+    tag_id: int = Field(..., description="Tag ID")
+    tag_item: TagResponse = Field(..., description="Tag details")
+
+    class Config:
+        orm_mode = True
+        schema_extra = {
+            "example": {
+                "id": 1,
+                "pipelines_destination_table_sync_id": 1,
+                "tag_id": 1,
+                "tag_item": {
+                    "id": 1,
+                    "tag": "high-priority",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                },
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+        }
+
+
+class TableSyncTagsResponse(BaseSchema):
+    """
+    Schema for list of tags associated with a table sync.
+    """
+
+    table_sync_id: int = Field(..., description="Pipeline destination table sync ID")
+    tags: List[TagResponse] = Field(
+        default_factory=list, description="List of associated tags"
+    )
+    total: int = Field(..., description="Total number of tags")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "table_sync_id": 1,
+                "tags": [
+                    {
+                        "id": 1,
+                        "tag": "high-priority",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                ],
+                "total": 1,
+            }
+        }
+
+
+class TagSuggestionResponse(BaseSchema):
+    """
+    Schema for tag suggestions (autocomplete).
+    """
+
+    suggestions: List[TagResponse] = Field(
+        default_factory=list, description="List of suggested tags"
+    )
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "suggestions": [
+                    {
+                        "id": 1,
+                        "tag": "high-priority",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                ],
+            }
+        }

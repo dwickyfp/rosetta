@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { Filter, Code2, AlertCircle, Database, Trash2 } from 'lucide-react'
+import { Filter, Code2, AlertCircle, Database, Trash2, Hash } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
     Popover,
@@ -7,12 +7,15 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover'
 import { TableSyncConfig } from '@/repo/pipelines'
+import { tagsRepo } from '@/repo/tags'
+import { useQuery } from '@tanstack/react-query'
 
 interface TableBranchNodeProps {
     syncConfig: TableSyncConfig
     onEditFilter: () => void
     onEditCustomSql: () => void
     onEditTargetName: () => void
+    onEditTags: () => void
     onDelete: () => void
     isDeleting: boolean
 }
@@ -22,9 +25,19 @@ export function TableBranchNode({
     onEditFilter,
     onEditCustomSql,
     onEditTargetName,
+    onEditTags,
     onDelete,
     isDeleting
 }: TableBranchNodeProps) {
+    // Query tags for this sync config
+    const { data: tableSyncTagsData } = useQuery({
+        queryKey: ['table-sync-tags', syncConfig.id],
+        queryFn: () => tagsRepo.getTableSyncTags(syncConfig.id),
+        enabled: !!syncConfig.id,
+    })
+
+    const currentTags = tableSyncTagsData?.tags || []
+
     return (
         <div className={cn(
             "relative group flex items-center p-2 pr-3 bg-card border rounded-md shadow-sm transition-all hover:shadow-md hover:border-primary/20",
@@ -85,6 +98,22 @@ export function TableBranchNode({
                     >
                         <Code2 className="h-3 w-3" />
                         {syncConfig.custom_sql && "Active"}
+                    </Button>
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); onEditTags() }}
+                        className={cn(
+                            "h-6 px-1.5 text-[10px] gap-1",
+                            currentTags.length > 0
+                                ? "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-700 dark:text-indigo-400 dark:bg-indigo-950/50 dark:hover:bg-indigo-950/70 dark:hover:text-indigo-300"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        )}
+                        title="Manage Tags"
+                    >
+                        <Hash className="h-3 w-3" />
+                        {currentTags.length > 0 && currentTags.length}
                     </Button>
                 </div>
             </div>

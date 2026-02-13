@@ -16,6 +16,7 @@ from app.domain.models.credit_snowflake_monitoring import CreditSnowflakeMonitor
 from app.domain.models.table_metadata import TableMetadata
 from app.domain.models.job_metric import JobMetric
 from app.domain.models.queue_backfill import QueueBackfillData, BackfillStatus
+from app.domain.models.tag import TagList, PipelineDestinationTableSyncTag
 
 __all__ = [
     "Base",
@@ -32,4 +33,6 @@ __all__ = [
     "JobMetric",
     "QueueBackfillData",
     "BackfillStatus",
+    "TagList",
+    "PipelineDestinationTableSyncTag",
 ]

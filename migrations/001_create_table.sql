@@ -376,6 +376,31 @@ CREATE INDEX IF NOT EXISTS idx_presets_source_id ON presets(source_id);
 -- Job metrics: unique constraint already provides index, add updated_at
 CREATE INDEX IF NOT EXISTS idx_job_metrics_monitoring_updated_at ON job_metrics_monitoring(updated_at DESC);
 
+-- Create Table Tagging for smart tag feature
+CREATE TABLE IF NOT EXISTS tbltag_list (
+    id SERIAL PRIMARY KEY,
+    tag VARCHAR(150) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create Unique for tag
+ALTER TABLE tbltag_list DROP CONSTRAINT IF EXISTS uq_tbltag_list_tag;
+ALTER TABLE tbltag_list ADD CONSTRAINT uq_tbltag_list_tag UNIQUE (tag);
+
+-- Create Table for save tagging and pipelines_destination_table_sync
+CREATE TABLE IF NOT EXISTS pipelines_destination_table_sync_tag (
+    id SERIAL PRIMARY KEY,
+    pipelines_destination_table_sync_id INTEGER NOT NULL REFERENCES pipelines_destination_table_sync(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tbltag_list(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for pipelines_destination_table_sync_tag
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_sync_id ON pipelines_destination_table_sync_tag(pipelines_destination_table_sync_id);
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_tag_id ON pipelines_destination_table_sync_tag(tag_id);
+
 
 
 

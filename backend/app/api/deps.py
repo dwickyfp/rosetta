@@ -14,6 +14,7 @@ from app.domain.services.destination import DestinationService
 from app.domain.services.pipeline import PipelineService
 from app.domain.services.source import SourceService
 from app.domain.services.backfill import BackfillService
+from app.domain.services.tag import TagService
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -81,3 +82,16 @@ def get_backfill_service(db: Session = Depends(get_db)) -> BackfillService:
         Backfill service instance
     """
     return BackfillService(db)
+
+
+def get_tag_service(db: Session = Depends(get_db)) -> TagService:
+    """
+    Get tag service dependency.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Tag service instance
+    """
+    return TagService(db)

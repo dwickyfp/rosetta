@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from app.domain.models.destination import Destination
     from app.domain.models.queue_backfill import QueueBackfillData
     from app.domain.models.source import Source
+    from app.domain.models.tag import PipelineDestinationTableSyncTag
 
 
 class PipelineStatus(str, Enum):
@@ -325,6 +326,13 @@ class PipelineDestinationTableSync(Base, TimestampMixin):
     # Relationships
     pipeline_destination: Mapped["PipelineDestination"] = relationship(
         "PipelineDestination", back_populates="table_syncs"
+    )
+
+    tag_associations: Mapped[list["PipelineDestinationTableSyncTag"]] = relationship(
+        "PipelineDestinationTableSyncTag",
+        back_populates="table_sync",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:
