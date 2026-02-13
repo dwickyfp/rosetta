@@ -22,9 +22,6 @@ CREATE TABLE IF NOT EXISTS sources (
 ALTER TABLE sources DROP CONSTRAINT IF EXISTS unique_replication_name;
 ALTER TABLE sources DROP CONSTRAINT IF EXISTS unique_publication_name;
 
--- constraint unique if not exists for replication_name and publication_name
-ALTER TABLE sources ADD CONSTRAINT unique_replication_name UNIQUE (replication_name);
-ALTER TABLE sources ADD CONSTRAINT unique_publication_name UNIQUE (publication_name);
 
 
 -- Table 2: Destinations Snowflake
