@@ -299,9 +299,10 @@ class SourceService:
             if table.table_name not in registered_tables:
                 continue
 
-            # logic: if count table is 0, then version 1, if count table 1 then version 2 etc.
-            # So generic formula: version = count + 1
-            version = count + 1
+            # count is now MAX(version_schema) from HistorySchemaEvolution.
+            # INITIAL_LOAD has version_schema=1, subsequent changes increment it.
+            # If no history records exist yet, default to version 1.
+            version = count if count > 0 else 1
 
             source_tables.append(
                 SourceTableInfo(

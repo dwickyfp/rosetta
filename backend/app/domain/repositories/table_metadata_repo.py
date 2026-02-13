@@ -58,19 +58,27 @@ class TableMetadataRepository(BaseRepository[TableMetadata]):
 
     def get_tables_with_version_count(self, source_id: int) -> List[tuple[TableMetadata, int]]:
         """
-        Get tables with their version count (history count).
+        Get tables with their current schema version.
+        
+        Uses MAX(version_schema) from HistorySchemaEvolution to determine
+        the current version. Returns 0 if no history records exist (caller
+        should default to version 1).
         
         Args:
             source_id: Source identifier
             
         Returns:
-            List of tuples (TableMetadata, version_count)
+            List of tuples (TableMetadata, max_version_schema)
         """
-        # Outer join to ensure we get tables even with 0 history
+        # Use MAX(version_schema) instead of COUNT to get the actual current version.
+        # INITIAL_LOAD records have version_schema=1, subsequent changes increment it.
+        # COALESCE to 0 for tables with no history records yet.
         query = (
             self.db.query(
                 TableMetadata,
-                func.count(HistorySchemaEvolution.id).label("version_count")
+                func.coalesce(
+                    func.max(HistorySchemaEvolution.version_schema), 0
+                ).label("current_version")
             )
             .outerjoin(HistorySchemaEvolution, TableMetadata.id == HistorySchemaEvolution.table_metadata_list_id)
             .filter(TableMetadata.source_id == source_id)
