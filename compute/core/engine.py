@@ -304,11 +304,19 @@ class PipelineEngine:
                 )
 
         except Exception as e:
-            # Log warning but don't fail - Debezium might recover from LSN mismatch
+            # Delete offset as safety measure - better to restart fresh than
+            # get stuck in error loop with stale LSN
             self._logger.warning(
-                f"Could not validate offset against replication slot: {e}. "
-                f"Proceeding with existing offset."
+                f"Could not validate offset (slot validation error: {e}). "
+                f"Deleting offset to force fresh start."
             )
+            try:
+                offset_path.unlink()
+                self._logger.info(
+                    "Deleted stale offset file. Debezium will start fresh."
+                )
+            except Exception as delete_error:
+                self._logger.warning(f"Could not delete offset file: {delete_error}")
 
     def run(self) -> None:
         """
