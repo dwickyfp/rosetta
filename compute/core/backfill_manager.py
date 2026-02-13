@@ -12,7 +12,7 @@ from datetime import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from core.database import get_connection_pool
+from core.database import get_connection_pool, get_db_connection
 from core.models import Source, QueueBackfillData, BackfillStatus
 from core.security import decrypt_value
 from core.timezone import convert_timestamp_to_target_tz, convert_time_to_target_tz
@@ -86,11 +86,11 @@ class BackfillManager:
         Detects jobs that are stuck in EXECUTING state (likely due to restart)
         and resets them to PENDING for retry, respecting MAX_RESUME_ATTEMPTS.
         """
-        pool = get_connection_pool()
         conn = None
 
         try:
-            conn = pool.getconn()
+            # get_db_connection() handles retries on pool exhaustion
+            conn = get_db_connection()
             with conn.cursor() as cursor:
                 # Find stale jobs
                 # When threshold is 0, recover ALL EXECUTING jobs on startup
@@ -162,10 +162,18 @@ class BackfillManager:
         except Exception as e:
             logger.error(f"Error recovering stale jobs: {e}")
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except:
+                    pass
         finally:
+            # Return connection to pool
             if conn:
-                pool.putconn(conn)
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
 
     def _monitor_queue(self) -> None:
         """Monitor queue for pending backfill jobs."""
@@ -209,74 +217,47 @@ class BackfillManager:
         Returns:
             List of pending job records
         """
-        max_retries = 3
-        retry_delay = 2  # Start with 2 seconds
-
-        for attempt in range(max_retries):
-            pool = None
-            conn = None
-            try:
-                pool = get_connection_pool()
-                conn = pool.getconn()
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    cursor.execute(
-                        """
-                        SELECT qb.*, s.pg_host, s.pg_port, s.pg_database, 
-                               s.pg_username, s.pg_password
-                        FROM queue_backfill_data qb
-                        JOIN sources s ON qb.source_id = s.id
-                        WHERE qb.status = %s
-                        ORDER BY qb.created_at ASC
-                        LIMIT 10
-                        """,
-                        (BackfillStatus.PENDING.value,),
-                    )
-                    jobs = cursor.fetchall()
-                    result = [dict(job) for job in jobs]
-                    # Return connection before returning result
-                    if conn and pool:
-                        pool.putconn(conn)
-                        conn = None
-                    return result
-            except psycopg2.OperationalError as e:
-                # Network/server error - connection was closed by server
-                logger.error(
-                    f"Database connection error fetching pending jobs (attempt {attempt + 1}/{max_retries}): {e}"
+        conn = None
+        
+        try:
+            # get_db_connection() handles retries on pool exhaustion
+            conn = get_db_connection()
+            
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT qb.*, s.pg_host, s.pg_port, s.pg_database, 
+                           s.pg_username, s.pg_password
+                    FROM queue_backfill_data qb
+                    JOIN sources s ON qb.source_id = s.id
+                    WHERE qb.status = %s
+                    ORDER BY qb.created_at ASC
+                    LIMIT 10
+                    """,
+                    (BackfillStatus.PENDING.value,),
                 )
-                # Close stale connection to force pool to create a fresh one
-                if conn and pool:
-                    try:
-                        pool.putconn(conn, close=True)
-                        conn = None
-                    except Exception:
-                        pass
-                if attempt < max_retries - 1:
-                    # Exponential backoff: 2s, 4s, 8s
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-            except Exception as e:
-                logger.error(
-                    f"Error fetching pending jobs (attempt {attempt + 1}/{max_retries}): {e}"
-                )
-                # Close stale connection to force pool to create a fresh one
-                if conn and pool:
-                    try:
-                        pool.putconn(conn, close=True)
-                        conn = None
-                    except Exception:
-                        pass
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-            finally:
-                # Ensure connection is returned even if exception in return path
-                if conn and pool:
-                    try:
-                        pool.putconn(conn)
-                    except Exception:
-                        pass
-
-        return []
+                jobs = cursor.fetchall()
+                result = [dict(job) for job in jobs]
+                return result
+                
+        except psycopg2.OperationalError as e:
+            # Network/server error - connection was closed by server
+            logger.error(
+                f"Database connection error fetching pending jobs: {e}"
+            )
+            return []
+        except Exception as e:
+            logger.error(
+                f"Error fetching pending jobs: {e}"
+            )
+            return []
+        finally:
+            if conn:
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
 
     def _execute_backfill_job(self, job: dict) -> None:
         """
@@ -721,14 +702,14 @@ class BackfillManager:
             error_message: Optional error message for failed jobs
             increment_resume_attempts: Whether to increment resume_attempts counter
         """
-        pool = get_connection_pool()
         conn = None
 
         # Set is_error flag if status is FAILED
         is_error = status == BackfillStatus.FAILED.value
 
         try:
-            conn = pool.getconn()
+            # get_db_connection() handles retries on pool exhaustion
+            conn = get_db_connection()
             with conn.cursor() as cursor:
                 # Build SQL query dynamically based on parameters
                 update_fields = ["status = %s", "is_error = %s", "updated_at = NOW()"]
@@ -760,10 +741,17 @@ class BackfillManager:
         except Exception as e:
             logger.error(f"Error updating job status: {e}")
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except:
+                    pass
         finally:
             if conn:
-                pool.putconn(conn)
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
 
     def _update_job_count(self, job_id: int, count: int) -> None:
         """
@@ -773,11 +761,11 @@ class BackfillManager:
             job_id: Job ID
             count: Current count
         """
-        pool = get_connection_pool()
         conn = None
 
         try:
-            conn = pool.getconn()
+            # get_db_connection() handles retries on pool exhaustion
+            conn = get_db_connection()
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
@@ -791,10 +779,17 @@ class BackfillManager:
         except Exception as e:
             logger.error(f"Error updating job count: {e}")
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except:
+                    pass
         finally:
             if conn:
-                pool.putconn(conn)
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
 
     def _update_job_total_record(self, job_id: int, total: int) -> None:
         """
@@ -804,11 +799,11 @@ class BackfillManager:
             job_id: Job ID
             total: Total number of records to process
         """
-        pool = get_connection_pool()
         conn = None
 
         try:
-            conn = pool.getconn()
+            # get_db_connection() handles retries on pool exhaustion
+            conn = get_db_connection()
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
@@ -822,10 +817,17 @@ class BackfillManager:
         except Exception as e:
             logger.error(f"Error updating job total record: {e}")
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except:
+                    pass
         finally:
             if conn:
-                pool.putconn(conn)
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
 
     def _is_job_cancelled(self, job_id: int) -> bool:
         """
@@ -837,11 +839,11 @@ class BackfillManager:
         Returns:
             True if cancelled
         """
-        pool = get_connection_pool()
         conn = None
 
         try:
-            conn = pool.getconn()
+            # get_db_connection() handles retries on pool exhaustion
+            conn = get_db_connection()
             with conn.cursor() as cursor:
                 cursor.execute(
                     "SELECT status FROM queue_backfill_data WHERE id = %s",
@@ -854,4 +856,8 @@ class BackfillManager:
             return False
         finally:
             if conn:
-                pool.putconn(conn)
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")

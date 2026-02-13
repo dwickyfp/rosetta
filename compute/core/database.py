@@ -117,26 +117,43 @@ def get_db_connection() -> psycopg2.extensions.connection:
     Note:
         Caller is responsible for returning the connection to the pool.
     """
-    pool = get_connection_pool()
-    try:
-        # Block up to 10 seconds waiting for available connection
-        conn = pool.getconn()
+    connection_pool = get_connection_pool()
+    max_retries = 3
+    retry_delay = 0.5  # Start with 500ms delay
 
-        # Validate connection is alive with a simple query
+    for attempt in range(max_retries):
         try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")  # Simple health check
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            # Connection is dead, remove it and get a new one
-            logger.warning("Detected dead connection, removing from pool")
-            pool.putconn(conn, close=True)
-            conn = pool.getconn()
+            # Block up to 10 seconds waiting for available connection
+            conn = connection_pool.getconn()
 
-        return conn
-    except pool.PoolError as e:
-        raise DatabaseException(f"Failed to get connection from pool (exhausted): {e}")
-    except psycopg2.Error as e:
-        raise DatabaseException(f"Failed to get connection from pool: {e}")
+            # Validate connection is alive with a simple query
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")  # Simple health check
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                # Connection is dead, remove it and get a new one
+                logger.warning("Detected dead connection, removing from pool")
+                connection_pool.putconn(conn, close=True)
+                conn = connection_pool.getconn()
+
+            return conn
+        except psycopg2.pool.PoolError as e:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Connection pool exhausted (attempt {attempt + 1}/{max_retries}), "
+                    f"retrying in {retry_delay:.2f}s..."
+                )
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff: 0.5s, 1s, 2s
+            else:
+                logger.error(
+                    f"Failed to get connection after {max_retries} attempts: {e}"
+                )
+                raise DatabaseException(
+                    f"Failed to get connection from pool (exhausted): {e}"
+                )
+        except psycopg2.Error as e:
+            raise DatabaseException(f"Failed to get connection from pool: {e}")
 
 
 def return_db_connection(conn: psycopg2.extensions.connection) -> None:
