@@ -306,7 +306,7 @@ export function NotificationsForm() {
                 control={form.control}
                 name='telegram_chat_id'
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className='mt-6'>
                     <FormLabel>Telegram Chat/Group ID</FormLabel>
                     <FormControl>
                       <Input
