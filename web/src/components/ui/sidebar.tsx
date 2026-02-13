@@ -476,13 +476,13 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-start text-sm font-normal outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-[#8cc2fd] hover:border hover:border-[#192e7a] focus-visible:ring-2 active:bg-sidebar-accent active:text-[#8cc2fd] disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-normal data-[active=true]:text-[#8cc2fd] data-[active=true]:border data-[active=true]:border-[#192e7a] data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-[#8cc2fd] group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-start text-sm font-normal outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-[#1f4ee7] dark:hover:text-[#8cc2fd] dark:hover:border dark:hover:border-[#192e7a] focus-visible:ring-2 active:bg-sidebar-accent active:text-[#1f4ee7] dark:active:text-[#8cc2fd] disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-normal data-[active=true]:text-[#1f4ee7] dark:data-[active=true]:text-[#8cc2fd] dark:data-[active=true]:border dark:data-[active=true]:border-[#192e7a] data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-[#1f4ee7] dark:data-[state=open]:hover:text-[#8cc2fd] group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
   {
     variants: {
       variant: {
-        default: 'hover:bg-sidebar-accent hover:text-[#8cc2fd]',
+        default: 'hover:bg-sidebar-accent hover:text-[#1f4ee7] dark:hover:text-[#8cc2fd]',
         outline:
-          'bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-[#8cc2fd] hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]',
+          'bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-[#1f4ee7] dark:hover:text-[#8cc2fd] hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]',
       },
       size: {
         default: 'h-8 text-sm',

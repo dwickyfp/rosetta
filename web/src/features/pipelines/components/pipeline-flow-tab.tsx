@@ -3,7 +3,7 @@ import { Pipeline } from '@/repo/pipelines'
 import { ReactFlow, Background, Controls, Node, Edge, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Plus } from 'lucide-react'
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useTheme } from '@/context/theme-provider'
 import { AddDestinationModal } from './add-destination-modal'
 import { PipelineNode, PipelineNodeData } from './pipeline-node'
@@ -37,6 +37,10 @@ export function PipelineFlowTab({
   const [selectedDestId, setSelectedDestId] = useState<number | null>(null)
   const [activeHighlight, setActiveHighlight] = useState<number | null>(null)
   const [activeHighlightTable, setActiveHighlightTable] = useState<string | undefined>(undefined)
+  
+  // Track if we've consumed navigation state to prevent re-opening drawer
+  const highlightConsumedRef = useRef(false)
+  const drawerConsumedRef = useRef(false)
 
   // Consume the highlight prop once into local state
   useEffect(() => {
@@ -48,7 +52,8 @@ export function PipelineFlowTab({
 
   // Handle auto-open drawer from navigation state (with highlight)
   useEffect(() => {
-    if (openDrawer && highlightDestination && pipeline?.destinations) {
+    if (openDrawer && highlightDestination && !highlightConsumedRef.current && pipeline?.destinations) {
+      highlightConsumedRef.current = true
       const dest = pipeline.destinations.find(
         (d) => d.destination.id === highlightDestination
       )
@@ -61,7 +66,8 @@ export function PipelineFlowTab({
 
   // Handle drawer-only open (no node highlight animation)
   useEffect(() => {
-    if (openDrawer && openDrawerDestinationId && !highlightDestination && pipeline?.destinations) {
+    if (openDrawer && openDrawerDestinationId && !highlightDestination && !drawerConsumedRef.current && pipeline?.destinations) {
+      drawerConsumedRef.current = true
       const dest = pipeline.destinations.find(
         (d) => d.destination.id === openDrawerDestinationId
       )
