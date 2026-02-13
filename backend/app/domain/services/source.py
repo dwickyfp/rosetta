@@ -493,6 +493,52 @@ class SourceService:
         except Exception as e:
             logger.error(f"Error fetching metadata for source {source.name}: {e}")
             pass
+    
+    def _pause_running_pipelines_for_source(self, source_id: int) -> None:
+        """
+        Pause all running pipelines for a given source.
+        This is called when publication or replication slot is dropped.
+        """
+        try:
+            # Local import to avoid circular dependency
+            from app.domain.services.pipeline import PipelineService
+            
+            pipeline_repo = PipelineRepository(self.db)
+            pipelines = pipeline_repo.get_by_source_id(source_id)
+            
+            # Filter for running pipelines only
+            running_pipelines = [
+                p for p in pipelines 
+                if p.status in ['START', 'REFRESH']
+            ]
+            
+            if not running_pipelines:
+                logger.info(f"No running pipelines found for source {source_id}")
+                return
+            
+            logger.info(
+                f"Pausing {len(running_pipelines)} running pipeline(s) for source {source_id}"
+            )
+            
+            pipeline_service = PipelineService(self.db)
+            for pipeline in running_pipelines:
+                try:
+                    pipeline_service.pause_pipeline(pipeline.id)
+                    logger.info(
+                        f"Successfully paused pipeline {pipeline.id} ({pipeline.name})"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to pause pipeline {pipeline.id} ({pipeline.name}): {e}"
+                    )
+                    # Continue pausing other pipelines even if one fails
+                    continue
+            
+        except Exception as e:
+            logger.error(
+                f"Error pausing pipelines for source {source_id}: {e}"
+            )
+            # Don't raise - this is a best-effort operation
 
     def _sync_publication_tables(self, source: Source) -> None:
         """
@@ -672,10 +718,24 @@ class SourceService:
     def refresh_source_metadata(self, source_id: int) -> None:
         """Manually refresh source metadata."""
         source = self.get_source(source_id)
+        
+        # Store previous state to detect external drops
+        previous_publication_enabled = source.is_publication_enabled
+        previous_replication_enabled = source.is_replication_enabled
+        
         self._update_source_table_list(source)
         self._sync_publication_tables(source)
         self.db.commit()
         self.db.refresh(source)
+        
+        # Check if publication or replication was dropped externally
+        if (previous_publication_enabled and not source.is_publication_enabled) or \
+           (previous_replication_enabled and not source.is_replication_enabled):
+            logger.warning(
+                f"Publication or replication slot dropped externally for source {source_id}. "
+                "Auto-pausing running pipelines."
+            )
+            self._pause_running_pipelines_for_source(source_id)
 
         # Invalidate Available Tables Cache
         try:
@@ -706,6 +766,10 @@ class SourceService:
     def drop_publication(self, source_id: int) -> None:
         source = self.get_source(source_id)
         try:
+            # Pause running pipelines first
+            logger.info(f"Auto-pausing running pipelines for source {source_id} before dropping publication")
+            self._pause_running_pipelines_for_source(source_id)
+            
             conn = self._get_connection(source)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:
@@ -744,6 +808,10 @@ class SourceService:
     def drop_replication_slot(self, source_id: int) -> None:
         source = self.get_source(source_id)
         try:
+            # Pause running pipelines first
+            logger.info(f"Auto-pausing running pipelines for source {source_id} before dropping replication slot")
+            self._pause_running_pipelines_for_source(source_id)
+            
             conn = self._get_connection(source)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:

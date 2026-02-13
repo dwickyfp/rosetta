@@ -4,13 +4,19 @@ import { useNavigate } from '@tanstack/react-router'
 import { ColumnDef } from '@tanstack/react-table'
 import { Pipeline } from '@/repo/pipelines'
 import { pipelinesRepo } from '@/repo/pipelines'
-import { Workflow, FolderInput, FolderSync } from 'lucide-react'
+import { Workflow, FolderInput, FolderSync, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { PipelineAnimatedArrow } from './pipeline-animated-arrow.tsx'
 import { PipelineRowActions } from './pipeline-row-actions.tsx'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export const pipelineColumns: ColumnDef<Pipeline>[] = [
   {
@@ -186,9 +192,27 @@ function PipelineDetailsButton({ pipelineId }: { pipelineId: number }) {
 function PipelineStatusSwitch({ pipeline }: { pipeline: Pipeline }) {
   const queryClient = useQueryClient()
   const isRunning = pipeline.status === 'START' || pipeline.status === 'REFRESH'
+  
+  // Check if source has required configurations
+  const isPublicationEnabled = pipeline.source?.is_publication_enabled ?? false
+  const isReplicationEnabled = pipeline.source?.is_replication_enabled ?? false
+  const canActivate = isPublicationEnabled && isReplicationEnabled
 
   const { mutate, isPending } = useMutation({
     mutationFn: async (checked: boolean) => {
+      // Prevent activation if source requirements not met
+      if (checked && !canActivate) {
+        const missingRequirements = []
+        if (!isPublicationEnabled) missingRequirements.push('publication')
+        if (!isReplicationEnabled) missingRequirements.push('replication slot')
+        
+        toast.error(
+          `Cannot activate pipeline: ${missingRequirements.join(' and ')} not configured on source database`,
+          { duration: 4000 }
+        )
+        throw new Error('Source requirements not met')
+      }
+      
       if (checked) {
         return pipelinesRepo.start(pipeline.id)
       } else {
@@ -204,11 +228,39 @@ function PipelineStatusSwitch({ pipeline }: { pipeline: Pipeline }) {
     },
   })
 
-  return (
-    <Switch
-      checked={isRunning}
-      onCheckedChange={(checked) => mutate(checked)}
-      disabled={isPending}
-    />
+  const switchElement = (
+    <div className="flex items-center gap-2">
+      <Switch
+        checked={isRunning}
+        onCheckedChange={(checked) => mutate(checked)}
+        disabled={isPending || (!isRunning && !canActivate)}
+      />
+      {!isRunning && !canActivate && (
+        <AlertCircle className='h-3.5 w-3.5 text-red-500 dark:text-red-400' />
+      )}
+    </div>
   )
+  
+  // Wrap with tooltip if requirements not met
+  if (!isRunning && !canActivate) {
+    const missingRequirements = []
+    if (!isPublicationEnabled) missingRequirements.push('Publication')
+    if (!isReplicationEnabled) missingRequirements.push('Replication slot')
+    
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {switchElement}
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className='font-semibold text-xs'>Cannot activate</p>
+            <p className='text-xs'>Missing: {missingRequirements.join(', ')}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+  
+  return switchElement
 }

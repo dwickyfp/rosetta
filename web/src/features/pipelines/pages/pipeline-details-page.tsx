@@ -181,7 +181,7 @@ export default function PipelineDetailsPage() {
               {pipeline && <PipelineStatusSwitch pipeline={pipeline} />}
               <RestartButton
                 onRestart={handleRefresh}
-                disabled={isLoading}
+                disabled={isLoading || pipeline?.status === 'PAUSE'}
               />
             </div>
           </div>
