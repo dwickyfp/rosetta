@@ -112,7 +112,7 @@ class TagRepository(BaseRepository[TagList]):
                 return tag
 
             # Create new tag
-            tag = TagList(tag=tag_name.lower().strip())
+            tag = TagList(tag=tag_name.strip())
             self.db.add(tag)
             self.db.flush()
             self.db.refresh(tag)

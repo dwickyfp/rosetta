@@ -32,8 +32,8 @@ class TagCreate(TagBase):
     @validator("tag")
     def validate_tag(cls, v: str) -> str:
         """Validate and normalize tag name."""
-        # Strip whitespace and convert to lowercase
-        v = v.strip().lower()
+        # Strip whitespace but preserve case
+        v = v.strip()
         
         # Validate format (letters, numbers, hyphens, underscores, spaces)
         if not all(c.isalnum() or c in ["-", "_", " "] for c in v):
@@ -120,7 +120,7 @@ class TableSyncTagAssociationCreate(BaseSchema):
     @validator("tag")
     def validate_tag(cls, v: str) -> str:
         """Validate and normalize tag name."""
-        v = v.strip().lower()
+        v = v.strip()
         
         if not all(c.isalnum() or c in ["-", "_", " "] for c in v):
             raise ValueError(

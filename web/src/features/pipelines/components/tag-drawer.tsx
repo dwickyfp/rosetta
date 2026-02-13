@@ -77,14 +77,14 @@ export function TagDrawer({ tableSyncId, tableName, open, onClose }: TagDrawerPr
   )
 
   const handleAddTag = (tag: string) => {
-    const trimmedTag = tag.trim().toLowerCase()
+    const trimmedTag = tag.trim()
     if (!trimmedTag) {
       toast.error('Tag cannot be empty')
       return
     }
 
-    // Check if tag already exists in current tags
-    if (currentTags.some((t) => t.tag.toLowerCase() === trimmedTag)) {
+    // Check if tag already exists in current tags (case-insensitive check)
+    if (currentTags.some((t) => t.tag.toLowerCase() === trimmedTag.toLowerCase())) {
       toast.error('Tag already added')
       return
     }
