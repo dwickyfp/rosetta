@@ -299,16 +299,6 @@ export function SmartTagsPage() {
           </>
         ) : (
           <>
-            {/* 3D Visualization Header */}
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight">Tag Network</h2>
-                <p className="text-muted-foreground">
-                  Visualize tag relationships across your data pipeline.
-                </p>
-              </div>
-            </div>
-
             {/* Network Visualization */}
             <div className="pb-20">
               <TagNetworkVisualization />

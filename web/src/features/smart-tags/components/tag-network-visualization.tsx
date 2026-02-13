@@ -228,7 +228,17 @@ export function TagNetworkVisualization() {
   }
 
   return (
-    <div className={isDark ? "relative h-[calc(100vh-12rem)] w-full rounded-lg border bg-[#0a0a1a]" : "relative h-[calc(100vh-12rem)] w-full rounded-lg border bg-slate-50"}>
+    <div className="space-y-4">
+      {/* Title */}
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Tag Network</h2>
+        <p className="text-muted-foreground">
+          Visualize tag relationships across your data pipeline.
+        </p>
+      </div>
+
+      {/* Flow Canvas */}
+      <div className={isDark ? "relative h-[calc(100vh-14rem)] w-full rounded-lg border bg-[#0a0a1a]" : "relative h-[calc(100vh-14rem)] w-full rounded-lg border bg-slate-50"}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -362,6 +372,7 @@ export function TagNetworkVisualization() {
           </ScrollArea>
         </div>
       )}
+      </div>
     </div>
   )
 }
