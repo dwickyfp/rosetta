@@ -48,7 +48,10 @@ async def get_wal_thresholds(
             error=thresholds.error // (1024 * 1024),
             enable_webhook=thresholds.enable_webhook,
             webhook_url=thresholds.webhook_url,
-            notification_iteration=thresholds.notification_iteration
+            notification_iteration=thresholds.notification_iteration,
+            enable_telegram=thresholds.enable_telegram,
+            telegram_bot_token=thresholds.telegram_bot_token,
+            telegram_chat_id=thresholds.telegram_chat_id
         )
     except Exception as e:
         logger.error("Failed to get WAL thresholds", extra={"error": str(e)})
@@ -91,6 +94,12 @@ async def update_wal_thresholds(
         )
         service.set_value("ALERT_NOTIFICATION_WEBHOOK_URL", thresholds.webhook_url)
         service.set_value("NOTIFICATION_ITERATION_DEFAULT", str(thresholds.notification_iteration))
+        service.set_value(
+            "ENABLE_ALERT_NOTIFICATION_TELEGRAM",
+            "TRUE" if thresholds.enable_telegram else "FALSE"
+        )
+        service.set_value("ALERT_NOTIFICATION_TELEGRAM_KEY", thresholds.telegram_bot_token)
+        service.set_value("ALERT_NOTIFICATION_TELEGRAM_GROUP_ID", thresholds.telegram_chat_id)
         
         logger.info(
             "WAL thresholds updated",

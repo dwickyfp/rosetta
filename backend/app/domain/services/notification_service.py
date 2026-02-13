@@ -51,20 +51,51 @@ class NotificationService:
             logger.error(f"Failed to send notification to {url}: {e}")
             return False
 
+    async def _send_telegram(self, bot_token: str, chat_id: str, message: str) -> bool:
+        """
+        Send message to Telegram using Bot API.
+
+        Args:
+            bot_token: Telegram bot token
+            chat_id: Telegram chat ID or group ID
+            message: Message text to send
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                logger.info(f"Notification sent successfully to Telegram chat {chat_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to send Telegram notification to chat {chat_id}: {e}")
+            return False
+
     async def process_pending_notifications(self) -> int:
         """
-        Process pending notifications and send them to the webhook.
+        Process pending notifications and send them to webhook and/or Telegram.
 
         Logic:
         1. Check if webhook notifications are enabled.
-        2. Check if webhook URL is configured.
-        3. Fetch notifications where:
+        2. Check if Telegram notifications are enabled.
+        3. Check if webhook URL and/or Telegram credentials are configured.
+        4. Fetch notifications where:
            - iteration_check >= limit (default 3)
            - is_sent = False
            - is_deleted = False
            - is_read = False
-        4. If webhook is enabled and URL is configured, send to webhook.
-        5. Mark as sent (regardless of webhook availability to prevent duplicate frontend display).
+        5. Send to webhook if enabled and configured.
+        6. Send to Telegram if enabled and configured.
+        7. Mark as sent (regardless of webhook/Telegram availability to prevent duplicate frontend display).
 
         Returns:
             Number of notifications processed.
@@ -76,8 +107,17 @@ class NotificationService:
             == "TRUE"
         )
 
-        # 2. Check configuration
+        # 2. Check if Telegram notifications are enabled
+        enable_telegram = (
+            self.config_repo.get_value("ENABLE_ALERT_NOTIFICATION_TELEGRAM", "FALSE")
+            .upper()
+            == "TRUE"
+        )
+
+        # 3. Check configuration
         webhook_url = self.config_repo.get_value("ALERT_NOTIFICATION_WEBHOOK_URL")
+        telegram_bot_token = self.config_repo.get_value("ALERT_NOTIFICATION_TELEGRAM_KEY")
+        telegram_chat_id = self.config_repo.get_value("ALERT_NOTIFICATION_TELEGRAM_GROUP_ID")
 
         iteration_limit_str = self.config_repo.get_value(
             "NOTIFICATION_ITERATION_DEFAULT", "3"
@@ -87,7 +127,7 @@ class NotificationService:
         except ValueError:
             iteration_limit = 3
 
-        # 3. Fetch pending notifications
+        # 4. Fetch pending notifications
         # We need a custom query here as repo might not have this specific filter
         # "iteration_check is equals with config NOTIFICATION_ITERATION_DEFAULT"
         # "is_sent is false", "is_deleted is false", "is_read is false"
@@ -110,34 +150,56 @@ class NotificationService:
         processed_count = 0
         now = datetime.now(timezone(timedelta(hours=7)))
 
-        # 4. Process each
+        # 5. Process each notification
         for notification in pending_notifications:
-            # If webhook is enabled and URL is configured, attempt to send
-            if enable_webhook and webhook_url:
-                payload = {
-                    "key_notification": notification.key_notification,
-                    "title": notification.title,
-                    "message": notification.message,
-                    "type": notification.type,
-                    "timestamp": (
-                        notification.created_at.isoformat()
-                        if notification.created_at
-                        else None
-                    ),
-                }
+            # Prepare payload for webhook
+            payload = {
+                "key_notification": notification.key_notification,
+                "title": notification.title,
+                "message": notification.message,
+                "type": notification.type,
+                "timestamp": (
+                    notification.created_at.isoformat()
+                    if notification.created_at
+                    else None
+                ),
+            }
 
-                # Send (awaiting inside the loop, could be parallelized but sequential is safer for now)
+            # Send to webhook if enabled and configured
+            if enable_webhook and webhook_url:
                 success = await self._send_webhook(webhook_url, payload)
                 
                 if success:
                     logger.info(f"Notification {notification.id} sent to webhook successfully")
             else:
                 if not enable_webhook:
-                    logger.debug(f"Webhook notifications are disabled, marking notification {notification.id} as sent without sending")
+                    logger.debug(f"Webhook notifications are disabled")
                 elif not webhook_url:
-                    logger.debug(f"No webhook URL configured, marking notification {notification.id} as sent without sending")
+                    logger.debug(f"No webhook URL configured")
             
-            # 5. Mark as sent regardless of webhook availability or send status
+            # Send to Telegram if enabled and configured
+            if enable_telegram and telegram_bot_token and telegram_chat_id:
+                # Format message for Telegram with HTML
+                telegram_message = (
+                    f"<b>{notification.title}</b>\n\n"
+                    f"{notification.message}\n\n"
+                    f"Type: {notification.type}\n"
+                    f"Time: {notification.created_at.strftime('%Y-%m-%d %H:%M:%S') if notification.created_at else 'N/A'}"
+                )
+                
+                success = await self._send_telegram(telegram_bot_token, telegram_chat_id, telegram_message)
+                
+                if success:
+                    logger.info(f"Notification {notification.id} sent to Telegram successfully")
+            else:
+                if not enable_telegram:
+                    logger.debug(f"Telegram notifications are disabled")
+                elif not telegram_bot_token:
+                    logger.debug(f"No Telegram bot token configured")
+                elif not telegram_chat_id:
+                    logger.debug(f"No Telegram chat ID configured")
+            
+            # 6. Mark as sent regardless of webhook/Telegram availability or send status
             # This ensures notifications only appear once in frontend
             notification.is_sent = True
             notification.updated_at = now

@@ -44,6 +44,9 @@ class WALThresholds(BaseModel):
     enable_webhook: bool = Field(default=False, description="Enable or disable webhook notifications")
     webhook_url: str = Field(default="", description="Webhook URL for alerts")
     notification_iteration: int = Field(default=3, description="Number of iterations before sending notification")
+    enable_telegram: bool = Field(default=False, description="Enable or disable Telegram notifications")
+    telegram_bot_token: str = Field(default="", description="Telegram bot token")
+    telegram_chat_id: str = Field(default="", description="Telegram chat ID or group ID")
 
 
 class TestNotificationRequest(BaseModel):

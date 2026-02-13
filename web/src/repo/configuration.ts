@@ -6,6 +6,9 @@ export interface WALThresholdsConfig {
     enable_webhook: boolean
     webhook_url: string
     notification_iteration: number
+    enable_telegram: boolean
+    telegram_bot_token: string
+    telegram_chat_id: string
 }
 
 export interface BatchConfiguration {
