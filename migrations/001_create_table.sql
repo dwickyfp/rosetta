@@ -401,6 +401,16 @@ CREATE TABLE IF NOT EXISTS pipelines_destination_table_sync_tag (
 CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_sync_id ON pipelines_destination_table_sync_tag(pipelines_destination_table_sync_id);
 CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_tag_id ON pipelines_destination_table_sync_tag(tag_id);
 
+-- Add unique constraint to prevent duplicate tags on same table sync (also improves query performance)
+ALTER TABLE pipelines_destination_table_sync_tag DROP CONSTRAINT IF EXISTS uq_pipelines_destination_table_sync_tag;
+ALTER TABLE pipelines_destination_table_sync_tag ADD CONSTRAINT uq_pipelines_destination_table_sync_tag UNIQUE (pipelines_destination_table_sync_id, tag_id);
+
+-- Composite index for tag usage queries (joining tag → sync → pipeline hierarchy)
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_composite ON pipelines_destination_table_sync_tag(tag_id, pipelines_destination_table_sync_id);
+
+-- Index on created_at for temporal queries and sorting
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_created_at ON pipelines_destination_table_sync_tag(created_at DESC);
+
 
 
 
