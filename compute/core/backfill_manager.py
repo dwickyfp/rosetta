@@ -349,11 +349,8 @@ class BackfillManager:
             base_query = f"SELECT * FROM source_db.{table_name}"
 
             if filter_sql:
-                # Parse semicolon-separated filters and convert to WHERE clause
-                where_clauses = filter_sql.split(";")
-                where_clause = " AND ".join(
-                    f"({clause.strip()})" for clause in where_clauses if clause.strip()
-                )
+                # Build WHERE clause - supports both legacy and v2 JSON format
+                where_clause = self._build_backfill_where_clause(filter_sql)
                 if where_clause:
                     base_query += f" WHERE {where_clause}"
 
@@ -797,6 +794,137 @@ class BackfillManager:
                     return_db_connection(conn)
                 except Exception as e:
                     logger.warning(f"Error returning connection to pool: {e}")
+
+    def _build_backfill_where_clause(self, filter_sql: str) -> str:
+        """
+        Build WHERE clause from filter_sql for backfill queries.
+
+        Supports both legacy semicolon format and JSON v2 format with
+        AND/OR grouping and IN operator.
+
+        Args:
+            filter_sql: Filter SQL string (legacy or JSON v2)
+
+        Returns:
+            WHERE clause string (without WHERE keyword), or empty string
+        """
+        if not filter_sql:
+            return ""
+
+        # Try JSON v2 format first
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                return self._build_where_clause_v2(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Legacy format: semicolon-separated, all AND
+        where_clauses = filter_sql.split(";")
+        return " AND ".join(
+            f"({clause.strip()})" for clause in where_clauses if clause.strip()
+        )
+
+    def _build_where_clause_v2(self, parsed: dict) -> str:
+        """
+        Build WHERE clause from JSON v2 filter format.
+
+        Args:
+            parsed: Parsed JSON v2 filter dict
+
+        Returns:
+            WHERE clause string
+        """
+        groups = parsed.get("groups", [])
+        inter_logic = parsed.get("interLogic", [])
+
+        if not groups:
+            return ""
+
+        group_clauses = []
+        for group in groups:
+            conditions = group.get("conditions", [])
+            intra_logic = group.get("intraLogic", "AND")
+
+            if not conditions:
+                continue
+
+            clauses = []
+            for cond in conditions:
+                column = cond.get("column", "")
+                operator = cond.get("operator", "")
+                value = cond.get("value", "")
+                value2 = cond.get("value2", "")
+
+                if not column:
+                    continue
+
+                clause = self._build_single_clause(column, operator, value, value2)
+                if clause:
+                    clauses.append(clause)
+
+            if not clauses:
+                continue
+
+            if len(clauses) == 1:
+                group_clauses.append(clauses[0])
+            else:
+                group_clauses.append(f"({f' {intra_logic} '.join(clauses)})")
+
+        if not group_clauses:
+            return ""
+
+        result = group_clauses[0]
+        for i in range(1, len(group_clauses)):
+            logic = inter_logic[i - 1] if i - 1 < len(inter_logic) else "AND"
+            result = f"{result} {logic} {group_clauses[i]}"
+
+        return result
+
+    def _build_single_clause(self, column: str, operator: str, value: str, value2: str = "") -> str:
+        """
+        Build a single SQL clause from filter components.
+
+        Args:
+            column: Column name
+            operator: SQL operator
+            value: Filter value
+            value2: Second value (for BETWEEN)
+
+        Returns:
+            SQL clause string
+        """
+        op_upper = operator.upper().strip()
+
+        if op_upper in ("IS NULL", "IS NOT NULL"):
+            return f"{column} {op_upper}"
+
+        if not value and op_upper not in ("IS NULL", "IS NOT NULL"):
+            return ""
+
+        if op_upper == "BETWEEN" and value and value2:
+            q_val = self._quote_value(value)
+            q_val2 = self._quote_value(value2)
+            return f"{column} BETWEEN {q_val} AND {q_val2}"
+
+        if op_upper in ("LIKE", "ILIKE"):
+            return f"{column} {op_upper} '%{value}%'"
+
+        if op_upper == "IN":
+            values = [v.strip() for v in value.split(",") if v.strip()]
+            quoted = [self._quote_value(v) for v in values]
+            return f"{column} IN ({', '.join(quoted)})"
+
+        return f"{column} {operator} {self._quote_value(value)}"
+
+    def _quote_value(self, value: str) -> str:
+        """Quote a filter value - numeric values unquoted, strings quoted."""
+        try:
+            float(value)
+            return value
+        except (ValueError, TypeError):
+            return f"'{value}'"
 
     def _update_job_total_record(self, job_id: int, total: int) -> None:
         """

@@ -52,6 +52,19 @@ class BackfillJobCreate(BaseModel):
                 clauses.append(f"{clean_column} {f.operator.upper()} '{clean_value}'")
             elif f.operator.upper() in ["IS NULL", "IS NOT NULL"]:
                 clauses.append(f"{clean_column} {f.operator.upper()}")
+            elif f.operator.upper() == "IN":
+                # IN operator: values are comma-separated, wrap in parentheses
+                values = [v.strip() for v in clean_value.split(",") if v.strip()]
+                quoted_values = []
+                for v in values:
+                    try:
+                        float(v)
+                        quoted_values.append(v)
+                    except ValueError:
+                        quoted_values.append(f"'{v}'")
+                clauses.append(
+                    f"{clean_column} IN ({', '.join(quoted_values)})"
+                )
             else:
                 # For numeric comparisons, don't quote
                 try:

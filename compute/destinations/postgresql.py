@@ -463,20 +463,168 @@ class PostgreSQLDestination(BaseDestination):
         """
         Parse filter_sql into list of WHERE clauses.
 
-        Format: "column_1 = '11';column_2>1"
+        Supports two formats:
+        1. Legacy: "column_1 = '11';column_2>1" (semicolon-separated, all AND)
+        2. JSON v2: {"version": 2, "groups": [...], "interLogic": [...]}
 
         Args:
-            filter_sql: Semicolon-separated filter conditions
+            filter_sql: Semicolon-separated filter conditions or JSON v2 string
 
         Returns:
-            List of individual filter conditions
+            List of individual filter conditions (for legacy format)
         """
         if not filter_sql:
             return []
 
-        # Split by semicolon and strip whitespace
+        # Try JSON v2 format first
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                # V2 format - return empty list (use _build_where_clause_v2 instead)
+                return []
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Legacy format: Split by semicolon and strip whitespace
         filters = [f.strip() for f in filter_sql.split(";") if f.strip()]
         return filters
+
+    def _build_where_clause_from_filter_sql(self, filter_sql: str) -> str:
+        """
+        Build a complete WHERE clause string from filter_sql.
+
+        Supports both legacy semicolon format and JSON v2 format with 
+        AND/OR logic, grouping, and IN operator.
+
+        Args:
+            filter_sql: Filter SQL string (legacy or JSON v2)
+
+        Returns:
+            Complete WHERE clause (without the WHERE keyword), or empty string
+        """
+        if not filter_sql:
+            return ""
+
+        # Try JSON v2 format first
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                return self._build_where_clause_v2(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Legacy format: semicolon-separated, all AND
+        filters = [f.strip() for f in filter_sql.split(";") if f.strip()]
+        if not filters:
+            return ""
+        return " AND ".join([f"({condition})" for condition in filters])
+
+    def _build_where_clause_v2(self, parsed: dict) -> str:
+        """
+        Build WHERE clause from JSON v2 filter format.
+
+        Supports grouping with AND/OR between groups and within groups,
+        and the IN operator.
+
+        Args:
+            parsed: Parsed JSON v2 filter dict
+
+        Returns:
+            WHERE clause string (without WHERE keyword)
+        """
+        groups = parsed.get("groups", [])
+        inter_logic = parsed.get("interLogic", [])
+
+        if not groups:
+            return ""
+
+        group_clauses = []
+        for group in groups:
+            conditions = group.get("conditions", [])
+            intra_logic = group.get("intraLogic", "AND")
+
+            if not conditions:
+                continue
+
+            clauses = []
+            for cond in conditions:
+                column = cond.get("column", "")
+                operator = cond.get("operator", "")
+                value = cond.get("value", "")
+                value2 = cond.get("value2", "")
+
+                if not column:
+                    continue
+
+                clause = self._build_single_clause(column, operator, value, value2)
+                if clause:
+                    clauses.append(clause)
+
+            if not clauses:
+                continue
+
+            if len(clauses) == 1:
+                group_clauses.append(clauses[0])
+            else:
+                group_clauses.append(f"({f' {intra_logic} '.join(clauses)})")
+
+        if not group_clauses:
+            return ""
+
+        # Join groups with inter-logic operators
+        result = group_clauses[0]
+        for i in range(1, len(group_clauses)):
+            logic = inter_logic[i - 1] if i - 1 < len(inter_logic) else "AND"
+            result = f"{result} {logic} {group_clauses[i]}"
+
+        return result
+
+    def _build_single_clause(self, column: str, operator: str, value: str, value2: str = "") -> str:
+        """
+        Build a single SQL clause from filter components.
+
+        Args:
+            column: Column name
+            operator: SQL operator
+            value: Filter value
+            value2: Second value (for BETWEEN)
+
+        Returns:
+            SQL clause string
+        """
+        op_upper = operator.upper().strip()
+
+        if op_upper in ("IS NULL", "IS NOT NULL"):
+            return f"{column} {op_upper}"
+
+        if not value and op_upper not in ("IS NULL", "IS NOT NULL"):
+            return ""
+
+        if op_upper == "BETWEEN" and value and value2:
+            q_val = self._quote_filter_value(value)
+            q_val2 = self._quote_filter_value(value2)
+            return f"{column} BETWEEN {q_val} AND {q_val2}"
+
+        if op_upper in ("LIKE", "ILIKE"):
+            return f"{column} {op_upper} '%{value}%'"
+
+        if op_upper == "IN":
+            # Values are comma-separated
+            values = [v.strip() for v in value.split(",") if v.strip()]
+            quoted = [self._quote_filter_value(v) for v in values]
+            return f"{column} IN ({', '.join(quoted)})"
+
+        return f"{column} {operator} {self._quote_filter_value(value)}"
+
+    def _quote_filter_value(self, value: str) -> str:
+        """Quote a filter value - numeric values are unquoted, strings are quoted."""
+        try:
+            float(value)
+            return value
+        except (ValueError, TypeError):
+            return f"'{value}'"
 
     def _insert_batch_to_duckdb(
         self,
@@ -528,12 +676,12 @@ class PostgreSQLDestination(BaseDestination):
         """
         Apply filter SQL directly in DuckDB by deleting non-matching rows.
 
-        Filter format: "column_1 = '11';column_2>1"
-        Converts to: WHERE column_1 = '11' AND column_2>1
+        Supports both legacy format and JSON v2 format with AND/OR grouping
+        and IN operator.
 
         Args:
             table_name: DuckDB table name
-            filter_sql: Semicolon-separated filter conditions
+            filter_sql: Filter conditions (legacy semicolon or JSON v2)
         """
         if not filter_sql:
             return
@@ -541,13 +689,10 @@ class PostgreSQLDestination(BaseDestination):
         # Sanitize table name
         safe_table_name = table_name.replace(".", "_").replace("-", "_")
 
-        # Parse filter conditions
-        filters = self._parse_filter_sql(filter_sql)
-        if not filters:
+        # Build WHERE clause using the unified method
+        where_conditions = self._build_where_clause_from_filter_sql(filter_sql)
+        if not where_conditions:
             return
-
-        # Build WHERE clause (AND all conditions together)
-        where_conditions = " AND ".join([f"({condition})" for condition in filters])
 
         # Delete rows that DON'T match the filter (keep only matching rows)
         delete_sql = f"""
@@ -618,13 +763,28 @@ class PostgreSQLDestination(BaseDestination):
 
         Args:
             records: CDC records to filter
-            filter_sql: Filter conditions (semicolon-separated)
+            filter_sql: Filter conditions (semicolon-separated or JSON v2)
 
         Returns:
             Filtered records
         """
         if not filter_sql:
             return records
+
+        # For v2 format, try to use DuckDB filtering
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                # V2 format - fall through to DuckDB-based filtering
+                # This legacy method doesn't support v2, return all records
+                self._logger.warning(
+                    "V2 filter format not supported in legacy Python filtering, "
+                    "use DuckDB-based filtering instead"
+                )
+                return records
+        except (json.JSONDecodeError, TypeError):
+            pass
 
         filters = self._parse_filter_sql(filter_sql)
         if not filters:

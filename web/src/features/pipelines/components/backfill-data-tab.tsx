@@ -3,6 +3,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { backfillApi, BackfillFilter } from '@/repo/backfill'
 import { Pipeline } from '@/repo/pipelines'
+import { filterV2ToSql } from '@/features/pipelines/components/table-filter-card'
 import { sourcesRepo } from '@/repo/sources'
 import {
   Plus,
@@ -86,6 +87,7 @@ const OPERATORS_BY_TYPE = {
     { value: '!=', label: 'Not Equals (!=)' },
     { value: 'LIKE', label: 'Like (LIKE)' },
     { value: 'ILIKE', label: 'Case Insensitive Like (ILIKE)' },
+    { value: 'IN', label: 'In (IN)' },
     { value: 'IS NULL', label: 'Is Null' },
     { value: 'IS NOT NULL', label: 'Is Not Null' },
   ],
@@ -96,6 +98,7 @@ const OPERATORS_BY_TYPE = {
     { value: '<', label: 'Less Than (<)' },
     { value: '>=', label: 'Greater or Equal (>=)' },
     { value: '<=', label: 'Less or Equal (<=)' },
+    { value: 'IN', label: 'In (IN)' },
     { value: 'IS NULL', label: 'Is Null' },
     { value: 'IS NOT NULL', label: 'Is Not Null' },
   ],
@@ -526,6 +529,15 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                           }
                           placeholder='Select date'
                         />
+                      ) : filter.operator === 'IN' ? (
+                        <Input
+                          className='h-8'
+                          placeholder={isNumericColumn(filter.column) ? '1, 2, 3' : 'value1, value2, value3'}
+                          value={filter.value}
+                          onChange={(e) =>
+                            updateFilter(index, 'value', e.target.value)
+                          }
+                        />
                       ) : filter.column && isNumericColumn(filter.column) ? (
                         <Input
                           className='h-8'
@@ -757,7 +769,16 @@ export function BackfillDataTab({
                           <HoverCard>
                             <HoverCardTrigger asChild>
                               <span className='cursor-pointer text-xs text-muted-foreground underline decoration-dotted transition-colors hover:text-foreground'>
-                                {job.filter_sql.split(';').length} filter(s)
+                                {(() => {
+                                  try {
+                                    const parsed = JSON.parse(job.filter_sql)
+                                    if (parsed.version === 2) {
+                                      const count = parsed.groups.reduce((acc: number, g: any) => acc + g.conditions.length, 0)
+                                      return `${count} filter(s)`
+                                    }
+                                  } catch {}
+                                  return `${job.filter_sql.split(';').length} filter(s)`
+                                })()}
                               </span>
                             </HoverCardTrigger>
                             <HoverCardContent className='w-96' align='start'>
@@ -765,17 +786,8 @@ export function BackfillDataTab({
                                 <h4 className='text-sm font-semibold'>
                                   Applied Filters
                                 </h4>
-                                <div className='space-y-1.5'>
-                                  {job.filter_sql
-                                    .split(';')
-                                    .map((filter, idx) => (
-                                      <div
-                                        key={idx}
-                                        className='rounded border bg-muted p-2 font-mono text-xs'
-                                      >
-                                        {filter.trim()}
-                                      </div>
-                                    ))}
+                                <div className='rounded border bg-muted p-2 font-mono text-xs break-all'>
+                                  WHERE {filterV2ToSql(job.filter_sql) || job.filter_sql}
                                 </div>
                               </div>
                             </HoverCardContent>
