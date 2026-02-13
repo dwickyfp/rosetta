@@ -382,7 +382,21 @@ class SourceService:
                     entity_type="HistorySchemaEvolution",
                     entity_id=f"{table.id}-v{version}",
                 )
-            schema_data = history.schema_table_old
+
+            # CRITICAL FIX: For INITIAL_LOAD (version 1), schema is in schema_table_new
+            # For subsequent versions, schema is in schema_table_old
+            if history.changes_type == "INITIAL_LOAD":
+                schema_data = history.schema_table_new
+            else:
+                schema_data = history.schema_table_old
+
+        # Validate schema data is not empty
+        if not schema_data:
+            logger.warning(
+                f"Empty schema data for table {table.table_name} version {version}"
+            )
+            # Return empty columns list instead of failing
+            schema_data = {}
 
         columns = []
         if isinstance(schema_data, dict):

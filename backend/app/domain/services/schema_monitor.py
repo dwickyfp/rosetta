@@ -163,13 +163,53 @@ class SchemaMonitorService:
 
                 # Add new tables
                 for new_table in pub_table_names - existing_table_names:
-                    new_metadata = TableMetadata(
-                        source_id=source.id,
-                        table_name=new_table,
-                        is_exists_table_landing=False,  # Default
-                    )
-                    db.add(new_metadata)
-                    logger.info(f"Added new table tracking: {new_table}")
+                    # Fetch schema immediately for new tables
+                    try:
+                        schema_list = self.fetch_table_schema(conn, new_table)
+
+                        if not schema_list:
+                            logger.warning(
+                                f"Skipping table {new_table}: No schema columns found. "
+                                "Table may be empty or inaccessible."
+                            )
+                            continue
+
+                        # Convert to dict format
+                        schema_dict = {
+                            col["column_name"]: dict(col) for col in schema_list
+                        }
+
+                        new_metadata = TableMetadata(
+                            source_id=source.id,
+                            table_name=new_table,
+                            schema_table=schema_dict,  # Set schema immediately
+                            is_exists_table_landing=False,
+                            is_changes_schema=False,
+                        )
+                        db.add(new_metadata)
+                        db.flush()  # Get ID for history record
+
+                        # Create INITIAL_LOAD history record
+                        history = HistorySchemaEvolution(
+                            table_metadata_list_id=new_metadata.id,
+                            schema_table_old={},
+                            schema_table_new=schema_dict,
+                            changes_type="INITIAL_LOAD",
+                            version_schema=1,
+                        )
+                        db.add(history)
+
+                        logger.info(
+                            f"Added new table tracking with schema: {new_table} "
+                            f"({len(schema_list)} columns)"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to fetch schema for new table {new_table}: {e}. "
+                            "Skipping table registration."
+                        )
+                        db.rollback()
+                        continue
 
                 # Delete removed tables
                 for removed_table in existing_table_names - pub_table_names:
@@ -197,6 +237,14 @@ class SchemaMonitorService:
             f"Fetched schema for {table.table_name}: {len(new_schema_list)} columns"
         )
 
+        # Validate schema is not empty
+        if not new_schema_list:
+            logger.warning(
+                f"Skipping schema update for {table.table_name}: "
+                "No columns found in schema fetch."
+            )
+            return
+
         # Convert list to a comparable dictionary/JSON structure
         # Assuming list of dicts: [{'column_name': 'id', 'data_type': 'BIGINT', ...}]
         # We can key by column name for easier comparison
@@ -205,9 +253,29 @@ class SchemaMonitorService:
 
         old_schema_dict = table.schema_table or {}
 
-        # If first run (old is None/Empty), just update
         # If first run (old is None/Empty), record as Version 1
         if not old_schema_dict:
+            # Check if INITIAL_LOAD already exists (prevent duplicates)
+            existing_history = (
+                db.query(HistorySchemaEvolution)
+                .filter(
+                    HistorySchemaEvolution.table_metadata_list_id == table.id,
+                    HistorySchemaEvolution.changes_type == "INITIAL_LOAD",
+                )
+                .first()
+            )
+
+            if existing_history:
+                # INITIAL_LOAD already exists, just update table metadata
+                logger.info(
+                    f"INITIAL_LOAD history already exists for {table.table_name}, "
+                    "updating table metadata only"
+                )
+                table.schema_table = new_schema_dict
+                table.is_changes_schema = False
+                db.commit()
+                return
+
             # Create History Record for Initial Load
             history = HistorySchemaEvolution(
                 table_metadata_list_id=table.id,
@@ -244,12 +312,33 @@ class SchemaMonitorService:
             change_type = "CHANGES TYPE"
 
         # Create History Record
-        # Calculate version
+        # Calculate version - check for existing entries to prevent duplicates
         version = (
             db.query(HistorySchemaEvolution)
             .filter(HistorySchemaEvolution.table_metadata_list_id == table.id)
             .count()
         ) + 1
+
+        # Check if this version already exists (prevent race condition duplicates)
+        existing_version = (
+            db.query(HistorySchemaEvolution)
+            .filter(
+                HistorySchemaEvolution.table_metadata_list_id == table.id,
+                HistorySchemaEvolution.version_schema == version,
+            )
+            .first()
+        )
+
+        if existing_version:
+            logger.warning(
+                f"Schema version {version} already exists for {table.table_name}. "
+                "Skipping duplicate history record creation."
+            )
+            # Update table metadata with new schema anyway
+            table.schema_table = new_schema_dict
+            table.is_changes_schema = True
+            db.commit()
+            return
 
         history = HistorySchemaEvolution(
             table_metadata_list_id=table.id,
