@@ -20,6 +20,8 @@ interface TableCustomSqlCardProps {
   className?: string
   destinationName?: string
   destinationId?: number | null
+  sourceName?: string
+  sourceId?: number | null
 }
 
 export function TableCustomSqlCard({
@@ -30,6 +32,8 @@ export function TableCustomSqlCard({
   className,
   destinationName,
   destinationId,
+  sourceName,
+  sourceId,
 }: TableCustomSqlCardProps) {
   const [sql, setSql] = useState('')
   const [editorInstance, setEditorInstance] = useState<any>(null)
@@ -107,11 +111,44 @@ export function TableCustomSqlCard({
       }
     }
 
+    // Async Fetcher for Source Tables
+    const fetchSourceSchema = async (tableName: string) => {
+      if (!sourceId) return []
+      try {
+        // If tableName is empty, we just want list of tables
+        const params: any = { table: tableName }
+        if (!tableName) {
+          params.scope = 'tables'
+        }
+
+        const res = await api.get(`/sources/${sourceId}/schema`, {
+          params,
+        })
+        const data = res.data
+
+        if (!tableName) {
+          // Return list of table names
+          return Object.keys(data)
+        }
+
+        // Check for key case-insensitive
+        const key =
+          Object.keys(data).find(
+            (k) => k.toLowerCase() === tableName.toLowerCase()
+          ) || tableName
+        return data[key] || []
+      } catch (e) {
+        return []
+      }
+    }
+
     // Custom Completer
     const sqlCompleter = createSqlCompleter(
       sourceSchema,
       fetchDestinationSchema,
+      fetchSourceSchema,
       destinationName,
+      sourceName,
       setIsFetchingSchema // Pass setLoading callback
     )
 
@@ -130,7 +167,14 @@ export function TableCustomSqlCard({
     return () => {
       editorInstance.commands.off('afterExec', onAfterExec)
     }
-  }, [table, destinationId, destinationName, editorInstance])
+  }, [
+    table,
+    destinationId,
+    destinationName,
+    sourceId,
+    sourceName,
+    editorInstance,
+  ])
 
   const handleSave = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -205,24 +249,35 @@ export function TableCustomSqlCard({
           <div className='flex gap-2'>
             <div className='flex-1 space-y-2'>
               <p className='text-xs text-blue-700 dark:text-blue-300'>
-                You can join this table with all tables in the destination
-                database using the prefix{' '}
+                You can join this table with tables from the{' '}
+                <strong>destination database</strong> using{' '}
                 <code className='rounded bg-blue-100 px-1 py-0.5 dark:bg-blue-900/40'>
                   pg_
                   {destinationName
                     ? destinationName.toLowerCase()
                     : 'dest_name'}
+                </code>{' '}
+                and from the <strong>source database</strong> using{' '}
+                <code className='rounded bg-blue-100 px-1 py-0.5 dark:bg-blue-900/40'>
+                  pg_src_
+                  {sourceName ? sourceName.toLowerCase() : 'source_name'}
                 </code>
                 .
               </p>
               <div className='rounded border border-blue-200/50 bg-background/80 p-2 dark:border-blue-800/30'>
                 <code className='block font-mono text-[10px] text-muted-foreground'>
-                  -- Example query
+                  -- Example: Join with destination and source tables
                   <br />
-                  SELECT * FROM {table.table_name} t <br />
+                  SELECT t.*, d.status, s.metadata FROM {
+                    table.table_name
+                  } t <br />
                   JOIN pg_
                   {destinationName ? destinationName.toLowerCase() : 'dest_1'}
-                  .table_a a ON t.id = a.id
+                  .orders d ON t.id = d.id
+                  <br />
+                  JOIN pg_src_
+                  {sourceName ? sourceName.toLowerCase() : 'source_1'}
+                  .customers s ON t.customer_id = s.id
                 </code>
               </div>
             </div>

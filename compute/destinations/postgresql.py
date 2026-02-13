@@ -36,14 +36,16 @@ class PostgreSQLDestination(BaseDestination):
     # Required config keys
     REQUIRED_CONFIG = ["host", "port", "database", "user", "password"]
 
-    def __init__(self, config: Destination):
+    def __init__(self, config: Destination, source_config: Optional[Any] = None):
         """
         Initialize PostgreSQL destination.
 
         Args:
             config: Destination configuration from database
+            source_config: Optional source configuration for attaching source database to DuckDB
         """
         super().__init__(config)
+        self._source_config = source_config
         self._duckdb_conn: Optional[duckdb.DuckDBPyConnection] = None
         self._pg_conn: Optional[psycopg2.extensions.connection] = None
         self._validate_config()
@@ -95,9 +97,34 @@ class PostgreSQLDestination(BaseDestination):
         sanitized = re.sub(r"[^a-z0-9_]", "_", self._config.name.lower())
         return f"pg_{sanitized}"
 
+    @property
+    def source_duckdb_alias(self) -> Optional[str]:
+        """Get DuckDB attach alias name for source: pg_src_<source_name_lowercase>."""
+        if not self._source_config:
+            return None
+        # Sanitize source name: lowercase, replace spaces/special chars with underscores
+        sanitized = re.sub(r"[^a-z0-9_]", "_", self._source_config.name.lower())
+        return f"pg_src_{sanitized}"
+
     def _get_postgres_connection_string(self) -> str:
         """Get PostgreSQL connection string for DuckDB."""
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+
+    def _get_source_connection_string(self) -> Optional[str]:
+        """Get source PostgreSQL connection string for DuckDB."""
+        if not self._source_config:
+            return None
+
+        from core.security import decrypt_value
+
+        # Source model has direct fields, not a config dict
+        host = self._source_config.pg_host
+        port = self._source_config.pg_port
+        database = self._source_config.pg_database
+        user = self._source_config.pg_username
+        password = decrypt_value(self._source_config.pg_password or "")
+
+        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
     def _check_connection_health(self) -> bool:
         """
@@ -156,14 +183,37 @@ class PostgreSQLDestination(BaseDestination):
             self._duckdb_conn.execute("INSTALL postgres;")
             self._duckdb_conn.execute("LOAD postgres;")
 
-            # Attach PostgreSQL database with dynamic alias name
+            # Attach PostgreSQL destination database with dynamic alias name
             conn_str = self._get_postgres_connection_string()
             alias = self.duckdb_alias
             self._duckdb_conn.execute(
                 f"""
-                ATTACH '{conn_str}' AS {alias} (TYPE postgres, READ_WRITE);
+                ATTACH '{conn_str}' AS {alias} (TYPE postgres, READ_WRITE, SCHEMA 'public');
             """
             )
+            self._logger.debug(f"Attached destination as '{alias}'")
+
+            # Attach source PostgreSQL database if source config is provided
+            if self._source_config:
+                try:
+                    source_conn_str = self._get_source_connection_string()
+                    source_alias = self.source_duckdb_alias
+
+                    if source_conn_str and source_alias:
+                        self._duckdb_conn.execute(
+                            f"""
+                            ATTACH '{source_conn_str}' AS {source_alias} (TYPE postgres, READ_ONLY, SCHEMA 'public');
+                        """
+                        )
+                        self._logger.info(
+                            f"Attached source database as '{source_alias}' (READ_ONLY)"
+                        )
+                except Exception as source_error:
+                    # Log warning but don't fail destination initialization
+                    self._logger.warning(
+                        f"Failed to attach source database: {source_error}. "
+                        f"Source tables will not be available for joins in custom SQL."
+                    )
 
             # Also create direct psycopg2 connection for DDL operations
             self._pg_conn = psycopg2.connect(

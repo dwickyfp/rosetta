@@ -322,6 +322,8 @@ export function SourceTableDrawer({
           onSave={handleSaveCustomSql}
           destinationName={currentDestination?.destination.name}
           destinationId={currentDestination?.destination.id}
+          sourceName={pipeline.source?.name}
+          sourceId={pipeline.source_id}
         />
       )}
 

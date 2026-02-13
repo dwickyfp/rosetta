@@ -170,6 +170,7 @@ class BackfillManager:
             # Return connection to pool
             if conn:
                 from core.database import return_db_connection
+
                 try:
                     return_db_connection(conn)
                 except Exception as e:
@@ -218,11 +219,11 @@ class BackfillManager:
             List of pending job records
         """
         conn = None
-        
+
         try:
             # get_db_connection() handles retries on pool exhaustion
             conn = get_db_connection()
-            
+
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
@@ -239,21 +240,18 @@ class BackfillManager:
                 jobs = cursor.fetchall()
                 result = [dict(job) for job in jobs]
                 return result
-                
+
         except psycopg2.OperationalError as e:
             # Network/server error - connection was closed by server
-            logger.error(
-                f"Database connection error fetching pending jobs: {e}"
-            )
+            logger.error(f"Database connection error fetching pending jobs: {e}")
             return []
         except Exception as e:
-            logger.error(
-                f"Error fetching pending jobs: {e}"
-            )
+            logger.error(f"Error fetching pending jobs: {e}")
             return []
         finally:
             if conn:
                 from core.database import return_db_connection
+
                 try:
                     return_db_connection(conn)
                 except Exception as e:
@@ -441,6 +439,7 @@ class BackfillManager:
         from core.repository import (
             PipelineRepository,
             DestinationRepository,
+            SourceRepository,
             DataFlowRepository,
         )
         from core.models import DestinationType
@@ -454,6 +453,7 @@ class BackfillManager:
         try:
             pipeline_id = job["pipeline_id"]
             table_name = job["table_name"]
+            source_id = job["source_id"]
 
             logger.debug(
                 f"Processing {len(records)} records to destinations for pipeline {pipeline_id}"
@@ -465,6 +465,9 @@ class BackfillManager:
             if not pipeline or not pipeline.destinations:
                 logger.warning(f"Pipeline {pipeline_id} has no destinations configured")
                 return
+
+            # Get source config for PostgreSQL destination joins
+            source_config = SourceRepository.get_by_id(source_id)
 
             # Convert records to CDC format with proper serialization
             cdc_records = []
@@ -527,7 +530,9 @@ class BackfillManager:
                         destination_config.type.upper()
                         == DestinationType.POSTGRES.value
                     ):
-                        destination = PostgreSQLDestination(destination_config)
+                        destination = PostgreSQLDestination(
+                            destination_config, source_config=source_config
+                        )
                     else:
                         logger.warning(
                             f"Unsupported destination type: {destination_config.type}"
@@ -748,6 +753,7 @@ class BackfillManager:
         finally:
             if conn:
                 from core.database import return_db_connection
+
                 try:
                     return_db_connection(conn)
                 except Exception as e:
@@ -786,6 +792,7 @@ class BackfillManager:
         finally:
             if conn:
                 from core.database import return_db_connection
+
                 try:
                     return_db_connection(conn)
                 except Exception as e:
@@ -824,6 +831,7 @@ class BackfillManager:
         finally:
             if conn:
                 from core.database import return_db_connection
+
                 try:
                     return_db_connection(conn)
                 except Exception as e:
@@ -857,6 +865,7 @@ class BackfillManager:
         finally:
             if conn:
                 from core.database import return_db_connection
+
                 try:
                     return_db_connection(conn)
                 except Exception as e:

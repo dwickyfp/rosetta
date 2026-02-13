@@ -96,7 +96,7 @@ class PipelineEngine:
         return PostgreSQLSource(pipeline.source)
 
     def _create_destination(
-        self, destination_type: str, config: Any
+        self, destination_type: str, config: Any, source_config: Optional[Any] = None
     ) -> BaseDestination:
         """
         Create destination instance based on type.
@@ -104,6 +104,7 @@ class PipelineEngine:
         Args:
             destination_type: Type of destination (SNOWFLAKE, POSTGRES)
             config: Destination configuration model
+            source_config: Optional source configuration (for PostgreSQL destinations)
 
         Returns:
             BaseDestination instance
@@ -121,7 +122,7 @@ class PipelineEngine:
             }
             return SnowflakeDestination(config, timeout_config=timeout_config)
         elif destination_type.upper() == DestinationType.POSTGRES.value:
-            return PostgreSQLDestination(config)
+            return PostgreSQLDestination(config, source_config=source_config)
         else:
             raise PipelineException(
                 f"Unsupported destination type: {destination_type}",
@@ -172,7 +173,11 @@ class PipelineEngine:
                 continue
 
             try:
-                dest = self._create_destination(pd.destination.type, pd.destination)
+                dest = self._create_destination(
+                    pd.destination.type,
+                    pd.destination,
+                    source_config=self._pipeline.source,
+                )
 
                 # Try to initialize, but keep destination object even if it fails
                 try:

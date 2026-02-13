@@ -240,7 +240,8 @@ async def register_table(
         service: Source service instance
     """
     service.register_table_to_publication(source_id, request.table_name)
-    
+
+
 @router.delete(
     "/{source_id}/tables/{table_name}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -267,6 +268,7 @@ async def refresh_source(
 ) -> None:
     service.refresh_source_metadata(source_id)
 
+
 @router.post(
     "/{source_id}/publication",
     status_code=status.HTTP_201_CREATED,
@@ -279,6 +281,7 @@ async def create_publication(
 ) -> None:
     service.create_publication(source_id, request.tables)
 
+
 @router.delete(
     "/{source_id}/publication",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -290,6 +293,7 @@ async def drop_publication(
 ) -> None:
     service.drop_publication(source_id)
 
+
 @router.post(
     "/{source_id}/replication",
     status_code=status.HTTP_201_CREATED,
@@ -300,6 +304,7 @@ async def create_replication_slot(
     service: SourceService = Depends(get_source_service),
 ) -> None:
     service.create_replication_slot(source_id)
+
 
 @router.delete(
     "/{source_id}/replication",
@@ -325,7 +330,7 @@ async def fetch_available_tables(
 ) -> List[str]:
     """
     Fetch all available tables from source database.
-    
+
     If refresh is True, ignores cache and fetches directly from DB, updating cache.
     Otherwise, returns cached result or fetches if cache miss.
     """
@@ -333,7 +338,9 @@ async def fetch_available_tables(
         return service.refresh_available_tables(source_id)
     return service.fetch_available_tables(source_id)
 
+
 # --- Presets ---
+
 
 @router.post(
     "/{source_id}/presets",
@@ -350,6 +357,7 @@ async def create_preset(
     preset = service.create_preset(source_id, preset_data)
     return PresetResponse.from_orm(preset)
 
+
 @router.get(
     "/{source_id}/presets",
     response_model=List[PresetResponse],
@@ -362,6 +370,7 @@ async def get_presets(
     """Get all presets for a source."""
     presets = service.get_presets(source_id)
     return [PresetResponse.from_orm(p) for p in presets]
+
 
 @router.delete(
     "/presets/{preset_id}",
@@ -414,3 +423,31 @@ async def duplicate_source(
     """
     source = service.duplicate_source(source_id)
     return SourceResponse.from_orm(source)
+
+
+@router.get(
+    "/{source_id}/schema",
+    response_model=dict[str, List[str]],
+    summary="Get source schema",
+    description="Get tables and columns from the source database",
+)
+async def get_source_schema(
+    source_id: int,
+    table: str | None = Query(None, description="Optional table name to filter"),
+    scope: str = Query("all", description="Scope of schema fetch (all, tables)"),
+    service: SourceService = Depends(get_source_service),
+) -> dict[str, List[str]]:
+    """
+    Get source schema (tables and columns).
+
+    Args:
+        source_id: Source identifier
+        table: Optional table name to filter
+        scope: Scope of fetch ('all' = tables+columns, 'tables' = tables only)
+        service: Source service instance
+
+    Returns:
+        Dictionary mapping table names to column lists
+    """
+    only_tables = scope == "tables"
+    return service.fetch_schema(source_id, table_name=table, only_tables=only_tables)

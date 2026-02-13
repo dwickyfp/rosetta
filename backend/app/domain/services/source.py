@@ -827,6 +827,104 @@ class SourceService:
             logger.error(f"Failed to refresh table list for source {source.name}: {e}")
             raise ValueError(f"Failed to refresh tables: {str(e)}")
 
+    def fetch_schema(
+        self, source_id: int, table_name: str | None = None, only_tables: bool = False
+    ) -> dict[str, list[str]]:
+        """
+        Fetch schema (tables and columns) from the source.
+
+        Args:
+            source_id: Source identifier
+            table_name: Optional table name to filter by
+            only_tables: If True, returns only table names (values are empty lists)
+
+        Returns:
+            Dictionary mapping table names to list of column names (or empty list if only_tables)
+        """
+        source = self.get_source(source_id)
+
+        # Redis Key - include table_name/only_tables if provided
+        cache_key = f"source:{source_id}:schema"
+        if table_name:
+            cache_key += f":table:{table_name}"
+        if only_tables:
+            cache_key += ":only_tables"
+
+        try:
+            # 1. Try Cache
+            redis_client = RedisClient.get_instance()
+            cached_schema = redis_client.get(cache_key)
+            if cached_schema:
+                import json
+
+                return json.loads(cached_schema)
+        except Exception as e:
+            logger.warning(f"Redis cache error: {e}")
+
+        schema_data = {}
+
+        try:
+            conn = self._get_connection(source)
+
+            with conn.cursor() as cur:
+                if only_tables:
+                    # Fetch ONLY table names
+                    query = """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        AND table_type = 'BASE TABLE'
+                    """
+                    params = []
+                    if table_name:
+                        query += " AND table_name ILIKE %s"
+                        params.append(table_name)
+                    query += " ORDER BY table_name;"
+
+                    cur.execute(query, tuple(params))
+                    rows = cur.fetchall()
+                    for (table,) in rows:
+                        schema_data[table] = []
+                else:
+                    # Fetch tables and columns from information_schema
+                    query = """
+                        SELECT table_name, column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                    """
+                    params = []
+                    if table_name:
+                        # Use ILIKE for case-insensitive matching
+                        query += " AND table_name ILIKE %s"
+                        params.append(table_name)
+
+                    query += " ORDER BY table_name, ordinal_position;"
+
+                    cur.execute(query, tuple(params))
+                    rows = cur.fetchall()
+
+                    for table, column in rows:
+                        if table not in schema_data:
+                            schema_data[table] = []
+                        schema_data[table].append(column)
+
+            conn.close()
+
+            # 3. Cache Result (TTL: 5 minutes)
+            try:
+                import json
+
+                redis_client = RedisClient.get_instance()
+                redis_client.setex(cache_key, 300, json.dumps(schema_data))
+            except Exception as e:
+                logger.warning(f"Failed to cache source schema: {e}")
+
+            return schema_data
+
+        except Exception as e:
+            logger.error(f"Failed to fetch source schema: {e}")
+            raise ValueError(f"Failed to fetch source schema: {str(e)}")
+
     def duplicate_source(self, source_id: int) -> Source:
         """
         Duplicate an existing source.
