@@ -55,7 +55,7 @@ class DebeziumConfig:
     """Debezium engine configuration."""
 
     offset_storage_path: str = "./tmp/offsets"
-    offset_flush_interval_ms: int = 60000
+    offset_flush_interval_ms: int = 10000
 
     def get_offset_file(self, pipeline_name: str) -> str:
         """Get offset file path for a specific pipeline."""
