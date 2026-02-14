@@ -2036,6 +2036,19 @@ class PipelineService:
             # Process Results
             columns = result.column_names
             data = result.to_pylist()
+
+            # Extract types from Arrow schema
+            column_types = []
+            for field in result.schema:
+                dtype = str(field.type).lower()
+                if any(t in dtype for t in ['int', 'float', 'decimal', 'double']):
+                    column_types.append('number')
+                elif 'bool' in dtype:
+                    column_types.append('boolean')
+                elif any(t in dtype for t in ['date', 'time', 'timestamp']):
+                    column_types.append('date')
+                else:
+                    column_types.append('text')
             
             # Serialize special types
             serialized_data = []
@@ -2050,7 +2063,7 @@ class PipelineService:
                         new_row[k] = v
                 serialized_data.append(new_row)
             
-            response = PipelinePreviewResponse(columns=columns, data=serialized_data)
+            response = PipelinePreviewResponse(columns=columns, column_types=column_types, data=serialized_data)
             
             # 6. Cache Result
             try:
@@ -2065,7 +2078,7 @@ class PipelineService:
         except Exception as e:
             logger.error(f"Preview execution failed: {e}", exc_info=True)
             # Return error in response rather than 500
-            return PipelinePreviewResponse(columns=[], data=[], error=str(e))
+            return PipelinePreviewResponse(columns=[], column_types=[], data=[], error=str(e))
         finally:
             if 'con' in locals():
                 try:

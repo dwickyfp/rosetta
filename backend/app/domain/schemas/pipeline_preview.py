@@ -11,5 +11,6 @@ class PipelinePreviewRequest(BaseModel):
 class PipelinePreviewResponse(BaseModel):
     """Response model for previewing custom SQL."""
     columns: List[str]
+    column_types: List[str]
     data: List[Dict[str, Any]]
     error: Optional[str] = None

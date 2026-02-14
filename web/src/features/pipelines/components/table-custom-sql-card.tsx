@@ -6,9 +6,10 @@ import 'ace-builds/src-noconflict/ext-language_tools'
 import 'ace-builds/src-noconflict/mode-mysql'
 import 'ace-builds/src-noconflict/theme-tomorrow'
 import 'ace-builds/src-noconflict/theme-tomorrow_night'
-import { Loader2, Save, X, Eye, AlertCircle } from 'lucide-react'
+import { Loader2, Save, X, Eye, AlertCircle, Hash, Type, Calendar, ToggleLeft } from 'lucide-react'
 import AceEditor from 'react-ace'
 import { toast } from 'sonner'
+import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { createSqlCompleter } from '@/features/pipelines/utils/sql-completer'
@@ -17,14 +18,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 
 interface TableCustomSqlCardProps {
@@ -42,6 +35,7 @@ interface TableCustomSqlCardProps {
 
 interface PreviewData {
   columns: string[]
+  column_types: string[]
   data: Record<string, any>[]
   error?: string
 }
@@ -259,6 +253,7 @@ export function TableCustomSqlCard({
     } catch (e: any) {
       setPreviewData({
         columns: [],
+        column_types: [],
         data: [],
         error: e.response?.data?.detail || e.message || 'Failed to preview data',
       })
@@ -479,25 +474,52 @@ export function TableCustomSqlCard({
                         <table className='w-full caption-bottom text-sm'>
                           <thead className='sticky top-0 z-10 bg-muted [&_tr]:border-b border-border/50'>
                             <tr className='border-b border-border/50 transition-colors duration-150 hover:bg-muted/50 data-[state=selected]:bg-muted'>
-                              {previewData.columns.map((col) => (
-                                <th key={col} className='h-10 px-3 text-left align-middle font-medium text-xs uppercase tracking-wider text-muted-foreground [&>[role=checkbox]]:translate-y-[2px] whitespace-nowrap'>
-                                  {col}
-                                </th>
-                              ))}
+                              {previewData.columns.map((col, idx) => {
+                                const type = previewData.column_types?.[idx] || 'text'
+                                let Icon = Type
+                                if (type === 'number') Icon = Hash
+                                if (type === 'date') Icon = Calendar
+                                if (type === 'boolean') Icon = ToggleLeft
+
+                                return (
+                                  <th key={col} className='h-10 px-3 text-left align-middle font-medium text-xs uppercase tracking-wider text-muted-foreground [&>[role=checkbox]]:translate-y-[2px] whitespace-nowrap'>
+                                    <div className='flex items-center gap-1.5'>
+                                      <Icon className='h-3.5 w-3.5 text-muted-foreground/70' />
+                                      {col}
+                                    </div>
+                                  </th>
+                                )
+                              })}
                             </tr>
                           </thead>
                           <tbody className='[&_tr:last-child]:border-0'>
                             {previewData.data.map((row, i) => (
                               <tr key={i} className='border-b border-border/50 transition-colors duration-150 hover:bg-muted/50 data-[state=selected]:bg-muted'>
-                                {previewData.columns.map((col) => (
-                                  <td key={col} className='px-3 py-2.5 align-middle whitespace-nowrap [&>[role=checkbox]]:translate-y-[2px]'>
-                                    {row[col]?.toString() ?? (
-                                      <span className='italic text-muted-foreground'>
-                                        null
-                                      </span>
-                                    )}
-                                  </td>
-                                ))}
+                                {previewData.columns.map((col, idx) => {
+                                  const val = row[col]
+                                  const type = previewData.column_types?.[idx] || 'text'
+                                  const isBool = type === 'boolean'
+
+                                  return (
+                                    <td key={col} className='px-3 py-2.5 align-middle whitespace-nowrap [&>[role=checkbox]]:translate-y-[2px]'>
+                                      {isBool ? (
+                                        val === null ? (
+                                          <span className='italic text-muted-foreground'>Null</span>
+                                        ) : (
+                                          <div className='flex items-center'>
+                                            <Checkbox checked={!!val} disabled className='data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground opacity-100 disabled:cursor-default disabled:opacity-100' />
+                                          </div>
+                                        )
+                                      ) : (
+                                        val?.toString() ?? (
+                                          <span className='italic text-muted-foreground'>
+                                            null
+                                          </span>
+                                        )
+                                      )}
+                                    </td>
+                                  )
+                                })}
                               </tr>
                             ))}
                           </tbody>
