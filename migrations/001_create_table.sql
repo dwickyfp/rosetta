@@ -321,6 +321,8 @@ ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS error_message TEXT NULL
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS total_record BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS resume_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS is_error BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS last_pk_value TEXT NULL;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS pk_column TEXT NULL;
 
 -- Drop Index if exists
 DROP INDEX IF EXISTS idx_queue_backfill_data_pipeline_id;

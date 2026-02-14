@@ -11,6 +11,7 @@ from contextlib import contextmanager
 
 import duckdb
 import psycopg2
+import pyarrow as pa
 
 from destinations.base import BaseDestination, CDCRecord
 from core.models import Destination, PipelineDestinationTableSync
@@ -48,6 +49,7 @@ class PostgreSQLDestination(BaseDestination):
         self._source_config = source_config
         self._duckdb_conn: Optional[duckdb.DuckDBPyConnection] = None
         self._pg_conn: Optional[psycopg2.extensions.connection] = None
+        self._staging_tables: set[str] = set()  # Track created staging tables for reuse
         self._validate_config()
 
     def _validate_config(self) -> None:
@@ -176,8 +178,14 @@ class PostgreSQLDestination(BaseDestination):
                 self._is_initialized = False
 
         try:
-            # Create in-memory DuckDB connection
+            # Create in-memory DuckDB connection with performance tuning
             self._duckdb_conn = duckdb.connect(":memory:")
+            self._duckdb_conn.execute("SET memory_limit='4GB'")
+            self._duckdb_conn.execute("SET threads=4")
+            self._duckdb_conn.execute("SET enable_progress_bar=false")
+
+            # Reset staging table tracker on new connection
+            self._staging_tables.clear()
 
             # Install and load PostgreSQL extension
             self._duckdb_conn.execute("INSTALL postgres;")
@@ -634,6 +642,9 @@ class PostgreSQLDestination(BaseDestination):
         """
         Insert CDC records into DuckDB table with original table name.
 
+        Uses PyArrow for zero-copy ingestion into DuckDB, which is significantly
+        faster than pandas DataFrame conversion.
+
         Keeps raw Debezium-encoded values (dates as integers, etc.) to avoid
         premature type conversion. These will be properly converted when
         merging into PostgreSQL.
@@ -651,21 +662,23 @@ class PostgreSQLDestination(BaseDestination):
         # Drop existing table if exists
         self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
 
-        # Convert records to list of dicts for DuckDB
-        # DuckDB can infer schema from Python dicts
+        # Convert records to columnar format for PyArrow
         data = [record.value for record in records]
+        columns = list(data[0].keys())
+        arrays = {}
+        for col in columns:
+            arrays[col] = [row.get(col) for row in data]
 
-        # Use DuckDB's automatic table creation from Python objects
-        # This preserves types better than manual VARCHAR insertion
-        import pandas as pd
+        # Create Arrow table — DuckDB's native format (zero-copy)
+        arrow_table = pa.table(arrays)
 
-        df = pd.DataFrame(data)
-
-        # Register the DataFrame as a DuckDB table
-        self._duckdb_conn.execute(f"CREATE TABLE {safe_table_name} AS SELECT * FROM df")
+        # Register the Arrow table and create DuckDB table from it
+        self._duckdb_conn.execute(
+            f"CREATE TABLE {safe_table_name} AS SELECT * FROM arrow_table"
+        )
 
         self._logger.debug(
-            f"Inserted {len(records)} records into DuckDB table '{safe_table_name}'"
+            f"Inserted {len(records)} records into DuckDB table '{safe_table_name}' (PyArrow)"
         )
 
     def _apply_filters_in_duckdb(
@@ -1071,17 +1084,30 @@ class PostgreSQLDestination(BaseDestination):
                 col_defs.append(f'"{c}" {duck_type}')
 
             col_def_str = ", ".join(col_defs)
-            self._duckdb_conn.execute(f"CREATE TABLE {temp_source} ({col_def_str})")
 
-            # Insert values
+            # Use persistent staging table: create once, truncate on reuse
+            # Key includes target_table to avoid schema conflicts across tables
+            staging_key = f"{temp_source}_{target_table}"
+            if staging_key in self._staging_tables:
+                try:
+                    self._duckdb_conn.execute(f"DELETE FROM {temp_source}")
+                except Exception:
+                    # Schema might have changed, recreate
+                    self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {temp_source}")
+                    self._duckdb_conn.execute(f"CREATE TABLE {temp_source} ({col_def_str})")
+            else:
+                self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {temp_source}")
+                self._duckdb_conn.execute(f"CREATE TABLE {temp_source} ({col_def_str})")
+                self._staging_tables.add(staging_key)
+
+            # Insert values using executemany for bulk performance
             placeholders = ", ".join(["?" for _ in columns])
 
-            # Insert all records with type-converted values
-            for record in records:
-                values = convert_record(record)
-                self._duckdb_conn.execute(
-                    f"INSERT INTO {temp_source} VALUES ({placeholders})", values
-                )
+            # Convert all records first, then bulk insert
+            all_values = [convert_record(record, log_first=(i == 0)) for i, record in enumerate(records)]
+            self._duckdb_conn.executemany(
+                f"INSERT INTO {temp_source} VALUES ({placeholders})", all_values
+            )
 
             # Build DELETE + INSERT pattern instead of MERGE INTO
             # DuckDB's postgres_scanner strips type casts when translating MERGE to UPDATE,
@@ -1467,6 +1493,9 @@ class PostgreSQLDestination(BaseDestination):
                 pass
             self._pg_conn = None
 
+        # Clear staging table tracker
+        self._staging_tables.clear()
+
     def close(self) -> None:
         """Close DuckDB and PostgreSQL connections."""
         if self._duckdb_conn:
@@ -1482,6 +1511,9 @@ class PostgreSQLDestination(BaseDestination):
             except Exception as e:
                 self._logger.warning(f"Error closing PostgreSQL connection: {e}")
             self._pg_conn = None
+
+        # Clear staging table tracker
+        self._staging_tables.clear()
 
         self._is_initialized = False
         self._logger.info(f"PostgreSQL destination closed: {self._config.name}")
