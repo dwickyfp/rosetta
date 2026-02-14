@@ -263,7 +263,7 @@ class SourceService:
 
         return self.test_connection_config(config)
 
-    def get_source_details(self, source_id: int) -> SourceDetailResponse:
+    def get_source_details(self, source_id: int, force_refresh: bool = False) -> SourceDetailResponse:
         """
         Get detailed information for a source.
 
@@ -271,19 +271,42 @@ class SourceService:
 
         Args:
             source_id: Source identifier
+            force_refresh: If True, bypass cache and refresh from source database
 
         Returns:
             Source details
         """
+        # Check cache first (unless force_refresh)
+        if not force_refresh:
+            try:
+                from app.infrastructure.redis_client import RedisClient
+                import json
+                
+                cache_key = f"source_details:{source_id}"
+                redis_client = RedisClient.get_instance()
+                cached = redis_client.get(cache_key)
+                
+                if cached:
+                    logger.info(f"Cache HIT for source details {source_id}")
+                    cached_data = json.loads(cached)
+                    return SourceDetailResponse(**cached_data)
+            except Exception as e:
+                logger.warning(f"Cache read error for source {source_id}: {e}")
+        
         # 1. Get Source
         source = self.get_source(source_id)
 
-        # Realtime Fetch
-        self._update_source_table_list(source)
-        registered_tables = self._sync_publication_tables(source)
-        self.db.add(source)
-        self.db.commit()
-        self.db.refresh(source)
+        # Conditional Realtime Fetch (only if force_refresh=True)
+        # This avoids slow network calls to source database on every page load
+        if force_refresh:
+            self._update_source_table_list(source)
+            registered_tables = self._sync_publication_tables(source)
+            self.db.add(source)
+            self.db.commit()
+            self.db.refresh(source)
+        else:
+            # Fast path: just get registered tables from publication query
+            registered_tables = self._get_publication_tables(source)
 
         # 2. Get WAL Monitor
         wal_monitor_repo = WALMonitorRepository(self.db)
@@ -335,7 +358,7 @@ class SourceService:
             )
         )
 
-        return SourceDetailResponse(
+        result = SourceDetailResponse(
             source=SourceResponse.from_orm(source),
             wal_monitor=(
                 WALMonitorResponse.from_orm(wal_monitor) if wal_monitor else None
@@ -343,6 +366,22 @@ class SourceService:
             tables=source_tables,
             destinations=destination_names,
         )
+        
+        # Cache the result for 30 seconds
+        try:
+            from app.infrastructure.redis_client import RedisClient
+            import json
+            
+            cache_key = f"source_details:{source_id}"
+            redis_client = RedisClient.get_instance()
+            # Convert to dict for caching
+            result_dict = result.dict()
+            redis_client.setex(cache_key, 30, json.dumps(result_dict))
+            logger.info(f"Cached source details for {source_id} with 30s TTL")
+        except Exception as e:
+            logger.warning(f"Failed to cache source details for {source_id}: {e}")
+        
+        return result
 
     def get_table_schema_by_version(
         self, table_id: int, version: int
@@ -715,6 +754,34 @@ class SourceService:
                 f"Error syncing publication tables for source {source.name}: {e}"
             )
             return set()
+
+    def _get_publication_tables(self, source: Source) -> set:
+        """
+        Fast fetch of registered tables from pg_publication_tables.
+        Lightweight alternative to _sync_publication_tables for read-only operations.
+        
+        Args:
+            source: Source entity
+            
+        Returns:
+            Set of table names in the publication
+        """
+        try:
+            conn = self._get_connection(source)
+            with conn.cursor() as cur:
+                query = "SELECT tablename FROM pg_publication_tables WHERE pubname = %s"
+                cur.execute(query, (source.publication_name,))
+                registered_tables = {row[0] for row in cur.fetchall()}
+            conn.close()
+            return registered_tables
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch publication tables for source {source.name}: {e}"
+            )
+            # Fallback: return tables from local metadata
+            table_repo = TableMetadataRepository(self.db)
+            existing_tables = table_repo.get_by_source_id(source.id)
+            return {t.table_name for t in existing_tables}
 
     def refresh_source_metadata(self, source_id: int) -> None:
         """Manually refresh source metadata."""

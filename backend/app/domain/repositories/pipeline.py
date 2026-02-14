@@ -138,9 +138,13 @@ class PipelineRepository(BaseRepository[Pipeline]):
         Returns:
             List of pipelines with destination loaded
         """
+        from app.domain.models.destination import Destination
+        
         result = self.db.execute(
             select(Pipeline)
-            .options(selectinload(Pipeline.destinations))
+            .options(
+                selectinload(Pipeline.destinations).selectinload(PipelineDestination.destination)
+            )
             .where(Pipeline.source_id == source_id)
         )
         return list(result.scalars().all())

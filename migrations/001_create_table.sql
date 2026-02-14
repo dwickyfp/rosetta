@@ -416,6 +416,37 @@ CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_composite ON
 -- Index on created_at for temporal queries and sorting
 CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_created_at ON pipelines_destination_table_sync_tag(created_at DESC);
 
+-- Performance Optimization for Source Details Page
+-- This migration adds composite indexes to optimize the JOIN queries
+
+-- Composite index for history_schema_evolution table
+-- Optimizes get_tables_with_version_count query that does:
+-- LEFT JOIN history_schema_evolution ON table_metadata_list.id = history_schema_evolution.table_metadata_list_id
+-- GROUP BY table_metadata_list.id
+-- SELECT MAX(version_schema)
+CREATE INDEX IF NOT EXISTS idx_history_schema_evolution_table_version_composite 
+ON history_schema_evolution(table_metadata_list_id, version_schema DESC);
+
+-- Additional optimization: covering index for the query
+-- This allows index-only scans without touching the table
+CREATE INDEX IF NOT EXISTS idx_table_metadata_list_source_id_covering 
+ON table_metadata_list(source_id, id) INCLUDE (table_name, schema_table);
+
+-- Optimize pipelines_destination queries for source details
+-- This composite index helps with the join: pipeline → pipeline_destination → destination
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_composite 
+ON pipelines_destination(pipeline_id, destination_id, is_error);
+
+-- Add comment explaining the optimization
+COMMENT ON INDEX idx_history_schema_evolution_table_version_composite IS 
+'Optimizes source details page query that fetches table version counts with LEFT JOIN and MAX(version_schema)';
+
+COMMENT ON INDEX idx_table_metadata_list_source_id_covering IS 
+'Covering index for source details table metadata fetch - enables index-only scans';
+
+COMMENT ON INDEX idx_pipelines_destination_composite IS 
+'Composite index for pipeline-destination joins in source details page';
+
 
 
 
