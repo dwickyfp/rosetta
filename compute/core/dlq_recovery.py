@@ -72,6 +72,9 @@ class DLQRecoveryWorker:
         self._destination_health: dict[int, bool] = {}
         self._health_check_lock = threading.Lock()
 
+        # Track if this is the first iteration (for startup recovery)
+        self._first_iteration = True
+
     def start(self) -> None:
         """Start the recovery worker thread."""
         if self._running:
@@ -123,16 +126,29 @@ class DLQRecoveryWorker:
                 queues = self._dlq_manager.list_queues()
 
                 if queues:
-                    self._logger.debug(f"Found {len(queues)} DLQ queues to process")
+                    if self._first_iteration:
+                        self._logger.info(
+                            f"STARTUP RECOVERY: Processing {len(queues)} DLQ queues "
+                            f"for existing messages"
+                        )
+                    else:
+                        self._logger.debug(f"Found {len(queues)} DLQ queues to process")
 
                     for source_id, table_name, destination_id in queues:
                         if not self._running:
                             break
 
-                        # First, claim any stale messages from dead consumers
-                        self._claim_and_process_stale(
-                            source_id, table_name, destination_id
-                        )
+                        # On startup (first iteration), aggressively claim ALL pending
+                        # messages with min_idle=0 to recover messages from previous run
+                        if self._first_iteration:
+                            self._claim_and_process_stale(
+                                source_id, table_name, destination_id, min_idle_ms=0
+                            )
+                        else:
+                            # Normal operation: claim stale messages from dead consumers
+                            self._claim_and_process_stale(
+                                source_id, table_name, destination_id
+                            )
 
                         # Then process new messages
                         self._process_queue(source_id, table_name, destination_id)
@@ -146,6 +162,14 @@ class DLQRecoveryWorker:
                                 max_retry_count=self._max_retry_count,
                                 max_age_days=self._max_age_days,
                             )
+
+                # Mark first iteration complete
+                if self._first_iteration:
+                    self._first_iteration = False
+                    self._logger.info(
+                        "STARTUP RECOVERY: Completed first iteration, "
+                        "switching to normal recovery mode"
+                    )
 
                 # Sleep before next check
                 time.sleep(self._check_interval)
@@ -161,19 +185,29 @@ class DLQRecoveryWorker:
         source_id: int,
         table_name: str,
         destination_id: int,
+        min_idle_ms: Optional[int] = None,
     ) -> None:
         """
         Claim stale pending messages from dead consumers and process them.
 
         Uses XAUTOCLAIM to take over messages that have been pending for too long
         (e.g., from a crashed worker).
+
+        Args:
+            source_id: Source database ID
+            table_name: Table name
+            destination_id: Destination database ID
+            min_idle_ms: Minimum idle time in ms (None = use default 3x check_interval)
         """
         try:
+            if min_idle_ms is None:
+                min_idle_ms = self._check_interval * 3 * 1000  # 3x check interval
+
             stale_messages = self._dlq_manager.claim_stale_messages(
                 source_id=source_id,
                 table_name=table_name,
                 destination_id=destination_id,
-                min_idle_ms=self._check_interval * 3 * 1000,  # 3x check interval
+                min_idle_ms=min_idle_ms,
                 max_messages=self._batch_size,
                 consumer_name=self._consumer_name,
             )
@@ -359,8 +393,41 @@ class DLQRecoveryWorker:
         first_msg = messages_with_ids[0][1]
         table_name_target = first_msg.table_name_target
 
-        # Reconstruct table_sync from stored config
-        table_sync = self._create_table_sync_from_config(first_msg.table_sync_config)
+        # Fetch FRESH table_sync config from database instead of using stale
+        # config stored in DLQ message. This ensures updated custom_sql/filter_sql
+        # are applied during recovery.
+        table_sync_id = first_msg.table_sync_config.get("id")
+        if table_sync_id:
+            try:
+                fresh_table_sync = TableSyncRepository.get_by_id(table_sync_id)
+                if fresh_table_sync:
+                    table_sync = fresh_table_sync
+                    self._logger.debug(
+                        f"Using fresh table_sync config from DB (id={table_sync_id})"
+                    )
+                else:
+                    # Table sync was deleted — fall back to stored config
+                    table_sync = self._create_table_sync_from_config(
+                        first_msg.table_sync_config
+                    )
+                    self._logger.warning(
+                        f"Table sync {table_sync_id} not found in DB, "
+                        f"using stale config from DLQ message"
+                    )
+            except Exception as e:
+                # DB fetch failed — fall back to stored config
+                self._logger.warning(
+                    f"Failed to fetch fresh table_sync {table_sync_id} from DB: {e}. "
+                    f"Using stale config from DLQ message"
+                )
+                table_sync = self._create_table_sync_from_config(
+                    first_msg.table_sync_config
+                )
+        else:
+            # Old message format without table_sync_id — use stored config
+            table_sync = self._create_table_sync_from_config(
+                first_msg.table_sync_config
+            )
 
         # Extract CDC records and message IDs
         cdc_records = [msg.cdc_record for _, msg in messages_with_ids]

@@ -284,16 +284,6 @@ class SnowflakeDestination(BaseDestination):
             field_schema = schema_map.get(k)
             converted = self._convert_value_for_snowflake(v, field_schema)
             row[k.upper()] = converted
-
-            # Debug logging for type conversions
-            if field_schema:
-                type_name = field_schema.get("name", "unknown")
-                if type_name != "unknown":
-                    self._logger.debug(
-                        f"Converted {k}: {type(v).__name__}({v}) -> {type(converted).__name__}({converted}) "
-                        f"[schema: {type_name}]"
-                    )
-
         row["OPERATION"] = operation
         row["SYNC_TIMESTAMP_ROSETTA"] = format_sync_timestamp()
 

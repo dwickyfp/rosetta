@@ -1321,10 +1321,6 @@ class PostgreSQLDestination(BaseDestination):
                         if converted_value.endswith("Z"):
                             converted_value = converted_value[:-1] + "+00:00"
 
-                    if log_first:
-                        self._logger.info(
-                            f"    Converted: {repr(converted_value)} (type={type(converted_value).__name__})"
-                        )
                     converted.append(converted_value)
                 return converted
 
