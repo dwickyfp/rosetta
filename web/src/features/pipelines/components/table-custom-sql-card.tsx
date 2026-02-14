@@ -476,32 +476,32 @@ export function TableCustomSqlCard({
                   ) : previewData && previewData.columns.length > 0 ? (
                     <ScrollArea className='h-[400px] w-full rounded-md border'>
                       <div className='w-max min-w-full'>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
+                        <table className='w-full caption-bottom text-sm'>
+                          <thead className='sticky top-0 z-10 bg-muted [&_tr]:border-b border-border/50'>
+                            <tr className='border-b border-border/50 transition-colors duration-150 hover:bg-muted/50 data-[state=selected]:bg-muted'>
                               {previewData.columns.map((col) => (
-                                <TableHead key={col} className='whitespace-nowrap'>
+                                <th key={col} className='h-10 px-3 text-left align-middle font-medium text-xs uppercase tracking-wider text-muted-foreground [&>[role=checkbox]]:translate-y-[2px] whitespace-nowrap'>
                                   {col}
-                                </TableHead>
+                                </th>
                               ))}
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
+                            </tr>
+                          </thead>
+                          <tbody className='[&_tr:last-child]:border-0'>
                             {previewData.data.map((row, i) => (
-                              <TableRow key={i}>
+                              <tr key={i} className='border-b border-border/50 transition-colors duration-150 hover:bg-muted/50 data-[state=selected]:bg-muted'>
                                 {previewData.columns.map((col) => (
-                                  <TableCell key={col} className='whitespace-nowrap'>
+                                  <td key={col} className='px-3 py-2.5 align-middle whitespace-nowrap [&>[role=checkbox]]:translate-y-[2px]'>
                                     {row[col]?.toString() ?? (
                                       <span className='italic text-muted-foreground'>
                                         null
                                       </span>
                                     )}
-                                  </TableCell>
+                                  </td>
                                 ))}
-                              </TableRow>
+                              </tr>
                             ))}
-                          </TableBody>
-                        </Table>
+                          </tbody>
+                        </table>
                       </div>
                       <ScrollBar orientation='horizontal' />
                       <ScrollBar orientation='vertical' />
