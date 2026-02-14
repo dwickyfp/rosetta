@@ -17,6 +17,7 @@ from app.core.database import get_session_context
 from app.core.security import decrypt_value
 from app.core.exceptions import WALMonitorError
 from app.core.logging import get_logger
+from app.core.error_sanitizer import sanitize_for_db
 from app.domain.models.source import Source
 from app.domain.repositories.source import SourceRepository
 from app.domain.repositories.wal_monitor_repo import WALMonitorRepository
@@ -309,11 +310,15 @@ class WALMonitorService:
                         try:
                             notification_key = f"wal_monitor_key_{source.name}"
                             notification_repo = NotificationLogRepository(db)
+                            
+                            # Sanitize error message before sending to notification
+                            sanitized_error = sanitize_for_db(e, f"WAL Monitor - {source.name}")
+                            
                             notification_repo.upsert_notification_by_key(
                                 NotificationLogCreate(
                                     key_notification=notification_key,
                                     title="WAL Monitor ERROR",
-                                    message=f"Source {source.name} (ID: {source.id}) monitor failed after retries: {str(e)}",
+                                    message=f"Source {source.name} (ID: {source.id}) monitor failed after retries: {sanitized_error}",
                                     type="ERROR",
                                     is_read=False,
                                     iteration_check=1,

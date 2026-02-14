@@ -6,6 +6,9 @@ export interface WALThresholdsConfig {
     enable_webhook: boolean
     webhook_url: string
     notification_iteration: number
+    enable_telegram: boolean
+    telegram_bot_token: string
+    telegram_chat_id: string
 }
 
 export interface BatchConfiguration {
@@ -24,8 +27,12 @@ export const configurationRepo = {
         return data
     },
 
-    testNotification: async (webhook_url?: string) => {
-        const { data } = await api.post('/configuration/wal-thresholds/test', { webhook_url })
+    testNotification: async (webhook_url?: string, telegram_bot_token?: string, telegram_chat_id?: string) => {
+        const { data } = await api.post('/configuration/wal-thresholds/test', { 
+            webhook_url,
+            telegram_bot_token,
+            telegram_chat_id
+        })
         return data
     },
 

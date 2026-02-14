@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Loader2, Plus, Save, X, Calendar as CalendarIcon, Trash2 } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { Loader2, Plus, Save, X, Calendar as CalendarIcon, Trash2, CornerDownRight, Check, ChevronsUpDown } from 'lucide-react'
 import { TableWithSyncInfo } from '@/repo/pipelines'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Calendar } from '@/components/ui/calendar'
 import { format } from 'date-fns'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
+
+// ─── Types ───────────────────────────────────────────────────
 
 interface TableFilterCardProps {
     table: TableWithSyncInfo | null
@@ -18,7 +23,7 @@ interface TableFilterCardProps {
     className?: string
 }
 
-interface FilterClause {
+interface FilterCondition {
     id: string
     column: string
     operator: string
@@ -26,7 +31,84 @@ interface FilterClause {
     value2?: string
 }
 
-// Operators grouped by data type
+interface FilterGroup {
+    id: string
+    conditions: FilterCondition[]
+    intraLogic: 'AND' | 'OR'
+}
+
+interface FilterState {
+    groups: FilterGroup[]
+    interLogic: ('AND' | 'OR')[]
+}
+
+/** JSON v2 format stored in DB */
+export interface FilterV2Json {
+    version: 2
+    groups: {
+        conditions: { column: string; operator: string; value: string; value2?: string }[]
+        intraLogic: 'AND' | 'OR'
+    }[]
+    interLogic: ('AND' | 'OR')[]
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+function uid(): string {
+    return typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).substring(2) + Date.now().toString(36)
+}
+
+function conditionToSql(c: { column: string; operator: string; value: string; value2?: string }): string {
+    if (!c.column) return ''
+    const op = c.operator.toUpperCase()
+    if (op === 'IS NULL' || op === 'IS NOT NULL') return `${c.column} ${op}`
+    if (!c.value && op !== 'IN') return ''
+    if (op === 'BETWEEN' && c.value2) return `${c.column} BETWEEN '${c.value}' AND '${c.value2}'`
+    if (op === 'LIKE' || op === 'ILIKE') return `${c.column} ${op} '%${c.value}%'`
+    if (op === 'IN') {
+        const vals = c.value.split(',').map(v => v.trim()).filter(Boolean)
+        if (!vals.length) return ''
+        const quoted = vals.map(v => /^\d+(\.\d+)?$/.test(v) ? v : `'${v}'`).join(', ')
+        return `${c.column} IN (${quoted})`
+    }
+    const isNum = /^-?\d+(\.\d+)?$/.test(c.value)
+    return `${c.column} ${c.operator} ${isNum ? c.value : `'${c.value}'`}`
+}
+
+/** Convert a filter_sql string (v2 JSON or legacy) to readable SQL WHERE clause */
+export function filterV2ToSql(filterSql: string | null | undefined): string {
+    if (!filterSql) return ''
+    try {
+        const parsed: FilterV2Json = JSON.parse(filterSql)
+        if (parsed.version === 2) {
+            const groupSqls: string[] = []
+            for (const g of parsed.groups) {
+                const parts: string[] = []
+                for (const c of g.conditions) {
+                    const clause = conditionToSql(c)
+                    if (clause) parts.push(clause)
+                }
+                if (!parts.length) continue
+                groupSqls.push(parts.length > 1 ? `(${parts.join(` ${g.intraLogic} `)})` : parts[0])
+            }
+            if (!groupSqls.length) return ''
+            let result = groupSqls[0]
+            for (let i = 1; i < groupSqls.length; i++) {
+                const logic = parsed.interLogic[i - 1] || 'AND'
+                result += ` ${logic} ${groupSqls[i]}`
+            }
+            return result
+        }
+    } catch { /* legacy format */ }
+    // Legacy semicolon format
+    const parts = filterSql.split(';').map(s => s.trim()).filter(Boolean)
+    return parts.join(' AND ')
+}
+
+// ─── Operators ───────────────────────────────────────────────
+
 const OPERATORS_BY_TYPE = {
     boolean: [
         { value: '=', label: 'Equals (=)' },
@@ -39,6 +121,7 @@ const OPERATORS_BY_TYPE = {
         { value: '!=', label: 'Not Equals (!=)' },
         { value: 'LIKE', label: 'Like (LIKE)' },
         { value: 'ILIKE', label: 'Case Insensitive Like (ILIKE)' },
+        { value: 'IN', label: 'In (IN)' },
         { value: 'IS NULL', label: 'Is Null' },
         { value: 'IS NOT NULL', label: 'Is Not Null' },
     ],
@@ -49,6 +132,7 @@ const OPERATORS_BY_TYPE = {
         { value: '<', label: 'Less Than (<)' },
         { value: '>=', label: 'Greater or Equal (>=)' },
         { value: '<=', label: 'Less or Equal (<=)' },
+        { value: 'IN', label: 'In (IN)' },
         { value: 'IS NULL', label: 'Is Null' },
         { value: 'IS NOT NULL', label: 'Is Not Null' },
     ],
@@ -59,10 +143,13 @@ const OPERATORS_BY_TYPE = {
         { value: '<', label: 'Less Than (<)' },
         { value: '>=', label: 'Greater or Equal (>=)' },
         { value: '<=', label: 'Less or Equal (<=)' },
+        { value: 'BETWEEN', label: 'Between' },
         { value: 'IS NULL', label: 'Is Null' },
         { value: 'IS NOT NULL', label: 'Is Not Null' },
     ],
 }
+
+// ─── Component ───────────────────────────────────────────────
 
 export function TableFilterCard({
     table,
@@ -71,248 +158,222 @@ export function TableFilterCard({
     onSave,
     className
 }: TableFilterCardProps) {
-    const [filters, setFilters] = useState<FilterClause[]>([])
+    const [state, setState] = useState<FilterState>({ groups: [], interLogic: [] })
     const [isSaving, setIsSaving] = useState(false)
+    const columns = table?.columns || []
 
-    const parseFilterSql = (sql: string): FilterClause[] => {
-        if (!sql) return []
+    // ── Parse helpers ──
 
-        const clauses: FilterClause[] = []
-
-        // Use matchAll to find all filter patterns in the string
-        // Patterns:
-        // 1. IS NULL / IS NOT NULL: (\w+)\s+(IS\s+(?:NOT\s+)?NULL)
-        // 2. BETWEEN: (\w+) BETWEEN '([^']*)' AND '([^']*)'
-        // 3. LIKE/ILIKE: (\w+) (LIKE|ILIKE) '%([^%]*)%'
-        // 4. Standard: (\w+) (=|!=|>|>=|<=|<) ('([^']*)'|(\d+(?:\.\d+)?)|(?:true|false))
-
-        const pattern = /(?:(\w+)\s+(IS\s+(?:NOT\s+)?NULL))|(?:(\w+)\s+BETWEEN\s+'([^']*)'\s+AND\s+'([^']*)')|(?:(\w+)\s+(LIKE|ILIKE)\s+'%([^%]*)%')|(?:(\w+)\s*(=|!=|>|>=|<=|<)\s*(?:'([^']*)'|(\d+(?:\.\d+)?)|(?:true|false)))/gi
-
-        const matches = sql.matchAll(pattern)
-
-        for (const match of matches) {
-            const id = typeof crypto !== 'undefined' && crypto.randomUUID
-                ? crypto.randomUUID()
-                : Math.random().toString(36).substring(2) + Date.now().toString(36)
-
-            // Check which group matched
-            if (match[1]) { // IS NULL / IS NOT NULL
-                clauses.push({
-                    id,
-                    column: match[1],
-                    operator: match[2],
-                    value: ''
-                })
-            } else if (match[3]) { // BETWEEN
-                clauses.push({
-                    id,
-                    column: match[3],
-                    operator: 'BETWEEN',
-                    value: match[4],
-                    value2: match[5]
-                })
-            } else if (match[6]) { // LIKE/ILIKE
-                clauses.push({
-                    id,
-                    column: match[6],
-                    operator: match[7],
-                    value: match[8]
-                })
-            } else if (match[9]) { // Standard
-                clauses.push({
-                    id,
-                    column: match[9],
-                    operator: match[10],
-                    // Use the quoted string match (match[11]) or the numeric match (match[12])
-                    value: match[11] !== undefined ? match[11] : match[12]
-                })
-            }
+    const parseLegacySql = (sql: string): Omit<FilterCondition, 'id'>[] => {
+        const result: Omit<FilterCondition, 'id'>[] = []
+        const pattern = /(?:(\w+)\s+(IS\s+(?:NOT\s+)?NULL))|(?:(\w+)\s+BETWEEN\s+'([^']*)'\s+AND\s+'([^']*)')|(?:(\w+)\s+(LIKE|ILIKE)\s+'%([^%]*)%')|(?:(\w+)\s+IN\s*\(([^)]*)\))|(?:(\w+)\s*(=|!=|>|>=|<=|<)\s*(?:'([^']*)'|(\d+(?:\.\d+)?)|(?:true|false)))/gi
+        for (const m of sql.matchAll(pattern)) {
+            if (m[1]) result.push({ column: m[1], operator: m[2], value: '' })
+            else if (m[3]) result.push({ column: m[3], operator: 'BETWEEN', value: m[4], value2: m[5] })
+            else if (m[6]) result.push({ column: m[6], operator: m[7], value: m[8] })
+            else if (m[9]) result.push({ column: m[9], operator: 'IN', value: m[10].replace(/'/g, '').trim() })
+            else if (m[11]) result.push({ column: m[11], operator: m[12], value: m[13] ?? m[14] })
         }
-
-        return clauses
+        return result
     }
 
-    // Load filters from sync_config or reset when table changes
-    useEffect(() => {
-        if (!open) {
-            return
+    const parseFilterSql = (sql: string): FilterState => {
+        if (!sql) return { groups: [], interLogic: [] }
+        try {
+            const parsed: FilterV2Json = JSON.parse(sql)
+            if (parsed.version === 2) {
+                return {
+                    groups: parsed.groups.map(g => ({
+                        id: uid(),
+                        conditions: g.conditions.map(c => ({
+                            id: uid(), column: c.column, operator: c.operator, value: c.value, value2: c.value2
+                        })),
+                        intraLogic: g.intraLogic
+                    })),
+                    interLogic: parsed.interLogic
+                }
+            }
+        } catch { /* not JSON */ }
+        const clauses = parseLegacySql(sql)
+        return {
+            groups: clauses.map(c => ({
+                id: uid(),
+                conditions: [{ id: uid(), ...c }],
+                intraLogic: 'AND' as const
+            })),
+            interLogic: clauses.length > 1 ? Array(clauses.length - 1).fill('AND') : []
         }
+    }
 
-        // Use sync_config (singular) passed from parent, or fallback to first in array
+    // ── Load on open/table change ──
+
+    useEffect(() => {
+        if (!open) return
         const syncConfig = (table as any)?.sync_config || table?.sync_configs?.[0]
         const filterSql = syncConfig?.filter_sql
-
-        if (filterSql) {
-            setFilters(parseFilterSql(filterSql))
-        } else {
-            // Clear filters when there's no filter SQL or switching to a different table/destination
-            setFilters([])
-        }
+        setState(filterSql ? parseFilterSql(filterSql) : { groups: [], interLogic: [] })
     }, [table?.table_name, (table as any)?.sync_config?.id, (table as any)?.sync_config?.filter_sql, table?.sync_configs?.[0]?.id, table?.sync_configs?.[0]?.filter_sql, open])
 
-    const columns = table?.columns || []
+    // ── Column helpers ──
 
     const getColumnType = (colName: string) => {
         const col = columns.find(c => c.column_name === colName)
         if (!col) return 'text'
-        // Check real_data_type first (from schema), fallback to data_type
         const type = (col.real_data_type || col.data_type || '').toLowerCase()
-
-        const numericTypes = [
-            'int', 'integer', 'smallint', 'bigint', 'int2', 'int4', 'int8',
-            'decimal', 'numeric', 'real', 'double precision', 'float', 'float4', 'float8',
-            'number', 'money'
-        ]
+        const numericTypes = ['int', 'integer', 'smallint', 'bigint', 'int2', 'int4', 'int8', 'decimal', 'numeric', 'real', 'double precision', 'float', 'float4', 'float8', 'number', 'money']
         if (numericTypes.some(t => type.includes(t))) return 'numeric'
-
-        // Timestamp types that include time component
-        const datetimeTypes = [
-            'timestamp', 'timestamptz', 'datetime', 'timestamp with time zone',
-            'timestamp without time zone'
-        ]
+        const datetimeTypes = ['timestamp', 'timestamptz', 'datetime', 'timestamp with time zone', 'timestamp without time zone']
         if (datetimeTypes.some(t => type.includes(t))) return 'datetime'
-
-        // Date-only type
         if (type.includes('date')) return 'date'
-
-        // Time-only type (treat as text input)
         if (type.includes('time')) return 'text'
-
         return 'text'
     }
 
-    // Helper to determine column type category for operator selection
     const getColumnTypeCategory = (columnName: string): 'boolean' | 'string' | 'number' | 'date' => {
         const col = columns.find(c => c.column_name === columnName)
         if (!col) return 'string'
         const type = (col.real_data_type || col.data_type || '').toLowerCase()
-        
-        // Boolean types
-        if (type.includes('bool')) {
-            return 'boolean'
-        }
-        
-        // Date/datetime types
-        if (type.includes('date') || type.includes('time')) {
-            return 'date'
-        }
-        
-        // Numeric types
-        if (
-            type.includes('int') ||
-            type.includes('numeric') ||
-            type.includes('decimal') ||
-            type.includes('float') ||
-            type.includes('double') ||
-            type.includes('real') ||
-            type.includes('money')
-        ) {
-            return 'number'
-        }
-        
-        // Default to string
+        if (type.includes('bool')) return 'boolean'
+        if (type.includes('date') || type.includes('time')) return 'date'
+        if (type.includes('int') || type.includes('numeric') || type.includes('decimal') || type.includes('float') || type.includes('double') || type.includes('real') || type.includes('money')) return 'number'
         return 'string'
     }
 
-    // Helper to get operators for a column
     const getOperatorsForColumn = (columnName: string) => {
         if (!columnName) return OPERATORS_BY_TYPE.string
-        const category = getColumnTypeCategory(columnName)
-        return OPERATORS_BY_TYPE[category]
+        return OPERATORS_BY_TYPE[getColumnTypeCategory(columnName)]
     }
 
-    // Helper to determine if column is boolean
     const isBooleanColumn = (columnName: string): boolean => {
         const col = columns.find(c => c.column_name === columnName)
         if (!col) return false
-        const type = (col.real_data_type || col.data_type || '').toLowerCase()
-        return type.includes('bool')
+        return (col.real_data_type || col.data_type || '').toLowerCase().includes('bool')
     }
 
-    const handleAddFilter = (e: React.MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
+    // ── State mutations ──
 
-        const firstColumn = columns.length > 0 ? columns[0].column_name : ''
-
-        // Generate a random ID (fallback for crypto.randomUUID if not available)
-        const newId = typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : Math.random().toString(36).substring(2) + Date.now().toString(36)
-
-        setFilters(prev => [
-            ...prev,
-            {
-                id: newId,
-                column: firstColumn,
-                operator: '=',
-                value: ''
-            }
-        ])
-    }
-
-    const handleRemoveFilter = (id: string, e: React.MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setFilters(prev => prev.filter(f => f.id !== id))
-    }
-
-    const updateFilter = (id: string, field: keyof FilterClause, val: string) => {
-        setFilters(prev => prev.map(f => {
-            if (f.id === id) {
-                if (field === 'column' && val !== f.column) {
-                    // Reset operator and value when column changes
-                    const validOperators = getOperatorsForColumn(val)
-                    const isOperatorValid = validOperators.some(op => op.value === f.operator)
-                    return { 
-                        ...f, 
-                        [field]: val, 
-                        operator: isOperatorValid ? f.operator : '=',
-                        value: '', 
-                        value2: undefined 
-                    }
-                }
-                if (field === 'operator' && val !== 'BETWEEN') {
-                    return { ...f, [field]: val, value2: undefined }
-                }
-                return { ...f, [field]: val }
-            }
-            return f
+    const addGroup = () => {
+        const firstCol = columns.length > 0 ? columns[0].column_name : ''
+        const newGroup: FilterGroup = {
+            id: uid(),
+            conditions: [{ id: uid(), column: firstCol, operator: '=', value: '' }],
+            intraLogic: 'AND'
+        }
+        setState(prev => ({
+            groups: [...prev.groups, newGroup],
+            interLogic: prev.groups.length > 0 ? [...prev.interLogic, 'AND'] : prev.interLogic
         }))
+    }
+
+    const removeGroupState = (prev: FilterState, groupId: string): FilterState => {
+        const idx = prev.groups.findIndex(g => g.id === groupId)
+        if (idx === -1) return prev
+        const newGroups = prev.groups.filter(g => g.id !== groupId)
+        const newInterLogic = [...prev.interLogic]
+        if (idx === 0 && newInterLogic.length > 0) newInterLogic.splice(0, 1)
+        else if (idx > 0) newInterLogic.splice(idx - 1, 1)
+        return { groups: newGroups, interLogic: newInterLogic }
+    }
+
+    const removeGroup = (groupId: string) => setState(prev => removeGroupState(prev, groupId))
+
+    const addConditionToGroup = (groupId: string) => {
+        const firstCol = columns.length > 0 ? columns[0].column_name : ''
+        setState(prev => ({
+            ...prev,
+            groups: prev.groups.map(g =>
+                g.id === groupId
+                    ? { ...g, conditions: [...g.conditions, { id: uid(), column: firstCol, operator: '=', value: '' }] }
+                    : g
+            )
+        }))
+    }
+
+    const removeCondition = (groupId: string, condId: string) => {
+        setState(prev => {
+            const group = prev.groups.find(g => g.id === groupId)
+            if (!group) return prev
+            if (group.conditions.length <= 1) return removeGroupState(prev, groupId)
+            return {
+                ...prev,
+                groups: prev.groups.map(g =>
+                    g.id === groupId
+                        ? { ...g, conditions: g.conditions.filter(c => c.id !== condId) }
+                        : g
+                )
+            }
+        })
+    }
+
+    const updateCondition = (groupId: string, condId: string, field: keyof FilterCondition, val: string) => {
+        setState(prev => ({
+            ...prev,
+            groups: prev.groups.map(g =>
+                g.id === groupId
+                    ? {
+                        ...g,
+                        conditions: g.conditions.map(c => {
+                            if (c.id !== condId) return c
+                            if (field === 'column' && val !== c.column) {
+                                const validOps = getOperatorsForColumn(val)
+                                const isValid = validOps.some(op => op.value === c.operator)
+                                return { ...c, column: val, operator: isValid ? c.operator : '=', value: '', value2: undefined }
+                            }
+                            if (field === 'operator' && val !== 'BETWEEN') return { ...c, operator: val, value2: undefined }
+                            return { ...c, [field]: val }
+                        })
+                    }
+                    : g
+            )
+        }))
+    }
+
+    const toggleIntraLogic = (groupId: string) => {
+        setState(prev => ({
+            ...prev,
+            groups: prev.groups.map(g =>
+                g.id === groupId ? { ...g, intraLogic: g.intraLogic === 'AND' ? 'OR' : 'AND' } : g
+            )
+        }))
+    }
+
+    const toggleInterLogic = (index: number) => {
+        setState(prev => {
+            const newInterLogic = [...prev.interLogic]
+            newInterLogic[index] = newInterLogic[index] === 'AND' ? 'OR' : 'AND'
+            return { ...prev, interLogic: newInterLogic }
+        })
+    }
+
+    // ── Save ──
+
+    const buildV2Json = (): string => {
+        const json: FilterV2Json = {
+            version: 2,
+            groups: state.groups.map(g => ({
+                conditions: g.conditions.map(c => {
+                    const base: FilterV2Json['groups'][0]['conditions'][0] = {
+                        column: c.column, operator: c.operator, value: c.value
+                    }
+                    if (c.value2) base.value2 = c.value2
+                    return base
+                }),
+                intraLogic: g.intraLogic
+            })),
+            interLogic: state.interLogic
+        }
+        return JSON.stringify(json)
     }
 
     const handleSave = async (e: React.MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-
-        const clauses = filters.map(f => {
-            if (!f.column) return null
-
-            // Handle IS NULL / IS NOT NULL operators
-            if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
-                return `${f.column} ${f.operator}`
-            }
-
-            // Value is required for other operators
-            if (!f.value) return null
-
-            const colType = getColumnType(f.column)
-            const quote = (val: string) =>
-                colType === 'text' || colType === 'date' || colType === 'datetime' ? `'${val}'` : val
-
-            if (f.operator === 'BETWEEN' && f.value && f.value2) {
-                return `${f.column} BETWEEN ${quote(f.value)} AND ${quote(f.value2)}`
-            }
-
-            if (f.operator === 'LIKE' || f.operator === 'ILIKE') {
-                return `${f.column} ${f.operator} '%${f.value}%'`
-            }
-
-            return `${f.column} ${f.operator} ${quote(f.value)}`
-        }).filter(Boolean)
-
-        const sql = clauses.join(' AND ')
-
+        const validGroups = state.groups.filter(g =>
+            g.conditions.some(c => c.column && (
+                c.operator === 'IS NULL' || c.operator === 'IS NOT NULL' || c.value
+            ))
+        )
+        const sql = validGroups.length > 0 ? buildV2Json() : ''
         setIsSaving(true)
         try {
             await onSave(sql)
@@ -327,12 +388,16 @@ export function TableFilterCard({
         onClose()
     }
 
+    // ── Preview SQL ──
+
+    const previewSql = filterV2ToSql(buildV2Json())
+
     if (!open || !table) return null
 
     return (
         <div
             className={cn(
-                "fixed top-2 bottom-2 left-[520px] w-[800px] bg-background border rounded-2xl shadow-2xl flex flex-col",
+                "fixed top-2 bottom-2 left-[520px] w-[800px] bg-background border rounded-2xl shadow-2xl flex flex-col max-h-[calc(100vh-1rem)]",
                 "animate-in slide-in-from-left-4 duration-300",
                 className
             )}
@@ -354,202 +419,141 @@ export function TableFilterCard({
             </div>
 
             {/* Content */}
-            <ScrollArea className="flex-1">
-                <div className="p-6 space-y-4">
-                    {/* Filter List */}
-                    {filters.map((filter, index) => {
-                        const colType = getColumnType(filter.column)
+            <ScrollArea className="flex-1 overflow-y-auto">
+                <div className="p-6 space-y-3">
+                    {state.groups.map((group, groupIdx) => {
+                        const isMulti = group.conditions.length > 1
 
                         return (
-                            <div
-                                key={filter.id}
-                                className="p-4 border rounded-lg bg-card"
-                            >
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="text-xs font-medium text-muted-foreground">Filter #{index + 1}</span>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                        onClick={(e) => handleRemoveFilter(filter.id, e)}
-                                    >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                </div>
-
-                                {/* Layout: Column | Operator | Val1 | [Val2 if BETWEEN] */}
-                                <div className={cn("grid gap-2", filter.operator === 'BETWEEN' ? "grid-cols-[1.2fr_0.8fr_2fr_2fr]" : "grid-cols-[1.2fr_0.8fr_4fr]")}>
-                                    {/* Column Dropdown */}
-                                    <div>
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Column</label>
-                                        <Select
-                                            value={filter.column}
-                                            onValueChange={(val) => updateFilter(filter.id, 'column', val)}
-                                        >
-                                            <SelectTrigger className="h-9 text-xs">
-                                                <SelectValue placeholder="Select..." />
-                                            </SelectTrigger>
-                                            <SelectContent style={{ zIndex: 1000 }}>
-                                                {columns.length > 0 ? (
-                                                    columns.map(col => (
-                                                        <SelectItem key={col.column_name} value={col.column_name}>
-                                                            <span className="text-xs">{col.column_name}</span>
-                                                        </SelectItem>
-                                                    ))
-                                                ) : (
-                                                    <SelectItem value="_none" disabled>No columns</SelectItem>
-                                                )}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    {/* Operator Dropdown */}
-                                    <div>
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Operator</label>
-                                        <Select
-                                            value={filter.operator}
-                                            onValueChange={(val) => updateFilter(filter.id, 'operator', val)}
-                                        >
-                                            <SelectTrigger className="h-9 text-xs">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent style={{ zIndex: 1000 }}>
-                                                {getOperatorsForColumn(filter.column).map(op => (
-                                                    <SelectItem key={op.value} value={op.value}>
-                                                        <span className="text-xs">{op.label}</span>
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    {/* Value Input */}
-                                    <div>
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Value</label>
-                                        {filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL' ? (
-                                            <Input
-                                                className="h-9 text-xs"
-                                                placeholder="N/A"
-                                                disabled
-                                            />
-                                        ) : isBooleanColumn(filter.column) ? (
-                                            <Select
-                                                value={filter.value}
-                                                onValueChange={(val) => updateFilter(filter.id, 'value', val)}
-                                            >
-                                                <SelectTrigger className="h-9 text-xs">
-                                                    <SelectValue placeholder="Select value" />
-                                                </SelectTrigger>
-                                                <SelectContent style={{ zIndex: 1000 }}>
-                                                    <SelectItem value="true">True</SelectItem>
-                                                    <SelectItem value="false">False</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        ) : colType === 'date' ? (
-                                            <DatePicker
-                                                value={filter.value}
-                                                onChange={(v) => updateFilter(filter.id, 'value', v)}
-                                            />
-                                        ) : colType === 'datetime' ? (
-                                            <DateTimePicker
-                                                value={filter.value}
-                                                onChange={(v) => updateFilter(filter.id, 'value', v)}
-                                            />
-                                        ) : colType === 'numeric' ? (
-                                            <Input
-                                                value={filter.value}
-                                                onChange={(e) => {
-                                                    let val = e.target.value;
-                                                    val = val.replace(/[^0-9.-]/g, '');
-                                                    const parts = val.split('.');
-                                                    if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
-                                                    if (val.indexOf('-') > 0) val = val.slice(0, 1) + val.slice(1).replace(/-/g, '');
-                                                    updateFilter(filter.id, 'value', val);
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="h-9 text-xs"
-                                                type="number"
-                                                placeholder="Enter number"
-                                            />
-                                        ) : (
-                                            <Input
-                                                value={filter.value}
-                                                onChange={(e) => updateFilter(filter.id, 'value', e.target.value)}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="h-9 text-xs"
-                                                type="text"
-                                                placeholder="Enter value"
-                                            />
-                                        )}
-                                    </div>
-
-                                    {/* Second Value for BETWEEN */}
-                                    {filter.operator === 'BETWEEN' && (
-                                        <div>
-                                            <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">To Value</label>
-                                            {colType === 'date' ? (
-                                                <DatePicker
-                                                    value={filter.value2 || ''}
-                                                    onChange={(v) => updateFilter(filter.id, 'value2', v)}
-                                                />
-                                            ) : colType === 'datetime' ? (
-                                                <DateTimePicker
-                                                    value={filter.value2 || ''}
-                                                    onChange={(v) => updateFilter(filter.id, 'value2', v)}
-                                                />
-                                            ) : colType === 'numeric' ? (
-                                                <Input
-                                                    value={filter.value2 || ''}
-                                                    onChange={(e) => {
-                                                        let val = e.target.value;
-                                                        val = val.replace(/[^0-9.-]/g, '');
-                                                        const parts = val.split('.');
-                                                        if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
-                                                        if (val.indexOf('-') > 0) val = val.slice(0, 1) + val.slice(1).replace(/-/g, '');
-                                                        updateFilter(filter.id, 'value2', val);
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="h-9 text-xs"
-                                                    type="number"
-                                                    placeholder="Enter number"
-                                                />
-                                            ) : (
-                                                <Input
-                                                    value={filter.value2 || ''}
-                                                    onChange={(e) => updateFilter(filter.id, 'value2', e.target.value)}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="h-9 text-xs"
-                                                    type="text"
-                                                    placeholder="Enter value"
-                                                />
+                            <div key={group.id}>
+                                {/* Inter-group logic toggle */}
+                                {groupIdx > 0 && (
+                                    <div className="flex items-center justify-center py-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={cn(
+                                                "h-7 px-4 text-xs font-bold rounded-full border-2",
+                                                state.interLogic[groupIdx - 1] === 'OR'
+                                                    ? "border-orange-400 text-orange-600 bg-orange-50 hover:bg-orange-100"
+                                                    : "border-blue-400 text-blue-600 bg-blue-50 hover:bg-blue-100"
                                             )}
-                                        </div>
+                                            onClick={() => toggleInterLogic(groupIdx - 1)}
+                                        >
+                                            {state.interLogic[groupIdx - 1] || 'AND'}
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Group Card */}
+                                <div
+                                    className={cn(
+                                        "border rounded-lg bg-card relative",
+                                        isMulti
+                                            ? "border-dashed border-2 border-muted-foreground/40"
+                                            : "border-solid"
                                     )}
+                                >
+                                    {/* Group header */}
+                                    <div className="flex items-center justify-between px-4 pt-3 pb-1">
+                                        <div className="flex items-center gap-2">
+                                            {isMulti && (
+                                                <Badge variant="secondary" className="text-[10px] h-5">
+                                                    Group
+                                                </Badge>
+                                            )}
+                                            <span className="text-xs text-muted-foreground">
+                                                {isMulti
+                                                    ? `${group.conditions.length} conditions`
+                                                    : `Filter #${groupIdx + 1}`}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            {isMulti && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className={cn(
+                                                        "h-6 px-2 text-[10px] font-bold rounded-full",
+                                                        group.intraLogic === 'OR'
+                                                            ? "border-orange-400 text-orange-600 bg-orange-50 hover:bg-orange-100"
+                                                            : "border-blue-400 text-blue-600 bg-blue-50 hover:bg-blue-100"
+                                                    )}
+                                                    onClick={() => toggleIntraLogic(group.id)}
+                                                >
+                                                    {group.intraLogic}
+                                                </Button>
+                                            )}
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                                onClick={() => removeGroup(group.id)}
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {/* Conditions */}
+                                    <div className="px-4 pb-3 space-y-2">
+                                        {group.conditions.map((cond, condIdx) => (
+                                            <ConditionRow
+                                                key={cond.id}
+                                                condition={cond}
+                                                condIdx={condIdx}
+                                                isGrouped={isMulti}
+                                                columns={columns}
+                                                getColumnType={getColumnType}
+                                                getOperatorsForColumn={getOperatorsForColumn}
+                                                isBooleanColumn={isBooleanColumn}
+                                                onUpdate={(field, val) => updateCondition(group.id, cond.id, field, val)}
+                                                onRemove={() => removeCondition(group.id, cond.id)}
+                                            />
+                                        ))}
+
+                                        {/* Add condition to group */}
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full h-7 text-xs text-muted-foreground hover:text-foreground"
+                                            onClick={(e) => { e.stopPropagation(); addConditionToGroup(group.id) }}
+                                        >
+                                            <Plus className="mr-1 h-3 w-3" /> Add Condition to Group
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         )
                     })}
 
                     {/* Empty State */}
-                    {filters.length === 0 && (
+                    {state.groups.length === 0 && (
                         <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
                             <p className="text-sm font-medium mb-1">No filters configured</p>
                             <p className="text-xs">Click the button below to add a filter</p>
                         </div>
                     )}
 
-                    {/* Add Filter Button */}
+                    {/* Add Filter Group Button */}
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleAddFilter}
+                        onClick={(e) => { e.stopPropagation(); addGroup() }}
                         onMouseDown={(e) => e.stopPropagation()}
                         className="w-full"
                     >
                         <Plus className="mr-2 h-4 w-4" /> Add Filter
                     </Button>
 
-                    {/* Debug info */}
+                    {/* SQL Preview */}
+                    {previewSql && (
+                        <div className="mt-4 p-3 bg-muted/50 border rounded-lg">
+                            <p className="text-[10px] font-medium text-muted-foreground uppercase mb-1">SQL Preview</p>
+                            <code className="text-xs text-foreground break-all">WHERE {previewSql}</code>
+                        </div>
+                    )}
+
                     {columns.length === 0 && (
                         <p className="text-xs text-amber-600 mt-2">
                             Note: No columns available for this table. Filters may not work correctly.
@@ -563,7 +567,7 @@ export function TableFilterCard({
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={(e) => { e.stopPropagation(); setFilters([]) }}
+                    onClick={(e) => { e.stopPropagation(); setState({ groups: [], interLogic: [] }) }}
                     className="text-muted-foreground"
                 >
                     Reset All
@@ -572,11 +576,7 @@ export function TableFilterCard({
                     <Button variant="outline" size="sm" onClick={handleClose}>
                         Cancel
                     </Button>
-                    <Button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        size="sm"
-                    >
+                    <Button onClick={handleSave} disabled={isSaving} size="sm">
                         {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {!isSaving && <Save className="mr-2 h-4 w-4" />}
                         Save Filters
@@ -587,12 +587,228 @@ export function TableFilterCard({
     )
 }
 
-function DatePicker({ value, onChange }: { value: string, onChange: (val: string) => void }) {
+// ─── Condition Row ───────────────────────────────────────────
+
+function ConditionRow({
+    condition,
+    condIdx,
+    isGrouped,
+    columns,
+    getColumnType,
+    getOperatorsForColumn,
+    isBooleanColumn,
+    onUpdate,
+    onRemove
+}: {
+    condition: FilterCondition
+    condIdx: number
+    isGrouped: boolean
+    columns: { column_name: string; real_data_type?: string; data_type?: string }[]
+    getColumnType: (colName: string) => string
+    getOperatorsForColumn: (colName: string) => { value: string; label: string }[]
+    isBooleanColumn: (colName: string) => boolean
+    onUpdate: (field: keyof FilterCondition, val: string) => void
+    onRemove: () => void
+}) {
+    const [columnOpen, setColumnOpen] = useState(false)
+    const colType = getColumnType(condition.column)
+    const isIn = condition.operator === 'IN'
+    const isBetween = condition.operator === 'BETWEEN'
+    const isNull = condition.operator === 'IS NULL' || condition.operator === 'IS NOT NULL'
+
+    return (
+        <div className="flex items-start gap-2">
+            {/* Arrow indicator for grouped conditions */}
+            {isGrouped && condIdx > 0 && (
+                <div className="flex items-center pt-6">
+                    <CornerDownRight className="h-4 w-4 text-muted-foreground/60" />
+                </div>
+            )}
+
+            <div className={cn(
+                "flex-1 grid gap-2",
+                isBetween
+                    ? "grid-cols-[1.2fr_0.8fr_2fr_2fr]"
+                    : "grid-cols-[1.2fr_0.8fr_4fr]"
+            )}>
+                {/* Column */}
+                <div>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Column</label>
+                    <Popover open={columnOpen} onOpenChange={setColumnOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={columnOpen}
+                                className="h-9 w-full justify-between text-xs font-normal"
+                            >
+                                <span className="truncate">
+                                    {condition.column || 'Select...'}
+                                </span>
+                                <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[220px] p-0" style={{ zIndex: 1000 }}>
+                            <Command>
+                                <CommandInput placeholder="Search columns..." className="text-xs" />
+                                <CommandList>
+                                    <CommandEmpty>No columns found</CommandEmpty>
+                                    <CommandGroup>
+                                        {columns.map(col => (
+                                            <CommandItem
+                                                key={col.column_name}
+                                                value={col.column_name}
+                                                onSelect={(val) => {
+                                                    onUpdate('column', val)
+                                                    setColumnOpen(false)
+                                                }}
+                                                className="text-xs"
+                                            >
+                                                <Check className={cn("mr-2 h-3.5 w-3.5", condition.column === col.column_name ? "opacity-100" : "opacity-0")} />
+                                                {col.column_name}
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
+                </div>
+
+                {/* Operator */}
+                <div>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Operator</label>
+                    <Select value={condition.operator} onValueChange={(val) => onUpdate('operator', val)}>
+                        <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent style={{ zIndex: 1000 }}>
+                            {getOperatorsForColumn(condition.column).map(op => (
+                                <SelectItem key={op.value} value={op.value}>
+                                    <span className="text-xs">{op.label}</span>
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Value */}
+                <div>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Value</label>
+                    {isNull ? (
+                        <Input className="h-9 text-xs" placeholder="N/A" disabled />
+                    ) : isIn ? (
+                        <Textarea
+                            value={condition.value}
+                            onChange={(e) => onUpdate('value', e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs min-h-[36px] resize-y"
+                            placeholder="Enter comma-separated values: 1, 2, 3"
+                            rows={2}
+                        />
+                    ) : isBooleanColumn(condition.column) ? (
+                        <Select value={condition.value} onValueChange={(val) => onUpdate('value', val)}>
+                            <SelectTrigger className="h-9 text-xs">
+                                <SelectValue placeholder="Select value" />
+                            </SelectTrigger>
+                            <SelectContent style={{ zIndex: 1000 }}>
+                                <SelectItem value="true">True</SelectItem>
+                                <SelectItem value="false">False</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    ) : colType === 'date' ? (
+                        <DatePicker value={condition.value} onChange={(v) => onUpdate('value', v)} />
+                    ) : colType === 'datetime' ? (
+                        <DateTimePicker value={condition.value} onChange={(v) => onUpdate('value', v)} />
+                    ) : colType === 'numeric' ? (
+                        <Input
+                            value={condition.value}
+                            onChange={(e) => {
+                                let val = e.target.value;
+                                val = val.replace(/[^0-9.-]/g, '');
+                                const parts = val.split('.');
+                                if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                                if (val.indexOf('-') > 0) val = val.slice(0, 1) + val.slice(1).replace(/-/g, '');
+                                onUpdate('value', val);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-9 text-xs"
+                            type="number"
+                            placeholder="Enter number"
+                        />
+                    ) : (
+                        <Input
+                            value={condition.value}
+                            onChange={(e) => onUpdate('value', e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-9 text-xs"
+                            type="text"
+                            placeholder="Enter value"
+                        />
+                    )}
+                </div>
+
+                {/* Second Value for BETWEEN */}
+                {isBetween && (
+                    <div>
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">To Value</label>
+                        {colType === 'date' ? (
+                            <DatePicker value={condition.value2 || ''} onChange={(v) => onUpdate('value2', v)} />
+                        ) : colType === 'datetime' ? (
+                            <DateTimePicker value={condition.value2 || ''} onChange={(v) => onUpdate('value2', v)} />
+                        ) : colType === 'numeric' ? (
+                            <Input
+                                value={condition.value2 || ''}
+                                onChange={(e) => {
+                                    let val = e.target.value;
+                                    val = val.replace(/[^0-9.-]/g, '');
+                                    const parts = val.split('.');
+                                    if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                                    if (val.indexOf('-') > 0) val = val.slice(0, 1) + val.slice(1).replace(/-/g, '');
+                                    onUpdate('value2', val);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-9 text-xs"
+                                type="number"
+                                placeholder="Enter number"
+                            />
+                        ) : (
+                            <Input
+                                value={condition.value2 || ''}
+                                onChange={(e) => onUpdate('value2', e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-9 text-xs"
+                                type="text"
+                                placeholder="Enter value"
+                            />
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Remove button */}
+            <div className="pt-6">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => { e.stopPropagation(); onRemove() }}
+                >
+                    <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+            </div>
+        </div>
+    )
+}
+
+// ─── Date Pickers ────────────────────────────────────────────
+
+function DatePicker({ value, onChange }: { value: string; onChange: (val: string) => void }) {
     return (
         <Popover>
             <PopoverTrigger asChild>
                 <Button
-                    variant={"outline"}
+                    variant="outline"
                     className={cn(
                         "w-full h-9 justify-start text-left font-normal text-xs",
                         !value && "text-muted-foreground"
@@ -615,8 +831,7 @@ function DatePicker({ value, onChange }: { value: string, onChange: (val: string
     )
 }
 
-function DateTimePicker({ value, onChange }: { value: string, onChange: (val: string) => void }) {
-    // Parse existing value or use defaults
+function DateTimePicker({ value, onChange }: { value: string; onChange: (val: string) => void }) {
     const parseValue = () => {
         if (!value) return { date: undefined, time: '00:00:00' }
         const parts = value.split(' ')
@@ -642,7 +857,6 @@ function DateTimePicker({ value, onChange }: { value: string, onChange: (val: st
             const formattedDate = format(date, 'yyyy-MM-dd')
             onChange(`${formattedDate} ${newTime}`)
         } else {
-            // If no date selected, just store time with placeholder date
             onChange(`1970-01-01 ${newTime}`)
         }
     }
@@ -651,7 +865,7 @@ function DateTimePicker({ value, onChange }: { value: string, onChange: (val: st
         <Popover>
             <PopoverTrigger asChild>
                 <Button
-                    variant={"outline"}
+                    variant="outline"
                     className={cn(
                         "w-full h-9 justify-start text-left font-normal text-xs",
                         !value && "text-muted-foreground"

@@ -11,6 +11,7 @@ from contextlib import contextmanager
 
 import duckdb
 import psycopg2
+import pyarrow as pa
 
 from destinations.base import BaseDestination, CDCRecord
 from core.models import Destination, PipelineDestinationTableSync
@@ -48,6 +49,7 @@ class PostgreSQLDestination(BaseDestination):
         self._source_config = source_config
         self._duckdb_conn: Optional[duckdb.DuckDBPyConnection] = None
         self._pg_conn: Optional[psycopg2.extensions.connection] = None
+        self._staging_tables: set[str] = set()  # Track created staging tables for reuse
         self._validate_config()
 
     def _validate_config(self) -> None:
@@ -176,8 +178,14 @@ class PostgreSQLDestination(BaseDestination):
                 self._is_initialized = False
 
         try:
-            # Create in-memory DuckDB connection
+            # Create in-memory DuckDB connection with performance tuning
             self._duckdb_conn = duckdb.connect(":memory:")
+            self._duckdb_conn.execute("SET memory_limit='4GB'")
+            self._duckdb_conn.execute("SET threads=4")
+            self._duckdb_conn.execute("SET enable_progress_bar=false")
+
+            # Reset staging table tracker on new connection
+            self._staging_tables.clear()
 
             # Install and load PostgreSQL extension
             self._duckdb_conn.execute("INSTALL postgres;")
@@ -463,20 +471,397 @@ class PostgreSQLDestination(BaseDestination):
         """
         Parse filter_sql into list of WHERE clauses.
 
-        Format: "column_1 = '11';column_2>1"
+        Supports two formats:
+        1. Legacy: "column_1 = '11';column_2>1" (semicolon-separated, all AND)
+        2. JSON v2: {"version": 2, "groups": [...], "interLogic": [...]}
 
         Args:
-            filter_sql: Semicolon-separated filter conditions
+            filter_sql: Semicolon-separated filter conditions or JSON v2 string
 
         Returns:
-            List of individual filter conditions
+            List of individual filter conditions (for legacy format)
         """
         if not filter_sql:
             return []
 
-        # Split by semicolon and strip whitespace
+        # Try JSON v2 format first
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                # V2 format - return empty list (use _build_where_clause_v2 instead)
+                return []
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Legacy format: Split by semicolon and strip whitespace
         filters = [f.strip() for f in filter_sql.split(";") if f.strip()]
         return filters
+
+    def _build_where_clause_from_filter_sql(self, filter_sql: str) -> str:
+        """
+        Build a complete WHERE clause string from filter_sql.
+
+        Supports both legacy semicolon format and JSON v2 format with 
+        AND/OR logic, grouping, and IN operator.
+
+        Args:
+            filter_sql: Filter SQL string (legacy or JSON v2)
+
+        Returns:
+            Complete WHERE clause (without the WHERE keyword), or empty string
+        """
+        if not filter_sql:
+            return ""
+
+        # Try JSON v2 format first
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                return self._build_where_clause_v2(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Legacy format: semicolon-separated, all AND
+        filters = [f.strip() for f in filter_sql.split(";") if f.strip()]
+        if not filters:
+            return ""
+        return " AND ".join([f"({condition})" for condition in filters])
+
+    def _build_where_clause_v2(self, parsed: dict) -> str:
+        """
+        Build WHERE clause from JSON v2 filter format.
+
+        Supports grouping with AND/OR between groups and within groups,
+        and the IN operator.
+
+        Args:
+            parsed: Parsed JSON v2 filter dict
+
+        Returns:
+            WHERE clause string (without WHERE keyword)
+        """
+        groups = parsed.get("groups", [])
+        inter_logic = parsed.get("interLogic", [])
+
+        if not groups:
+            return ""
+
+        group_clauses = []
+        for group in groups:
+            conditions = group.get("conditions", [])
+            intra_logic = group.get("intraLogic", "AND")
+
+            if not conditions:
+                continue
+
+            clauses = []
+            for cond in conditions:
+                column = cond.get("column", "")
+                operator = cond.get("operator", "")
+                value = cond.get("value", "")
+                value2 = cond.get("value2", "")
+
+                if not column:
+                    continue
+
+                clause = self._build_single_clause(column, operator, value, value2)
+                if clause:
+                    clauses.append(clause)
+
+            if not clauses:
+                continue
+
+            if len(clauses) == 1:
+                group_clauses.append(clauses[0])
+            else:
+                group_clauses.append(f"({f' {intra_logic} '.join(clauses)})")
+
+        if not group_clauses:
+            return ""
+
+        # Join groups with inter-logic operators
+        result = group_clauses[0]
+        for i in range(1, len(group_clauses)):
+            logic = inter_logic[i - 1] if i - 1 < len(inter_logic) else "AND"
+            result = f"{result} {logic} {group_clauses[i]}"
+
+        return result
+
+    def _build_single_clause(self, column: str, operator: str, value: str, value2: str = "") -> str:
+        """
+        Build a single SQL clause from filter components.
+
+        Args:
+            column: Column name
+            operator: SQL operator
+            value: Filter value
+            value2: Second value (for BETWEEN)
+
+        Returns:
+            SQL clause string
+        """
+        op_upper = operator.upper().strip()
+
+        if op_upper in ("IS NULL", "IS NOT NULL"):
+            return f"{column} {op_upper}"
+
+        if not value and op_upper not in ("IS NULL", "IS NOT NULL"):
+            return ""
+
+        if op_upper == "BETWEEN" and value and value2:
+            q_val = self._quote_filter_value(value)
+            q_val2 = self._quote_filter_value(value2)
+            return f"{column} BETWEEN {q_val} AND {q_val2}"
+
+        if op_upper in ("LIKE", "ILIKE"):
+            return f"{column} {op_upper} '%{value}%'"
+
+        if op_upper == "IN":
+            # Values are comma-separated
+            values = [v.strip() for v in value.split(",") if v.strip()]
+            quoted = [self._quote_filter_value(v) for v in values]
+            return f"{column} IN ({', '.join(quoted)})"
+
+        return f"{column} {operator} {self._quote_filter_value(value)}"
+
+    def _quote_filter_value(self, value: str) -> str:
+        """Quote a filter value - numeric values are unquoted, strings are quoted."""
+        try:
+            float(value)
+            return value
+        except (ValueError, TypeError):
+            return f"'{value}'"
+
+    def _parse_debezium_field_types(
+        self, schema: Optional[dict]
+    ) -> dict[str, dict]:
+        """
+        Parse the Debezium envelope schema to extract column type metadata.
+
+        Debezium wraps each CDC event in an envelope with a ``schema`` field
+        that describes column types (``after.fields``).  This method extracts
+        that info so we can coerce raw values to proper Python types before
+        building a PyArrow table — ensuring DuckDB sees correct column types
+        for custom SQL aggregations (SUM, AVG, etc.).
+
+        Debezium schema structure::
+
+            {
+                "type": "struct",
+                "fields": [
+                    {"field": "before", ...},
+                    {"field": "after", "fields": [
+                        {"field": "amount", "type": "bytes",
+                         "name": "org.apache.kafka.connect.data.Decimal",
+                         "parameters": {"scale": "2", ...}},
+                        {"field": "employee_id", "type": "int32"},
+                        ...
+                    ]},
+                    {"field": "op", ...},
+                    ...
+                ]
+            }
+
+        Args:
+            schema: Debezium envelope schema dict (from CDCRecord.schema)
+
+        Returns:
+            dict mapping column_name → {type, name, parameters}
+        """
+        if not schema or not isinstance(schema, dict):
+            return {}
+
+        try:
+            fields = schema.get("fields", [])
+            for field in fields:
+                if field.get("field") == "after":
+                    result = {}
+                    for col_field in field.get("fields", []):
+                        col_name = col_field.get("field")
+                        if col_name:
+                            result[col_name] = {
+                                "type": col_field.get("type", ""),
+                                "name": col_field.get("name", ""),
+                                "parameters": col_field.get("parameters", {}),
+                            }
+                    return result
+        except Exception:
+            pass
+        return {}
+
+    def _coerce_values_for_duckdb(
+        self,
+        values: list,
+        dbz_info: dict,
+        col_name: str,
+    ) -> list:
+        """
+        Convert raw Debezium-encoded values to proper Python types so that
+        PyArrow infers correct DuckDB column types.
+
+        Handles all major Debezium logical types:
+
+        - ``org.apache.kafka.connect.data.Decimal``  (base64 or string → float)
+        - ``io.debezium.time.Date``                  (int days → datetime.date)
+        - ``io.debezium.time.MicroTimestamp``         (int μs → datetime)
+        - ``io.debezium.time.NanoTimestamp``          (int ns → datetime)
+        - ``io.debezium.time.Timestamp``              (int ms → datetime)
+        - ``io.debezium.time.MicroTime``              (int μs → time)
+        - ``io.debezium.time.Time``                   (int ms → time)
+        - Primitive types: int16/int32/int64, float/double, boolean
+
+        Args:
+            values: Raw column values from Debezium
+            dbz_info: Field type metadata from ``_parse_debezium_field_types``
+            col_name: Column name (for logging)
+
+        Returns:
+            Coerced column values with proper Python types
+        """
+        import base64
+        import datetime
+        from decimal import Decimal
+
+        dbz_type = dbz_info.get("type", "")
+        dbz_name = dbz_info.get("name", "")
+        params = dbz_info.get("parameters", {})
+
+        # ── DECIMAL / NUMERIC ──
+        if dbz_name == "org.apache.kafka.connect.data.Decimal":
+            scale = int(params.get("scale", 0))
+            result = []
+            for v in values:
+                if v is None:
+                    result.append(None)
+                elif isinstance(v, (int, float)):
+                    result.append(float(v))
+                elif isinstance(v, str):
+                    # Try plain numeric string first
+                    try:
+                        result.append(float(v))
+                    except ValueError:
+                        # Base64-encoded big-endian byte array
+                        try:
+                            decoded = base64.b64decode(v)
+                            int_val = int.from_bytes(
+                                decoded, byteorder="big", signed=True
+                            )
+                            result.append(
+                                float(Decimal(int_val) / Decimal(10**scale))
+                            )
+                        except Exception:
+                            result.append(None)
+                else:
+                    result.append(v)
+            return result
+
+        # ── DATE (days since epoch) ──
+        if dbz_name == "io.debezium.time.Date":
+            epoch = datetime.date(1970, 1, 1)
+            return [
+                (epoch + datetime.timedelta(days=v))
+                if isinstance(v, int) else v
+                for v in values
+            ]
+
+        # ── TIMESTAMP (microseconds since epoch) ──
+        if dbz_name in (
+            "io.debezium.time.MicroTimestamp",
+            "io.debezium.time.NanoTimestamp",
+        ):
+            epoch = datetime.datetime(1970, 1, 1)
+            result = []
+            for v in values:
+                if v is None:
+                    result.append(None)
+                elif isinstance(v, int):
+                    if "Nano" in dbz_name:
+                        result.append(
+                            epoch + datetime.timedelta(microseconds=v // 1000)
+                        )
+                    else:
+                        result.append(
+                            epoch + datetime.timedelta(microseconds=v)
+                        )
+                else:
+                    result.append(v)
+            return result
+
+        # ── TIMESTAMP (milliseconds since epoch) ──
+        if dbz_name == "io.debezium.time.Timestamp":
+            epoch = datetime.datetime(1970, 1, 1)
+            return [
+                (epoch + datetime.timedelta(milliseconds=v))
+                if isinstance(v, int) else v
+                for v in values
+            ]
+
+        # ── TIME (microseconds/milliseconds since midnight) ──
+        if dbz_name in ("io.debezium.time.MicroTime", "io.debezium.time.Time"):
+            result = []
+            for v in values:
+                if v is None:
+                    result.append(None)
+                elif isinstance(v, int):
+                    if "Micro" in dbz_name:
+                        td = datetime.timedelta(microseconds=v)
+                    else:
+                        td = datetime.timedelta(milliseconds=v)
+                    result.append((datetime.datetime.min + td).time())
+                else:
+                    result.append(v)
+            return result
+
+        # ── Primitive int types ──
+        if dbz_type in ("int16", "int32") and not dbz_name:
+            return [int(v) if v is not None else None for v in values]
+
+        if dbz_type == "int64" and not dbz_name:
+            return [int(v) if v is not None else None for v in values]
+
+        # ── Primitive float types ──
+        if dbz_type in ("float32", "float", "float64", "double"):
+            return [float(v) if v is not None else None for v in values]
+
+        # ── Boolean ──
+        if dbz_type == "boolean":
+            return [bool(v) if v is not None else None for v in values]
+
+        # Default: return as-is (string, bytes, etc.)
+        return values
+
+    def _auto_coerce_numeric_column(self, values: list) -> list:
+        """
+        Fallback auto-detection for columns when no Debezium schema is
+        available.  Only coerces if ALL non-None values are numeric strings
+        (contain a decimal point to avoid false positives with IDs/codes).
+
+        Args:
+            values: Raw column values
+
+        Returns:
+            Coerced values (float) or originals if not numeric
+        """
+        if not values:
+            return values
+
+        samples = [v for v in values if v is not None]
+        if not samples or not all(isinstance(s, str) for s in samples):
+            return values
+
+        # Only coerce strings with a decimal point (avoids IDs, codes)
+        has_dot = any("." in s for s in samples)
+        if not has_dot:
+            return values
+
+        try:
+            for s in samples:
+                float(s)
+            return [float(v) if v is not None else None for v in values]
+        except (ValueError, TypeError):
+            return values
 
     def _insert_batch_to_duckdb(
         self,
@@ -484,11 +869,16 @@ class PostgreSQLDestination(BaseDestination):
         table_name: str,
     ) -> None:
         """
-        Insert CDC records into DuckDB table with original table name.
+        Insert CDC records into a DuckDB table with proper column types.
 
-        Keeps raw Debezium-encoded values (dates as integers, etc.) to avoid
-        premature type conversion. These will be properly converted when
-        merging into PostgreSQL.
+        Uses the Debezium schema attached to CDC records to coerce raw values
+        (base64 decimals, epoch timestamps, etc.) into proper Python types
+        *before* building the PyArrow table.  This ensures DuckDB sees correct
+        column types — critical when custom SQL uses aggregations like
+        ``SUM(amount)`` or ``CAST(ts AS DATE)``.
+
+        Falls back to auto-detection of numeric strings when Debezium schema
+        is not available.
 
         Args:
             records: CDC records to insert
@@ -503,21 +893,42 @@ class PostgreSQLDestination(BaseDestination):
         # Drop existing table if exists
         self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {safe_table_name}")
 
-        # Convert records to list of dicts for DuckDB
-        # DuckDB can infer schema from Python dicts
+        # Convert records to columnar format
         data = [record.value for record in records]
+        columns = list(data[0].keys())
 
-        # Use DuckDB's automatic table creation from Python objects
-        # This preserves types better than manual VARCHAR insertion
-        import pandas as pd
+        # Parse Debezium schema for type-aware ingestion
+        debezium_types = self._parse_debezium_field_types(records[0].schema)
 
-        df = pd.DataFrame(data)
+        arrays = {}
+        for col in columns:
+            raw_values = [row.get(col) for row in data]
+            dbz_info = debezium_types.get(col)
 
-        # Register the DataFrame as a DuckDB table
-        self._duckdb_conn.execute(f"CREATE TABLE {safe_table_name} AS SELECT * FROM df")
+            if dbz_info:
+                # Schema-aware coercion (primary path)
+                arrays[col] = self._coerce_values_for_duckdb(
+                    raw_values, dbz_info, col
+                )
+            elif not debezium_types:
+                # No schema at all — try auto-detecting numeric strings
+                arrays[col] = self._auto_coerce_numeric_column(raw_values)
+            else:
+                # Schema exists but this column isn't in it — keep raw
+                arrays[col] = raw_values
+
+        # Create Arrow table — DuckDB's native format (zero-copy)
+        arrow_table = pa.table(arrays)
+
+        # Register the Arrow table and create DuckDB table from it
+        self._duckdb_conn.execute(
+            f"CREATE TABLE {safe_table_name} AS SELECT * FROM arrow_table"
+        )
 
         self._logger.debug(
-            f"Inserted {len(records)} records into DuckDB table '{safe_table_name}'"
+            f"Inserted {len(records)} records into DuckDB table "
+            f"'{safe_table_name}' (PyArrow, "
+            f"schema_aware={'yes' if debezium_types else 'auto'})"
         )
 
     def _apply_filters_in_duckdb(
@@ -528,12 +939,12 @@ class PostgreSQLDestination(BaseDestination):
         """
         Apply filter SQL directly in DuckDB by deleting non-matching rows.
 
-        Filter format: "column_1 = '11';column_2>1"
-        Converts to: WHERE column_1 = '11' AND column_2>1
+        Supports both legacy format and JSON v2 format with AND/OR grouping
+        and IN operator.
 
         Args:
             table_name: DuckDB table name
-            filter_sql: Semicolon-separated filter conditions
+            filter_sql: Filter conditions (legacy semicolon or JSON v2)
         """
         if not filter_sql:
             return
@@ -541,13 +952,10 @@ class PostgreSQLDestination(BaseDestination):
         # Sanitize table name
         safe_table_name = table_name.replace(".", "_").replace("-", "_")
 
-        # Parse filter conditions
-        filters = self._parse_filter_sql(filter_sql)
-        if not filters:
+        # Build WHERE clause using the unified method
+        where_conditions = self._build_where_clause_from_filter_sql(filter_sql)
+        if not where_conditions:
             return
-
-        # Build WHERE clause (AND all conditions together)
-        where_conditions = " AND ".join([f"({condition})" for condition in filters])
 
         # Delete rows that DON'T match the filter (keep only matching rows)
         delete_sql = f"""
@@ -618,13 +1026,28 @@ class PostgreSQLDestination(BaseDestination):
 
         Args:
             records: CDC records to filter
-            filter_sql: Filter conditions (semicolon-separated)
+            filter_sql: Filter conditions (semicolon-separated or JSON v2)
 
         Returns:
             Filtered records
         """
         if not filter_sql:
             return records
+
+        # For v2 format, try to use DuckDB filtering
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                # V2 format - fall through to DuckDB-based filtering
+                # This legacy method doesn't support v2, return all records
+                self._logger.warning(
+                    "V2 filter format not supported in legacy Python filtering, "
+                    "use DuckDB-based filtering instead"
+                )
+                return records
+        except (json.JSONDecodeError, TypeError):
+            pass
 
         filters = self._parse_filter_sql(filter_sql)
         if not filters:
@@ -793,6 +1216,48 @@ class PostgreSQLDestination(BaseDestination):
         # Default to first column if no key info
         return list(record.value.keys())[:1]
 
+    def _get_target_primary_key(self, target_table: str) -> list[str]:
+        """
+        Get primary key columns from the destination PostgreSQL table.
+
+        Queries ``pg_index`` + ``pg_attribute`` to retrieve the actual PK
+        columns of the target table.  This is essential when custom SQL
+        transforms data into a different schema (e.g., source PK is
+        ``transaction_id`` but aggregate target PK is ``report_date``).
+
+        Args:
+            target_table: Target table name on the destination database
+
+        Returns:
+            List of primary key column names, or empty list if no PK found
+        """
+        try:
+            with self._pg_conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT a.attname
+                    FROM pg_index i
+                    JOIN pg_attribute a
+                        ON a.attrelid = i.indrelid
+                        AND a.attnum = ANY(i.indkey)
+                    WHERE i.indrelid = %s::regclass
+                      AND i.indisprimary
+                    ORDER BY array_position(i.indkey, a.attnum)
+                    """,
+                    (f"{self.schema}.{target_table}",),
+                )
+                pk_cols = [row[0] for row in cursor.fetchall()]
+                if pk_cols:
+                    self._logger.debug(
+                        f"Detected target PK for '{target_table}': {pk_cols}"
+                    )
+                return pk_cols
+        except Exception as e:
+            self._logger.warning(
+                f"Failed to detect PK for target table '{target_table}': {e}"
+            )
+            return []
+
     def _merge_into_postgres(
         self,
         records: list[dict],
@@ -856,10 +1321,6 @@ class PostgreSQLDestination(BaseDestination):
                         if converted_value.endswith("Z"):
                             converted_value = converted_value[:-1] + "+00:00"
 
-                    if log_first:
-                        self._logger.info(
-                            f"    Converted: {repr(converted_value)} (type={type(converted_value).__name__})"
-                        )
                     converted.append(converted_value)
                 return converted
 
@@ -911,17 +1372,30 @@ class PostgreSQLDestination(BaseDestination):
                 col_defs.append(f'"{c}" {duck_type}')
 
             col_def_str = ", ".join(col_defs)
-            self._duckdb_conn.execute(f"CREATE TABLE {temp_source} ({col_def_str})")
 
-            # Insert values
+            # Use persistent staging table: create once, truncate on reuse
+            # Key includes target_table to avoid schema conflicts across tables
+            staging_key = f"{temp_source}_{target_table}"
+            if staging_key in self._staging_tables:
+                try:
+                    self._duckdb_conn.execute(f"DELETE FROM {temp_source}")
+                except Exception:
+                    # Schema might have changed, recreate
+                    self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {temp_source}")
+                    self._duckdb_conn.execute(f"CREATE TABLE {temp_source} ({col_def_str})")
+            else:
+                self._duckdb_conn.execute(f"DROP TABLE IF EXISTS {temp_source}")
+                self._duckdb_conn.execute(f"CREATE TABLE {temp_source} ({col_def_str})")
+                self._staging_tables.add(staging_key)
+
+            # Insert values using executemany for bulk performance
             placeholders = ", ".join(["?" for _ in columns])
 
-            # Insert all records with type-converted values
-            for record in records:
-                values = convert_record(record)
-                self._duckdb_conn.execute(
-                    f"INSERT INTO {temp_source} VALUES ({placeholders})", values
-                )
+            # Convert all records first, then bulk insert
+            all_values = [convert_record(record, log_first=(i == 0)) for i, record in enumerate(records)]
+            self._duckdb_conn.executemany(
+                f"INSERT INTO {temp_source} VALUES ({placeholders})", all_values
+            )
 
             # Build DELETE + INSERT pattern instead of MERGE INTO
             # DuckDB's postgres_scanner strips type casts when translating MERGE to UPDATE,
@@ -1108,8 +1582,45 @@ class PostgreSQLDestination(BaseDestination):
 
             transformed = valid_rows
 
-            # Get primary key columns from first record
-            key_columns = self._get_primary_key_columns(records[0])
+            # Validate target table exists on destination before MERGE
+            target_schema = self._get_table_schema(target_table)
+            if not target_schema:
+                raise DestinationException(
+                    f"Target table '{self.schema}.{target_table}' does not exist "
+                    f"on destination '{self._config.name}'. "
+                    f"Please verify 'table_name_target' is set correctly in "
+                    f"the pipeline table sync configuration. "
+                    f"Source table: '{source_table}', "
+                    f"configured target: '{target_table}'."
+                )
+
+            # Determine primary key columns for MERGE
+            if table_sync.custom_sql:
+                # Custom SQL may transform data into a different schema
+                # (e.g., transaction rows → daily aggregates).
+                # Use the TARGET table's PK, not the source CDC record's PK.
+                key_columns = self._get_target_primary_key(target_table)
+                if not key_columns:
+                    # Fallback: try source record PK if target PK detection fails
+                    source_pk = self._get_primary_key_columns(records[0])
+                    # Only use source PK if it exists in the transformed output
+                    output_cols = set(transformed[0].keys())
+                    if all(k in output_cols for k in source_pk):
+                        key_columns = source_pk
+                        self._logger.warning(
+                            f"Could not detect target PK for '{target_table}', "
+                            f"falling back to source PK: {source_pk}"
+                        )
+                    else:
+                        # Last resort: use first column of transformed output
+                        key_columns = [list(output_cols)[0]]
+                        self._logger.warning(
+                            f"Could not detect target PK for '{target_table}' "
+                            f"and source PK {source_pk} not in output columns. "
+                            f"Using first output column as key: {key_columns}"
+                        )
+            else:
+                key_columns = self._get_primary_key_columns(records[0])
 
             # Step 4: MERGE INTO destination
             written = self._merge_into_postgres(transformed, target_table, key_columns)
@@ -1128,11 +1639,15 @@ class PostgreSQLDestination(BaseDestination):
             # Force send notification
             try:
                 notification_repo = NotificationLogRepository()
+                
+                # Sanitize error message before sending to notification
+                sanitized_error = sanitize_for_db(e, self._config.name, "POSTGRES")
+                
                 notification_repo.upsert_notification_by_key(
                     NotificationLogCreate(
                         key_notification=f"destination_connection_error_{self.destination_id}",
                         title=f"PostgreSQL Connection Error",
-                        message=f"Failed to connect to PostgreSQL destination {self._config.name}: {error_msg}",
+                        message=f"Failed to connect to PostgreSQL destination {self._config.name}: {sanitized_error}",
                         type="ERROR",
                         is_force_sent=True,
                     )
@@ -1160,11 +1675,14 @@ class PostgreSQLDestination(BaseDestination):
                     or "operationalerror" in error_msg
                 )
 
+                # Sanitize error message before sending to notification
+                sanitized_error = sanitize_for_db(e, self._config.name, "POSTGRES")
+
                 notification_repo.upsert_notification_by_key(
                     NotificationLogCreate(
                         key_notification=f"destination_error_{self.destination_id}_{source_table}",
                         title=f"PostgreSQL Sync Error: {target_table}",
-                        message=f"Failed to sync table {source_table} to {target_table}: {str(e)}",
+                        message=f"Failed to sync table {source_table} to {target_table}: {sanitized_error}",
                         type="ERROR",
                         is_force_sent=is_force_sent,
                     )
@@ -1300,6 +1818,9 @@ class PostgreSQLDestination(BaseDestination):
                 pass
             self._pg_conn = None
 
+        # Clear staging table tracker
+        self._staging_tables.clear()
+
     def close(self) -> None:
         """Close DuckDB and PostgreSQL connections."""
         if self._duckdb_conn:
@@ -1315,6 +1836,9 @@ class PostgreSQLDestination(BaseDestination):
             except Exception as e:
                 self._logger.warning(f"Error closing PostgreSQL connection: {e}")
             self._pg_conn = None
+
+        # Clear staging table tracker
+        self._staging_tables.clear()
 
         self._is_initialized = False
         self._logger.info(f"PostgreSQL destination closed: {self._config.name}")

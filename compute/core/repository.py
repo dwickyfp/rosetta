@@ -143,7 +143,7 @@ class PipelineRepository:
             session.execute(
                 """
                 UPDATE pipelines 
-                SET status = %s, updated_at = NOW()
+                SET status = %s, updated_at = TIMEZONE('Asia/Jakarta', NOW())
                 WHERE id = %s
                 """,
                 (status, pipeline_id),
@@ -210,7 +210,7 @@ class PipelineDestinationRepository:
                 session.execute(
                     """
                     UPDATE pipelines_destination 
-                    SET is_error = TRUE, error_message = %s, last_error_at = NOW(), updated_at = NOW()
+                    SET is_error = TRUE, error_message = %s, last_error_at = TIMEZONE('Asia/Jakarta', NOW()), updated_at = TIMEZONE('Asia/Jakarta', NOW())
                     WHERE id = %s
                     """,
                     (error_message, pd_id),
@@ -219,7 +219,7 @@ class PipelineDestinationRepository:
                 session.execute(
                     """
                     UPDATE pipelines_destination 
-                    SET is_error = FALSE, error_message = NULL, updated_at = NOW()
+                    SET is_error = FALSE, error_message = NULL, updated_at = TIMEZONE('Asia/Jakarta', NOW())
                     WHERE id = %s
                     """,
                     (pd_id,),
@@ -282,7 +282,7 @@ class TableSyncRepository:
                 session.execute(
                     """
                     UPDATE pipelines_destination_table_sync 
-                    SET is_error = TRUE, error_message = %s, updated_at = NOW()
+                    SET is_error = TRUE, error_message = %s, updated_at = TIMEZONE('Asia/Jakarta', NOW())
                     WHERE id = %s
                     """,
                     (error_message, sync_id),
@@ -291,7 +291,7 @@ class TableSyncRepository:
                 session.execute(
                     """
                     UPDATE pipelines_destination_table_sync 
-                    SET is_error = FALSE, error_message = NULL, updated_at = NOW()
+                    SET is_error = FALSE, error_message = NULL, updated_at = TIMEZONE('Asia/Jakarta', NOW())
                     WHERE id = %s
                     """,
                     (sync_id,),
@@ -346,12 +346,12 @@ class PipelineMetadataRepository:
                     session.execute(
                         """
                         INSERT INTO pipeline_metadata (pipeline_id, status, last_error, last_error_at, last_start_at)
-                        VALUES (%s, %s, %s, NOW(), NOW())
+                        VALUES (%s, %s, %s, TIMEZONE('Asia/Jakarta', NOW()), TIMEZONE('Asia/Jakarta', NOW()))
                         ON CONFLICT (pipeline_id) DO UPDATE 
                         SET status = EXCLUDED.status, 
                             last_error = EXCLUDED.last_error,
-                            last_error_at = NOW(),
-                            updated_at = NOW()
+                            last_error_at = TIMEZONE('Asia/Jakarta', NOW()),
+                            updated_at = TIMEZONE('Asia/Jakarta', NOW())
                         RETURNING id
                         """,
                         (pipeline_id, status, error),
@@ -360,11 +360,11 @@ class PipelineMetadataRepository:
                     session.execute(
                         """
                         INSERT INTO pipeline_metadata (pipeline_id, status, last_start_at)
-                        VALUES (%s, %s, NOW())
+                        VALUES (%s, %s, TIMEZONE('Asia/Jakarta', NOW()))
                         ON CONFLICT (pipeline_id) DO UPDATE 
                         SET status = EXCLUDED.status,
-                            last_start_at = CASE WHEN EXCLUDED.status = 'RUNNING' THEN NOW() ELSE pipeline_metadata.last_start_at END,
-                            updated_at = NOW()
+                            last_start_at = CASE WHEN EXCLUDED.status = 'RUNNING' THEN TIMEZONE('Asia/Jakarta', NOW()) ELSE pipeline_metadata.last_start_at END,
+                            updated_at = TIMEZONE('Asia/Jakarta', NOW())
                         RETURNING id
                         """,
                         (pipeline_id, status),

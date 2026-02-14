@@ -8,6 +8,7 @@ import {
   Activity,
   BellRing,
   Server,
+  Hash,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -63,6 +64,11 @@ export const sidebarData: SidebarData = {
     {
       title: 'Other',
       items: [
+        {
+          title: 'Smart Tags',
+          icon: Hash,
+          url: '/smart-tags',
+        },
         {
           title: 'Settings',
           icon: Settings,

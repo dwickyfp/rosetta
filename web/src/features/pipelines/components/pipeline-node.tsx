@@ -32,11 +32,13 @@ export interface PipelineNodeData extends Record<string, unknown> {
   isError?: boolean
   errorMessage?: string
   errorCount?: number
+  isHighlighted?: boolean
 }
 
 export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
   const isSource = data.isSource
   const isError = data.isError
+  const isHighlighted = data.isHighlighted
   const queryClient = useQueryClient()
 
   const { mutate: deleteDestination, isPending: isDeleting } = useMutation({
@@ -65,7 +67,9 @@ export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
           ? 'border-blue-500/50 shadow-blue-500/20'
           : isError
             ? 'animate-error-pulse border-red-500 shadow-red-500/30'
-            : 'border-emerald-500/50 shadow-emerald-500/20'
+            : isHighlighted
+              ? 'animate-bounce border-yellow-500 shadow-yellow-500/50 ring-2 ring-yellow-400 ring-offset-2'
+              : 'border-emerald-500/50 shadow-emerald-500/20'
       )}
     >
       {/* Error glow effect */}
@@ -81,7 +85,9 @@ export function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
             ? 'bg-linear-to-r from-blue-600 to-indigo-600'
             : isError
               ? 'bg-linear-to-r from-red-600 to-rose-600'
-              : 'bg-linear-to-r from-emerald-600 to-teal-600'
+              : isHighlighted
+                ? 'bg-linear-to-r from-yellow-500 to-orange-500'
+                : 'bg-linear-to-r from-emerald-600 to-teal-600'
         )}
       >
         <div className='flex items-center gap-2 overflow-hidden'>

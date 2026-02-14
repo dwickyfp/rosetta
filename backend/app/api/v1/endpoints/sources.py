@@ -46,7 +46,7 @@ async def create_source(
     Returns:
         Created source
     """
-    source = service.create_source(source_data)
+    source = await service.create_source(source_data)
     return SourceResponse.from_orm(source)
 
 
@@ -108,19 +108,25 @@ async def get_source(
     description="Get detailed source information including WAL monitor metrics and table metadata",
 )
 async def get_source_details(
-    source_id: int, service: SourceService = Depends(get_source_service)
+    source_id: int,
+    force_refresh: bool = Query(
+        False,
+        description="Force refresh from source database (bypasses cache, slower)"
+    ),
+    service: SourceService = Depends(get_source_service),
 ) -> SourceDetailResponse:
     """
     Get source details.
 
     Args:
         source_id: Source identifier
+        force_refresh: If True, bypass cache and refresh from source database
         service: Source service instance
 
     Returns:
         Source details
     """
-    return service.get_source_details(source_id)
+    return service.get_source_details(source_id, force_refresh=force_refresh)
 
 
 @router.put(
@@ -421,7 +427,7 @@ async def duplicate_source(
     Returns:
         New source
     """
-    source = service.duplicate_source(source_id)
+    source = await service.duplicate_source(source_id)
     return SourceResponse.from_orm(source)
 
 

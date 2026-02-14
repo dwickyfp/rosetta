@@ -2,7 +2,8 @@
 Notification Log repository.
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import List, Optional
 
 from sqlalchemy import desc
@@ -45,7 +46,7 @@ class NotificationLogRepository:
             .first()
         )
 
-        now = datetime.now(timezone(timedelta(hours=7)))
+        now = datetime.now(ZoneInfo('Asia/Jakarta'))
 
         # Get iteration limit from settings
         iteration_limit = 3
@@ -154,14 +155,14 @@ class NotificationLogRepository:
         notification = self.get_by_id(notification_id)
         if notification:
             notification.is_read = True
-            notification.updated_at = datetime.now(timezone(timedelta(hours=7)))
+            notification.updated_at = datetime.now(ZoneInfo('Asia/Jakarta'))
             self.db.commit()
             self.db.refresh(notification)
         return notification
 
     def mark_all_as_read(self) -> int:
         """Mark all active unread notifications as read."""
-        now = datetime.now(timezone(timedelta(hours=7)))
+        now = datetime.now(ZoneInfo('Asia/Jakarta'))
         result = (
             self.db.query(NotificationLog)
             .filter(
@@ -177,14 +178,14 @@ class NotificationLogRepository:
         notification = self.get_by_id(notification_id)
         if notification:
             notification.is_deleted = True
-            notification.updated_at = datetime.now(timezone(timedelta(hours=7)))
+            notification.updated_at = datetime.now(ZoneInfo('Asia/Jakarta'))
             self.db.commit()
             self.db.refresh(notification)
         return notification
 
     def soft_delete_all(self) -> int:
         """Soft delete all notifications."""
-        now = datetime.now(timezone(timedelta(hours=7)))
+        now = datetime.now(ZoneInfo('Asia/Jakarta'))
         result = (
             self.db.query(NotificationLog)
             .filter(NotificationLog.is_deleted == False)

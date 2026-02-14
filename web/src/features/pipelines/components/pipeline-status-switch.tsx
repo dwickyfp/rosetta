@@ -1,9 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Play, Pause } from 'lucide-react'
+import { Play, Pause, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pipelinesRepo, Pipeline } from '@/repo/pipelines'
 import { useState } from 'react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface PipelineStatusSwitchProps {
   pipeline: Pipeline
@@ -12,6 +18,11 @@ interface PipelineStatusSwitchProps {
 export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
   const queryClient = useQueryClient()
   const isRunning = pipeline.status === 'START' || pipeline.status === 'REFRESH'
+  
+  // Check if source has required configurations
+  const isPublicationEnabled = pipeline.source?.is_publication_enabled ?? false
+  const isReplicationEnabled = pipeline.source?.is_replication_enabled ?? false
+  const canActivate = isPublicationEnabled && isReplicationEnabled
   
   // Optimistic state for immediate UI feedback
   const [optimisticState, setOptimisticState] = useState<boolean | null>(null)
@@ -52,6 +63,19 @@ export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
   const handleToggle = async () => {
     const newState = !displayState
     
+    // Prevent activation if source requirements not met
+    if (newState && !canActivate) {
+      const missingRequirements = []
+      if (!isPublicationEnabled) missingRequirements.push('publication')
+      if (!isReplicationEnabled) missingRequirements.push('replication slot')
+      
+      toast.error(
+        `Cannot activate pipeline: ${missingRequirements.join(' and ')} not configured on source database`,
+        { duration: 4000 }
+      )
+      return
+    }
+    
     // Cancel any outgoing refetches
     await queryClient.cancelQueries({ queryKey: ['pipeline', pipeline.id] })
     
@@ -65,7 +89,7 @@ export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
     mutate(newState)
   }
 
-  return (
+  const switchButton = (
     <div className='flex items-center gap-2'>
       {/* Status Label */}
       <span
@@ -82,10 +106,13 @@ export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
       {/* Custom Animated Switch */}
       <button
         onClick={handleToggle}
+        disabled={!displayState && !canActivate}
         className={cn(
           'group relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
           displayState
             ? 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-md shadow-emerald-500/30 hover:shadow-emerald-500/40 focus-visible:ring-emerald-500 dark:from-emerald-600 dark:to-green-600'
+            : !canActivate
+            ? 'bg-gradient-to-r from-red-300 to-red-400 shadow-sm shadow-red-400/20 focus-visible:ring-red-400 dark:from-red-600 dark:to-red-700 cursor-not-allowed opacity-60'
             : 'bg-gradient-to-r from-slate-300 to-slate-400 shadow-sm shadow-slate-400/20 hover:shadow-slate-400/30 focus-visible:ring-slate-400 dark:from-slate-600 dark:to-slate-700'
         )}
         aria-label={displayState ? 'Pause pipeline' : 'Start pipeline'}
@@ -137,6 +164,11 @@ export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
         </span>
       </button>
 
+      {/* Warning Icon for Invalid State */}
+      {!displayState && !canActivate && (
+        <AlertCircle className='h-4 w-4 text-red-500 dark:text-red-400' />
+      )}
+
       {/* Status Indicator Dot */}
       <div className='flex items-center'>
         <span className='relative flex h-2 w-2 transition-all duration-200'>
@@ -155,4 +187,28 @@ export function PipelineStatusSwitch({ pipeline }: PipelineStatusSwitchProps) {
       </div>
     </div>
   )
+
+  // Wrap with tooltip if requirements not met
+  if (!displayState && !canActivate) {
+    const missingRequirements = []
+    if (!isPublicationEnabled) missingRequirements.push('Publication')
+    if (!isReplicationEnabled) missingRequirements.push('Replication slot')
+    
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {switchButton}
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className='font-semibold'>Cannot activate pipeline</p>
+            <p className='text-xs'>Missing: {missingRequirements.join(', ')}</p>
+            <p className='text-xs text-muted-foreground'>Configure source database first</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  return switchButton
 }

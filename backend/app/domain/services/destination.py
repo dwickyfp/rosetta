@@ -190,7 +190,47 @@ class DestinationService:
         """
         logger.info("Deleting destination", extra={"destination_id": destination_id})
 
+        # Collect tag IDs from all pipeline_destinations using this destination
+        from app.domain.models.pipeline import PipelineDestination
+        from app.domain.models.tag import PipelineDestinationTableSyncTag, TagList
+        
+        tag_ids = set()
+        pipeline_destinations = (
+            self.db.query(PipelineDestination)
+            .filter(PipelineDestination.destination_id == destination_id)
+            .all()
+        )
+        
+        for pipeline_dest in pipeline_destinations:
+            for table_sync in pipeline_dest.table_syncs:
+                for tag_assoc in table_sync.tag_associations:
+                    tag_ids.add(tag_assoc.tag_id)
+        
+        # Delete destination (CASCADE will delete pipeline_destinations and table_syncs)
         self.repository.delete(destination_id)
+        
+        # Cleanup unused tags after deletion
+        if tag_ids:
+            logger.info(f"Checking {len(tag_ids)} tags for cleanup after destination deletion")
+            for tag_id in tag_ids:
+                # Check if tag is still used
+                count = (
+                    self.db.query(PipelineDestinationTableSyncTag)
+                    .filter(PipelineDestinationTableSyncTag.tag_id == tag_id)
+                    .count()
+                )
+                
+                if count == 0:
+                    # Tag is unused, delete it
+                    tag = self.db.query(TagList).filter(TagList.id == tag_id).first()
+                    if tag:
+                        logger.info(
+                            f"Auto-deleting unused tag: {tag.tag}",
+                            extra={"tag_id": tag_id, "tag_name": tag.tag},
+                        )
+                        self.db.delete(tag)
+            
+            self.db.commit()
 
         logger.info(
             "Destination deleted successfully", extra={"destination_id": destination_id}

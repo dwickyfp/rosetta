@@ -284,16 +284,6 @@ class SnowflakeDestination(BaseDestination):
             field_schema = schema_map.get(k)
             converted = self._convert_value_for_snowflake(v, field_schema)
             row[k.upper()] = converted
-
-            # Debug logging for type conversions
-            if field_schema:
-                type_name = field_schema.get("name", "unknown")
-                if type_name != "unknown":
-                    self._logger.debug(
-                        f"Converted {k}: {type(v).__name__}({v}) -> {type(converted).__name__}({converted}) "
-                        f"[schema: {type_name}]"
-                    )
-
         row["OPERATION"] = operation
         row["SYNC_TIMESTAMP_ROSETTA"] = format_sync_timestamp()
 
@@ -588,6 +578,10 @@ class SnowflakeDestination(BaseDestination):
             # Notify on error
             try:
                 notification_repo = NotificationLogRepository()
+                
+                # Sanitize error message before sending to notification
+                sanitized_error = sanitize_for_db(e, self._config.name, "SNOWFLAKE")
+                
                 is_force_sent = (
                     "connection" in str(e).lower() or "authentication" in str(e).lower()
                 )
@@ -596,7 +590,7 @@ class SnowflakeDestination(BaseDestination):
                     NotificationLogCreate(
                         key_notification=f"destination_error_{self.destination_id}_{landing_table}",
                         title=f"Snowflake Sync Error: {landing_table}",
-                        message=f"Failed to sync to {landing_table}: {str(e)}",
+                        message=f"Failed to sync to {landing_table}: {sanitized_error}",
                         type="ERROR",
                         is_force_sent=is_force_sent,
                     )

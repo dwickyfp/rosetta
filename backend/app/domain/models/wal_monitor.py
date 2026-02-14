@@ -118,15 +118,15 @@ class WALMonitor(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.now(ZoneInfo('Asia/Jakarta')),
+        default=lambda: datetime.now(ZoneInfo('Asia/Jakarta')),
         comment="Record creation timestamp",
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.now(ZoneInfo('Asia/Jakarta')),
-        onupdate=datetime.now(ZoneInfo('Asia/Jakarta')),
+        default=lambda: datetime.now(ZoneInfo('Asia/Jakarta')),
+        onupdate=lambda: datetime.now(ZoneInfo('Asia/Jakarta')),
         comment="Last update timestamp",
     )
 

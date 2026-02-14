@@ -6,8 +6,9 @@ Provides common functionality and declarative base.
 
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -59,15 +60,15 @@ class TimestampMixin:
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.timezone('Asia/Jakarta', func.now()),
+        default=lambda: datetime.now(ZoneInfo('Asia/Jakarta')),
         nullable=False,
         comment="Record creation timestamp",
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.timezone('Asia/Jakarta', func.now()),
-        onupdate=func.timezone('Asia/Jakarta', func.now()),
+        default=lambda: datetime.now(ZoneInfo('Asia/Jakarta')),
+        onupdate=lambda: datetime.now(ZoneInfo('Asia/Jakarta')),
         nullable=False,
         comment="Record last update timestamp",
     )

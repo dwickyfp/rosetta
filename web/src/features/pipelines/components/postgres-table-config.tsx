@@ -26,6 +26,7 @@ interface PostgresTableConfigProps {
   onEditFilter: (table: TableWithSyncInfo, syncConfigId: number) => void
   onEditCustomSql: (table: TableWithSyncInfo, syncConfigId: number) => void
   onEditTargetName: (table: TableWithSyncInfo, syncConfigId: number) => void
+  onEditTags: (table: TableWithSyncInfo, syncConfigId: number) => void
 }
 
 export function PostgresTableConfig({
@@ -35,7 +36,8 @@ export function PostgresTableConfig({
   onRefresh,
   onEditFilter,
   onEditCustomSql,
-  onEditTargetName
+  onEditTargetName,
+  onEditTags
 }: PostgresTableConfigProps) {
   const [processingTable, setProcessingTable] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -200,6 +202,7 @@ export function PostgresTableConfig({
                         onEditFilter={() => onEditFilter(table, config.id)}
                         onEditCustomSql={() => onEditCustomSql(table, config.id)}
                         onEditTargetName={() => onEditTargetName(table, config.id)}
+                        onEditTags={() => onEditTags(table, config.id)}
                         onDelete={() => handleDeleteBranch(table, config)}
                         isDeleting={isProcessing}
                       />

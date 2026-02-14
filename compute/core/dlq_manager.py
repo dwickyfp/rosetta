@@ -12,7 +12,7 @@ import re
 import time
 import threading
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import redis
 
@@ -67,7 +67,7 @@ class DLQMessage:
         self.cdc_record = cdc_record
         self.table_sync_config = table_sync_config
         self.retry_count = retry_count
-        self.first_failed_at = first_failed_at or datetime.utcnow().isoformat()
+        self.first_failed_at = first_failed_at or datetime.now(timezone(timedelta(hours=7))).isoformat()
 
     def to_dict(self) -> dict[str, str]:
         """Serialize message to dict for Redis Stream XADD."""
@@ -631,7 +631,7 @@ class DLQManager:
 
             from datetime import timedelta
 
-            cutoff_date = datetime.utcnow() - timedelta(days=max_age_days)
+            cutoff_date = datetime.now(timezone(timedelta(hours=7))) - timedelta(days=max_age_days)
             ids_to_purge = []
 
             # Read all entries with XRANGE (non-destructive)
@@ -659,7 +659,7 @@ class DLQManager:
                             self._logger.warning(
                                 f"Purging DLQ message due to age: "
                                 f"s{source_id}:t{table_name}:d{destination_id} "
-                                f"age={datetime.utcnow() - first_failed}"
+                                f"age={datetime.now(timezone(timedelta(hours=7))) - first_failed}"
                             )
                     except Exception:
                         pass

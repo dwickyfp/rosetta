@@ -37,7 +37,12 @@ class SourceRepository(BaseRepository[Source]):
         Returns:
             List of sources with WAL metrics loaded
         """
-        result = self.db.execute(select(Source).offset(skip).limit(limit))
+        result = self.db.execute(
+            select(Source)
+            .order_by(Source.name.asc(), Source.id.asc())
+            .offset(skip)
+            .limit(limit)
+        )
         return list(result.scalars().all())
 
 

@@ -3,6 +3,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { backfillApi, BackfillFilter } from '@/repo/backfill'
 import { Pipeline } from '@/repo/pipelines'
+import { filterV2ToSql } from '@/features/pipelines/components/table-filter-card'
 import { sourcesRepo } from '@/repo/sources'
 import {
   Plus,
@@ -86,6 +87,7 @@ const OPERATORS_BY_TYPE = {
     { value: '!=', label: 'Not Equals (!=)' },
     { value: 'LIKE', label: 'Like (LIKE)' },
     { value: 'ILIKE', label: 'Case Insensitive Like (ILIKE)' },
+    { value: 'IN', label: 'In (IN)' },
     { value: 'IS NULL', label: 'Is Null' },
     { value: 'IS NOT NULL', label: 'Is Not Null' },
   ],
@@ -96,6 +98,7 @@ const OPERATORS_BY_TYPE = {
     { value: '<', label: 'Less Than (<)' },
     { value: '>=', label: 'Greater or Equal (>=)' },
     { value: '<=', label: 'Less or Equal (<=)' },
+    { value: 'IN', label: 'In (IN)' },
     { value: 'IS NULL', label: 'Is Null' },
     { value: 'IS NOT NULL', label: 'Is Not Null' },
   ],
@@ -139,6 +142,72 @@ const STATUS_CONFIG = {
     color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     icon: X,
   },
+}
+
+// Separate component to isolate state and prevent re-render issues
+function ColumnSelectWithSearch({
+  value,
+  onValueChange,
+  columns,
+  disabled,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  columns: { column_name: string }[]
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className='space-y-1.5'>
+      <Label className='text-xs text-muted-foreground'>Column</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant='outline'
+            role='combobox'
+            aria-expanded={open}
+            disabled={disabled}
+            className='h-8 w-full justify-between text-xs font-normal'
+          >
+            <span className='truncate'>
+              {value || 'Select column'}
+            </span>
+            <ChevronsUpDown className='ml-1 h-3.5 w-3.5 shrink-0 opacity-50' />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className='w-[220px] p-0'>
+          <Command>
+            <CommandInput placeholder='Search columns...' className='text-xs' />
+            <CommandList>
+              <CommandEmpty>No columns found</CommandEmpty>
+              <CommandGroup>
+                {columns.map((col) => (
+                  <CommandItem
+                    key={col.column_name}
+                    value={col.column_name}
+                    onSelect={(val) => {
+                      onValueChange(val)
+                      setOpen(false)
+                    }}
+                    className='text-xs'
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-3.5 w-3.5',
+                        value === col.column_name ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {col.column_name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
 }
 
 function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
@@ -440,32 +509,12 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                     key={index}
                     className='grid grid-cols-[minmax(120px,1fr)_minmax(180px,auto)_minmax(150px,1.5fr)_auto] items-end gap-4 rounded-lg border bg-muted/40 p-3'
                   >
-                    <div className='space-y-1.5'>
-                      <Label className='text-xs text-muted-foreground'>
-                        Column
-                      </Label>
-                      <Select
-                        value={filter.column}
-                        onValueChange={(value) =>
-                          updateFilter(index, 'column', value)
-                        }
-                        disabled={!tableName}
-                      >
-                        <SelectTrigger className='h-8'>
-                          <SelectValue placeholder='Select column' />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedTableColumns?.map((col) => (
-                            <SelectItem
-                              key={col.column_name}
-                              value={col.column_name}
-                            >
-                              {col.column_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <ColumnSelectWithSearch
+                      value={filter.column}
+                      onValueChange={(value) => updateFilter(index, 'column', value)}
+                      columns={selectedTableColumns || []}
+                      disabled={!tableName}
+                    />
 
                     <div className='space-y-1.5'>
                       <Label className='text-xs text-muted-foreground'>
@@ -525,6 +574,15 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                             )
                           }
                           placeholder='Select date'
+                        />
+                      ) : filter.operator === 'IN' ? (
+                        <Input
+                          className='h-8'
+                          placeholder={isNumericColumn(filter.column) ? '1, 2, 3' : 'value1, value2, value3'}
+                          value={filter.value}
+                          onChange={(e) =>
+                            updateFilter(index, 'value', e.target.value)
+                          }
                         />
                       ) : filter.column && isNumericColumn(filter.column) ? (
                         <Input
@@ -667,7 +725,6 @@ export function BackfillDataTab({
       ) : jobsData?.items.length === 0 ? (
         <div className='flex h-64 flex-col items-center justify-center rounded-lg border'>
           <p className='mb-4 text-muted-foreground'>No backfill jobs yet</p>
-          <CreateBackfillDialog pipelineId={pipelineId} sourceId={sourceId} />
         </div>
       ) : (
         <>
@@ -757,7 +814,16 @@ export function BackfillDataTab({
                           <HoverCard>
                             <HoverCardTrigger asChild>
                               <span className='cursor-pointer text-xs text-muted-foreground underline decoration-dotted transition-colors hover:text-foreground'>
-                                {job.filter_sql.split(';').length} filter(s)
+                                {(() => {
+                                  try {
+                                    const parsed = JSON.parse(job.filter_sql)
+                                    if (parsed.version === 2) {
+                                      const count = parsed.groups.reduce((acc: number, g: any) => acc + g.conditions.length, 0)
+                                      return `${count} filter(s)`
+                                    }
+                                  } catch {}
+                                  return `${job.filter_sql.split(';').length} filter(s)`
+                                })()}
                               </span>
                             </HoverCardTrigger>
                             <HoverCardContent className='w-96' align='start'>
@@ -765,17 +831,8 @@ export function BackfillDataTab({
                                 <h4 className='text-sm font-semibold'>
                                   Applied Filters
                                 </h4>
-                                <div className='space-y-1.5'>
-                                  {job.filter_sql
-                                    .split(';')
-                                    .map((filter, idx) => (
-                                      <div
-                                        key={idx}
-                                        className='rounded border bg-muted p-2 font-mono text-xs'
-                                      >
-                                        {filter.trim()}
-                                      </div>
-                                    ))}
+                                <div className='rounded border bg-muted p-2 font-mono text-xs break-all'>
+                                  WHERE {filterV2ToSql(job.filter_sql) || job.filter_sql}
                                 </div>
                               </div>
                             </HoverCardContent>

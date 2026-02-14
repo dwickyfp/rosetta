@@ -36,10 +36,15 @@ class TableMetadata(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(ZoneInfo('Asia/Jakarta')), nullable=True
+        DateTime, 
+        default=lambda: datetime.now(ZoneInfo('Asia/Jakarta')), 
+        nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(ZoneInfo('Asia/Jakarta')), onupdate=datetime.now(ZoneInfo('Asia/Jakarta')), nullable=True
+        DateTime, 
+        default=lambda: datetime.now(ZoneInfo('Asia/Jakarta')), 
+        onupdate=lambda: datetime.now(ZoneInfo('Asia/Jakarta')), 
+        nullable=False
     )
 
     # Relationships

@@ -39,6 +39,11 @@ class ConfigurationService:
         notification_iteration = int(
             self.repo.get_value("NOTIFICATION_ITERATION_DEFAULT", "3")
         )
+        enable_telegram = self.repo.get_value(
+            "ENABLE_ALERT_NOTIFICATION_TELEGRAM", "FALSE"
+        ).upper() == "TRUE"
+        telegram_bot_token = self.repo.get_value("ALERT_NOTIFICATION_TELEGRAM_KEY", "")
+        telegram_chat_id = self.repo.get_value("ALERT_NOTIFICATION_TELEGRAM_GROUP_ID", "")
 
         # Convert MB to bytes (1 MB = 1024 * 1024 bytes)
         warning_bytes = warning_mb * 1024 * 1024
@@ -50,6 +55,9 @@ class ConfigurationService:
             enable_webhook=enable_webhook,
             webhook_url=webhook_url,
             notification_iteration=notification_iteration,
+            enable_telegram=enable_telegram,
+            telegram_bot_token=telegram_bot_token,
+            telegram_chat_id=telegram_chat_id,
         )
 
     def get_value(self, key: str, default: str = "") -> str:

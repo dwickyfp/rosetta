@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useParams, Link } from '@tanstack/react-router'
+import { useParams, Link, useLocation, useRouter } from '@tanstack/react-router'
+import { useEffect, useRef, useState } from 'react'
 import { pipelinesRepo } from '@/repo/pipelines'
 import { sourcesRepo } from '@/repo/sources'
 import {
@@ -36,11 +37,40 @@ import { PipelineFlowTab } from '@/features/pipelines/components/pipeline-flow-t
 import { PipelineStatusSwitch } from '@/features/pipelines/components/pipeline-status-switch'
 import { RestartButton } from '@/features/pipelines/components/restart-button'
 
+interface PipelineNavigationState {
+  highlightDestination?: number
+  openDrawer?: boolean
+  openDrawerDestinationId?: number
+  highlightTable?: string
+}
+
 export default function PipelineDetailsPage() {
   const { pipelineId } = useParams({
     from: '/_authenticated/pipelines/$pipelineId',
   })
+  const location = useLocation()
+  const router = useRouter()
   const id = parseInt(pipelineId)
+
+  // Consume navigation state once and clear it from history
+  const consumedRef = useRef(false)
+  const [navState, setNavState] = useState<PipelineNavigationState>({})
+
+  useEffect(() => {
+    if (consumedRef.current) return
+    const state = location.state as PipelineNavigationState | undefined
+    if (state?.highlightDestination || state?.openDrawer) {
+      consumedRef.current = true
+      setNavState({ ...state })
+      // Replace current history entry to wipe state — refresh will have clean state
+      router.navigate({
+        to: '/pipelines/$pipelineId',
+        params: { pipelineId },
+        state: {},
+        replace: true,
+      })
+    }
+  }, [location.state, pipelineId, router])
 
   // 1. Fetch Pipeline
   const {
@@ -151,7 +181,7 @@ export default function PipelineDetailsPage() {
               {pipeline && <PipelineStatusSwitch pipeline={pipeline} />}
               <RestartButton
                 onRestart={handleRefresh}
-                disabled={isLoading}
+                disabled={isLoading || pipeline?.status === 'PAUSE'}
               />
             </div>
           </div>
@@ -181,7 +211,14 @@ export default function PipelineDetailsPage() {
                 <Skeleton className='h-full w-full rounded-lg' />
               </div>
             ) : pipeline ? (
-              <PipelineFlowTab pipeline={pipeline} />
+              <PipelineFlowTab
+                pipeline={pipeline}
+                highlightDestination={navState.highlightDestination}
+                openDrawer={navState.openDrawer}
+                openDrawerDestinationId={navState.openDrawerDestinationId}
+                highlightTable={navState.highlightTable}
+                onClearHighlight={() => setNavState({})}
+              />
             ) : (
               <div className='p-4 text-muted-foreground'>
                 Pipeline not found.

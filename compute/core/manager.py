@@ -12,7 +12,7 @@ from multiprocessing import Process, Event
 from multiprocessing.synchronize import Event as EventClass
 from typing import Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from core.engine import PipelineEngine
 from core.repository import PipelineRepository, PipelineMetadataRepository
@@ -176,7 +176,7 @@ class PipelineManager:
             pipeline_name=pipeline.name,
             process=proc,
             stop_event=stop_event,
-            last_updated_at=updated_at or datetime.now(),
+            last_updated_at=updated_at or datetime.now(timezone(timedelta(hours=7))),
         )
 
         self._processes[pipeline_id] = pipeline_proc

@@ -7,7 +7,7 @@ Uses fakeredis to mock Redis for testing without a real Redis instance.
 import json
 import time
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 # Try to import fakeredis - will be used to mock Redis
@@ -439,7 +439,7 @@ class TestDLQManagerPurge:
         dlq_manager._ensure_consumer_group(stream_key)
 
         # Add an old message (8 days ago)
-        old_date = (datetime.utcnow() - timedelta(days=8)).isoformat()
+        old_date = (datetime.now(timezone(timedelta(hours=7))) - timedelta(days=8)).isoformat()
         old_msg = DLQMessage(
             pipeline_id=1,
             source_id=1,

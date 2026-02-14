@@ -4,7 +4,9 @@ Base repository implementing common CRUD operations.
 Provides generic repository pattern implementation for all models.
 """
 
+from datetime import datetime
 from typing import Any, Generic, List, Optional, Type, TypeVar
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -154,7 +156,15 @@ class BaseRepository(Generic[ModelType]):
             DatabaseError: If database operation fails
         """
         try:
-            result = self.db.execute(select(self.model).offset(skip).limit(limit))
+            stmt = select(self.model)
+
+            # Order by name (if model has it) then id for consistent results
+            if hasattr(self.model, "name"):
+                stmt = stmt.order_by(self.model.name.asc(), self.model.id.asc())
+            else:
+                stmt = stmt.order_by(self.model.id.asc())
+
+            result = self.db.execute(stmt.offset(skip).limit(limit))
             return list(result.scalars().all())
 
         except SQLAlchemyError as e:
@@ -204,6 +214,10 @@ class BaseRepository(Generic[ModelType]):
             for key, value in kwargs.items():
                 if value is not None and hasattr(entity, key):
                     setattr(entity, key, value)
+            
+            # Explicitly set updated_at if the model has this field
+            if hasattr(entity, 'updated_at'):
+                entity.updated_at = datetime.now(ZoneInfo('Asia/Jakarta'))
 
             self.db.flush()
             self.db.refresh(entity)

@@ -98,7 +98,7 @@ class BackfillManager:
                 if self.STALE_JOB_THRESHOLD_MINUTES == 0:
                     cursor.execute(
                         """
-                    SELECT id, pipeline_id, count_record, total_record, resume_attempts
+                    SELECT id, pipeline_id, count_record, total_record, resume_attempts, last_pk_value
                     FROM queue_backfill_data
                     WHERE status = 'EXECUTING'
                     ORDER BY created_at ASC
@@ -107,7 +107,7 @@ class BackfillManager:
                 else:
                     cursor.execute(
                         """
-                    SELECT id, pipeline_id, count_record, total_record, resume_attempts
+                    SELECT id, pipeline_id, count_record, total_record, resume_attempts, last_pk_value
                     FROM queue_backfill_data
                     WHERE status = 'EXECUTING'
                         AND updated_at < NOW() - INTERVAL '%s minutes'
@@ -122,7 +122,7 @@ class BackfillManager:
                     return
 
                 for job in stale_jobs:
-                    job_id, pipeline_id, count_record, total_record, resume_attempts = (
+                    job_id, pipeline_id, count_record, total_record, resume_attempts, last_pk_value = (
                         job
                     )
                     progress_pct = (
@@ -146,7 +146,13 @@ class BackfillManager:
                             (job_id,),
                         )
                     else:
-                        # Reset to PENDING for retry
+                        # Reset to PENDING for retry — last_pk_value is preserved
+                        # so keyset pagination resumes from the exact cursor position
+                        resume_info = f"last_pk_value={last_pk_value}" if last_pk_value else f"count_record={count_record}"
+                        logger.info(
+                            f"Recovering backfill job {job_id} (pipeline {pipeline_id}): "
+                            f"{progress_pct:.1f}% complete, will resume from {resume_info}"
+                        )
                         cursor.execute(
                             """
                         UPDATE queue_backfill_data
@@ -309,6 +315,10 @@ class BackfillManager:
         """
         Process backfill using DuckDB PostgreSQL scanner.
 
+        Uses keyset pagination (WHERE pk > last_pk_value ORDER BY pk LIMIT N)
+        instead of LIMIT/OFFSET for consistent O(1) batch fetching regardless
+        of progress depth. Persists last_pk_value for crash-safe resume.
+
         Args:
             job: Job configuration
 
@@ -319,19 +329,24 @@ class BackfillManager:
         table_name = job["table_name"]
         filter_sql = job.get("filter_sql")
 
-        # Get checkpoint for resume (count_record tracks progress)
-        start_offset = job.get("count_record", 0) or 0
-        resume_attempts = job.get("resume_attempts", 0) or 0
+        # Get checkpoint for resume
+        start_count = job.get("count_record", 0) or 0
+        last_pk_value = job.get("last_pk_value")  # Cursor position for keyset pagination
+        pk_column = job.get("pk_column")  # Cached PK column name
 
         # Build PostgreSQL connection string
         pg_conn_str = self._build_postgres_connection(job)
 
         # Initialize DuckDB connection (in-memory)
         conn = duckdb.connect(":memory:")
-        conn.execute("SET memory_limit='2GB'")
+        conn.execute("SET memory_limit='4GB'")
         conn.execute("SET threads=4")
+        conn.execute("SET enable_progress_bar=false")
 
-        total_processed = start_offset  # Start from checkpoint
+        total_processed = start_count  # Start from checkpoint
+
+        # Pre-create destination instances once for the entire job
+        destinations_cache = self._create_destinations_for_job(job)
 
         try:
             # Install and load postgres extension
@@ -345,44 +360,86 @@ class BackfillManager:
                 """
             )
 
-            # Build SELECT query with optional filters
-            base_query = f"SELECT * FROM source_db.{table_name}"
+            # Detect primary key column if not already cached
+            if not pk_column:
+                pk_column = self._detect_primary_key(conn, table_name)
+                if pk_column:
+                    self._update_job_pk_column(job_id, pk_column)
 
+            # Build base WHERE clause from filters
+            base_where = ""
             if filter_sql:
-                # Parse semicolon-separated filters and convert to WHERE clause
-                where_clauses = filter_sql.split(";")
-                where_clause = " AND ".join(
-                    f"({clause.strip()})" for clause in where_clauses if clause.strip()
-                )
+                where_clause = self._build_backfill_where_clause(filter_sql)
                 if where_clause:
-                    base_query += f" WHERE {where_clause}"
+                    base_where = where_clause
+
+            # Build SELECT query for counting (without keyset filter)
+            base_query = f"SELECT * FROM source_db.{table_name}"
+            if base_where:
+                base_query += f" WHERE {base_where}"
 
             # Count total rows first
             count_query = f"SELECT COUNT(1) as total FROM ({base_query}) t"
             total_rows = conn.execute(count_query).fetchone()[0]
 
             # Update total_record in database if not already set
-            # (This handles both new jobs and recovered jobs)
             if job.get("total_record") is None or job.get("total_record") == 0:
                 self._update_job_total_record(job_id, total_rows)
 
-            # Process in batches, starting from checkpoint
-            offset = start_offset
+            # Determine if we can use keyset pagination
+            use_keyset = pk_column is not None
+
+            if use_keyset:
+                logger.info(
+                    f"Job {job_id}: Using keyset pagination on column '{pk_column}' "
+                    f"(resume from last_pk_value={last_pk_value})"
+                )
+            else:
+                logger.info(
+                    f"Job {job_id}: No primary key detected, falling back to LIMIT/OFFSET"
+                )
+
+            # Process in batches
+            offset = start_count  # Only used for OFFSET fallback
             while not self.stop_event.is_set():
                 # Check if job was cancelled
                 if self._is_job_cancelled(job_id):
                     break
 
-                # Calculate dynamic batch size to not exceed total records
-                remaining = total_rows - offset
-                if remaining <= 0:
-                    break
+                if use_keyset:
+                    # Build keyset pagination query
+                    conditions = []
+                    if base_where:
+                        conditions.append(base_where)
+                    if last_pk_value is not None:
+                        # Quote string PKs, leave numeric PKs unquoted
+                        try:
+                            float(last_pk_value)
+                            pk_literal = last_pk_value
+                        except (ValueError, TypeError):
+                            pk_literal = f"'{last_pk_value}'"
+                        conditions.append(f"{pk_column} > {pk_literal}")
 
-                current_batch_size = min(self.batch_size, remaining)
-                batch_query = f"{base_query} LIMIT {current_batch_size} OFFSET {offset}"
+                    where_part = ""
+                    if conditions:
+                        where_part = f" WHERE {' AND '.join(conditions)}"
+
+                    batch_query = (
+                        f"SELECT * FROM source_db.{table_name}"
+                        f"{where_part}"
+                        f" ORDER BY {pk_column} ASC"
+                        f" LIMIT {self.batch_size}"
+                    )
+                else:
+                    # Fallback: LIMIT/OFFSET (for tables without PK)
+                    remaining = total_rows - offset
+                    if remaining <= 0:
+                        break
+                    current_batch_size = min(self.batch_size, remaining)
+                    batch_query = f"{base_query} LIMIT {current_batch_size} OFFSET {offset}"
 
                 logger.debug(
-                    f"Job {job_id}: Processing batch at offset {offset}, batch_size={current_batch_size}"
+                    f"Job {job_id}: Processing batch, total_processed={total_processed}"
                 )
                 result = conn.execute(batch_query).fetchall()
 
@@ -394,18 +451,277 @@ class BackfillManager:
 
                 # Process batch - convert to CDC events and send to destinations
                 batch_records = [dict(zip(columns, row)) for row in result]
-                self._process_batch_to_destinations(job, batch_records)
+                self._process_batch_to_destinations(
+                    job, batch_records, destinations_cache
+                )
 
-                # Update progress
+                # Update progress and cursor position
                 total_processed += len(batch_records)
-                self._update_job_count(job_id, total_processed)
 
-                offset += len(batch_records)
+                if use_keyset:
+                    # Track the last PK value for cursor-based resume
+                    pk_idx = columns.index(pk_column)
+                    last_pk_value = str(result[-1][pk_idx])
+                    self._update_job_progress(job_id, total_processed, last_pk_value)
+                else:
+                    offset += len(batch_records)
+                    self._update_job_count(job_id, total_processed)
 
             return total_processed
 
         finally:
             conn.close()
+            # Close cached destination instances
+            self._close_destinations_cache(destinations_cache)
+
+    def _detect_primary_key(self, conn, table_name: str) -> Optional[str]:
+        """
+        Detect the primary key column of a table via DuckDB's postgres attachment.
+
+        Returns a single PK column name, or None if no PK or composite PK.
+        For composite PKs, falls back to OFFSET pagination.
+
+        Args:
+            conn: DuckDB connection with source_db attached
+            table_name: Table name (may include schema)
+
+        Returns:
+            Primary key column name, or None
+        """
+        try:
+            # Parse schema and table from table_name
+            if "." in table_name:
+                schema, tbl = table_name.rsplit(".", 1)
+            else:
+                schema = "public"
+                tbl = table_name
+
+            # Query PostgreSQL information_schema via DuckDB attachment
+            result = conn.execute(
+                f"""
+                SELECT kcu.column_name
+                FROM source_db.information_schema.table_constraints tc
+                JOIN source_db.information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                    AND tc.table_schema = '{schema}'
+                    AND tc.table_name = '{tbl}'
+                ORDER BY kcu.ordinal_position
+                """
+            ).fetchall()
+
+            if len(result) == 1:
+                pk_col = result[0][0]
+                logger.info(f"Detected primary key column '{pk_col}' for table {table_name}")
+                return pk_col
+            elif len(result) > 1:
+                logger.info(
+                    f"Composite primary key detected for {table_name} "
+                    f"({[r[0] for r in result]}), falling back to OFFSET"
+                )
+                return None
+            else:
+                logger.info(f"No primary key found for {table_name}, using OFFSET")
+                return None
+
+        except Exception as e:
+            logger.warning(f"Could not detect PK for {table_name}: {e}")
+            return None
+
+    def _update_job_pk_column(self, job_id: int, pk_column: str) -> None:
+        """
+        Persist the detected PK column name in the job record.
+
+        Args:
+            job_id: Job ID
+            pk_column: Primary key column name
+        """
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE queue_backfill_data
+                    SET pk_column = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (pk_column, job_id),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating job pk_column: {e}")
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+        finally:
+            if conn:
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
+
+    def _update_job_progress(
+        self, job_id: int, count: int, last_pk_value: str
+    ) -> None:
+        """
+        Update job progress with both record count and cursor position.
+
+        This ensures crash-safe resume: on restart, the job picks up from
+        last_pk_value instead of re-scanning via OFFSET.
+
+        Args:
+            job_id: Job ID
+            count: Current processed record count
+            last_pk_value: Last primary key value processed (for keyset resume)
+        """
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE queue_backfill_data
+                    SET count_record = %s, last_pk_value = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (count, last_pk_value, job_id),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating job progress: {e}")
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+        finally:
+            if conn:
+                from core.database import return_db_connection
+                try:
+                    return_db_connection(conn)
+                except Exception as e:
+                    logger.warning(f"Error returning connection to pool: {e}")
+
+    def _create_destinations_for_job(self, job: dict) -> dict:
+        """
+        Create and initialize destination instances once for the entire backfill job.
+
+        Returns a dict mapping (pipeline_destination_id) -> (destination_instance, table_sync, pd_info)
+        so batches can reuse them without re-creating connections each time.
+
+        Args:
+            job: Job configuration
+
+        Returns:
+            Dict mapping pd.id -> {"destination": dest, "table_sync": ts, "pd": pd}
+        """
+        from core.repository import (
+            PipelineRepository,
+            DestinationRepository,
+            SourceRepository,
+        )
+        from core.models import DestinationType
+        from destinations.snowflake import SnowflakeDestination
+        from destinations.postgresql import PostgreSQLDestination
+
+        cache = {}
+        try:
+            pipeline_id = job["pipeline_id"]
+            table_name = job["table_name"]
+            source_id = job["source_id"]
+
+            pipeline = PipelineRepository.get_by_id(pipeline_id, include_relations=True)
+            if not pipeline or not pipeline.destinations:
+                logger.warning(f"Pipeline {pipeline_id} has no destinations configured")
+                return cache
+
+            source_config = SourceRepository.get_by_id(source_id)
+
+            for pd in pipeline.destinations:
+                table_sync = next(
+                    (ts for ts in pd.table_syncs if ts.table_name == table_name),
+                    None,
+                )
+                if not table_sync:
+                    continue
+
+                try:
+                    destination_config = DestinationRepository.get_by_id(
+                        pd.destination_id
+                    )
+                    if not destination_config:
+                        logger.warning(f"Destination {pd.destination_id} not found")
+                        continue
+
+                    if (
+                        destination_config.type.upper()
+                        == DestinationType.SNOWFLAKE.value
+                    ):
+                        cfg = get_config()
+                        timeout_config = {
+                            "connect_timeout": cfg.snowflake.connect_timeout,
+                            "read_timeout": cfg.snowflake.read_timeout,
+                            "write_timeout": cfg.snowflake.write_timeout,
+                            "pool_timeout": cfg.snowflake.pool_timeout,
+                            "batch_timeout_base": cfg.snowflake.batch_timeout_base,
+                            "batch_timeout_max": cfg.snowflake.batch_timeout_max,
+                        }
+                        dest = SnowflakeDestination(
+                            destination_config, timeout_config=timeout_config
+                        )
+                    elif (
+                        destination_config.type.upper()
+                        == DestinationType.POSTGRES.value
+                    ):
+                        dest = PostgreSQLDestination(
+                            destination_config, source_config=source_config
+                        )
+                    else:
+                        logger.warning(
+                            f"Unsupported destination type: {destination_config.type}"
+                        )
+                        continue
+
+                    dest.initialize()
+                    cache[pd.id] = {
+                        "destination": dest,
+                        "table_sync": table_sync,
+                        "pd": pd,
+                        "pipeline_id": pipeline_id,
+                        "source_id": source_id,
+                    }
+                    logger.info(
+                        f"Cached destination {destination_config.name} for backfill job {job['id']}"
+                    )
+
+                except Exception as dest_error:
+                    logger.error(
+                        f"Failed to create destination {pd.destination_id}: {dest_error}",
+                        exc_info=True,
+                    )
+
+        except Exception as e:
+            logger.error(f"Error creating destinations cache: {e}", exc_info=True)
+
+        return cache
+
+    def _close_destinations_cache(self, cache: dict) -> None:
+        """
+        Close all cached destination instances.
+
+        Args:
+            cache: Destinations cache dict
+        """
+        for pd_id, entry in cache.items():
+            try:
+                entry["destination"].close()
+            except Exception as e:
+                logger.warning(f"Error closing cached destination {pd_id}: {e}")
 
     def _build_postgres_connection(self, job: dict) -> str:
         """
@@ -428,13 +744,19 @@ class BackfillManager:
             f"port={job['pg_port']}"
         )
 
-    def _process_batch_to_destinations(self, job: dict, records: List[dict]) -> None:
+    def _process_batch_to_destinations(
+        self, job: dict, records: List[dict], destinations_cache: Optional[dict] = None
+    ) -> None:
         """
         Process batch of records to destinations.
+
+        Uses pre-created destination instances from cache when available,
+        falling back to creating new instances per batch if no cache provided.
 
         Args:
             job: Job configuration
             records: Batch of records to process
+            destinations_cache: Optional pre-created destinations cache
         """
         from core.repository import (
             PipelineRepository,
@@ -459,16 +781,6 @@ class BackfillManager:
                 f"Processing {len(records)} records to destinations for pipeline {pipeline_id}"
             )
 
-            # Get pipeline with destinations
-            pipeline = PipelineRepository.get_by_id(pipeline_id, include_relations=True)
-
-            if not pipeline or not pipeline.destinations:
-                logger.warning(f"Pipeline {pipeline_id} has no destinations configured")
-                return
-
-            # Get source config for PostgreSQL destination joins
-            source_config = SourceRepository.get_by_id(source_id)
-
             # Convert records to CDC format with proper serialization
             cdc_records = []
             for record in records:
@@ -484,6 +796,52 @@ class BackfillManager:
                     timestamp=None,
                 )
                 cdc_records.append(cdc_record)
+
+            # Use cached destinations if available (Bottleneck 7 optimization)
+            if destinations_cache:
+                for pd_id, entry in destinations_cache.items():
+                    try:
+                        dest = entry["destination"]
+                        table_sync = entry["table_sync"]
+                        pd_info = entry["pd"]
+
+                        # Ensure destination is still initialized
+                        if not dest._is_initialized:
+                            dest.initialize()
+
+                        written = dest.write_batch(cdc_records, table_sync)
+
+                        if written > 0:
+                            try:
+                                DataFlowRepository.increment_count(
+                                    pipeline_id=pipeline_id,
+                                    pipeline_destination_id=pd_id,
+                                    source_id=source_id,
+                                    table_sync_id=table_sync.id,
+                                    table_name=f"LANDING_{table_name.upper()}",
+                                    count=written,
+                                )
+                            except Exception as monitoring_error:
+                                logger.warning(
+                                    f"Failed to update data flow monitoring: {monitoring_error}"
+                                )
+
+                    except Exception as dest_error:
+                        logger.error(
+                            f"Failed to write batch to destination {pd_id}: {dest_error}",
+                            exc_info=True,
+                        )
+                return
+
+            # Fallback: create destinations per batch (legacy path)
+            pipeline = PipelineRepository.get_by_id(pipeline_id, include_relations=True)
+
+            if not pipeline or not pipeline.destinations:
+                logger.warning(f"Pipeline {pipeline_id} has no destinations configured")
+                return
+
+            # Get source config for PostgreSQL destination joins
+            source_config = SourceRepository.get_by_id(source_id)
 
             # Write batch to each destination
             for pd in pipeline.destinations:
@@ -797,6 +1155,137 @@ class BackfillManager:
                     return_db_connection(conn)
                 except Exception as e:
                     logger.warning(f"Error returning connection to pool: {e}")
+
+    def _build_backfill_where_clause(self, filter_sql: str) -> str:
+        """
+        Build WHERE clause from filter_sql for backfill queries.
+
+        Supports both legacy semicolon format and JSON v2 format with
+        AND/OR grouping and IN operator.
+
+        Args:
+            filter_sql: Filter SQL string (legacy or JSON v2)
+
+        Returns:
+            WHERE clause string (without WHERE keyword), or empty string
+        """
+        if not filter_sql:
+            return ""
+
+        # Try JSON v2 format first
+        try:
+            import json
+            parsed = json.loads(filter_sql)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                return self._build_where_clause_v2(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Legacy format: semicolon-separated, all AND
+        where_clauses = filter_sql.split(";")
+        return " AND ".join(
+            f"({clause.strip()})" for clause in where_clauses if clause.strip()
+        )
+
+    def _build_where_clause_v2(self, parsed: dict) -> str:
+        """
+        Build WHERE clause from JSON v2 filter format.
+
+        Args:
+            parsed: Parsed JSON v2 filter dict
+
+        Returns:
+            WHERE clause string
+        """
+        groups = parsed.get("groups", [])
+        inter_logic = parsed.get("interLogic", [])
+
+        if not groups:
+            return ""
+
+        group_clauses = []
+        for group in groups:
+            conditions = group.get("conditions", [])
+            intra_logic = group.get("intraLogic", "AND")
+
+            if not conditions:
+                continue
+
+            clauses = []
+            for cond in conditions:
+                column = cond.get("column", "")
+                operator = cond.get("operator", "")
+                value = cond.get("value", "")
+                value2 = cond.get("value2", "")
+
+                if not column:
+                    continue
+
+                clause = self._build_single_clause(column, operator, value, value2)
+                if clause:
+                    clauses.append(clause)
+
+            if not clauses:
+                continue
+
+            if len(clauses) == 1:
+                group_clauses.append(clauses[0])
+            else:
+                group_clauses.append(f"({f' {intra_logic} '.join(clauses)})")
+
+        if not group_clauses:
+            return ""
+
+        result = group_clauses[0]
+        for i in range(1, len(group_clauses)):
+            logic = inter_logic[i - 1] if i - 1 < len(inter_logic) else "AND"
+            result = f"{result} {logic} {group_clauses[i]}"
+
+        return result
+
+    def _build_single_clause(self, column: str, operator: str, value: str, value2: str = "") -> str:
+        """
+        Build a single SQL clause from filter components.
+
+        Args:
+            column: Column name
+            operator: SQL operator
+            value: Filter value
+            value2: Second value (for BETWEEN)
+
+        Returns:
+            SQL clause string
+        """
+        op_upper = operator.upper().strip()
+
+        if op_upper in ("IS NULL", "IS NOT NULL"):
+            return f"{column} {op_upper}"
+
+        if not value and op_upper not in ("IS NULL", "IS NOT NULL"):
+            return ""
+
+        if op_upper == "BETWEEN" and value and value2:
+            q_val = self._quote_value(value)
+            q_val2 = self._quote_value(value2)
+            return f"{column} BETWEEN {q_val} AND {q_val2}"
+
+        if op_upper in ("LIKE", "ILIKE"):
+            return f"{column} {op_upper} '%{value}%'"
+
+        if op_upper == "IN":
+            values = [v.strip() for v in value.split(",") if v.strip()]
+            quoted = [self._quote_value(v) for v in values]
+            return f"{column} IN ({', '.join(quoted)})"
+
+        return f"{column} {operator} {self._quote_value(value)}"
+
+    def _quote_value(self, value: str) -> str:
+        """Quote a filter value - numeric values unquoted, strings quoted."""
+        try:
+            float(value)
+            return value
+        except (ValueError, TypeError):
+            return f"'{value}'"
 
     def _update_job_total_record(self, job_id: int, total: int) -> None:
         """

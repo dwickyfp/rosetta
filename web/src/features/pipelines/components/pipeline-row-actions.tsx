@@ -1,4 +1,4 @@
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, Lock } from 'lucide-react'
 import { Row } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
 import {
@@ -82,8 +82,15 @@ export function PipelineRowActions<TData>({ row }: DataTableRowActionsProps<TDat
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-[160px]'>
 
-          <DropdownMenuItem onClick={() => refreshMutate(pipeline.id)}>
-            Refresh
+          <DropdownMenuItem 
+            onClick={() => refreshMutate(pipeline.id)}
+            disabled={pipeline.status === 'PAUSE'}
+            className="flex items-center justify-between"
+          >
+            <span>Refresh</span>
+            {pipeline.status === 'PAUSE' && (
+              <Lock className="h-3 w-3 text-red-500" />
+            )}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)}>

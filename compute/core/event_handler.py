@@ -315,7 +315,7 @@ class CDCEventHandler(BasePythonChangeHandler):
             # Update data flow monitoring
             if written > 0:
                 self._update_monitoring(
-                    routing, f"LANDING_{table_name.upper()}", written
+                    routing, table_name, written
                 )
 
             # Clear error state if previously failed - destination is now healthy

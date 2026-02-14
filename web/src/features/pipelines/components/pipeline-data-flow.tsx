@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pipeline, pipelinesRepo } from '@/repo/pipelines'
 import {
@@ -10,9 +10,11 @@ import {
   Position,
   MarkerType,
   Handle,
+  ReactFlowProvider,
+  useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Database, Layers } from 'lucide-react'
+import { Table2, Layers } from 'lucide-react'
 import { useTheme } from '@/context/theme-provider'
 import {
   Tooltip,
@@ -42,7 +44,7 @@ const CustomNode = ({ data }: { data: any }) => {
 
           <div className='relative flex items-center gap-3 px-4 py-3.5'>
             <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-blue-500/20 bg-blue-500/10'>
-              <Database className='h-4.5 w-4.5 text-blue-600 dark:text-blue-400' />
+              <Table2 className='h-4.5 w-4.5 text-blue-600 dark:text-blue-400' />
             </div>
             <TooltipProvider delayDuration={200}>
               <Tooltip>
@@ -131,7 +133,7 @@ const CustomNode = ({ data }: { data: any }) => {
           {/* Table name */}
           <div className='flex items-center gap-3'>
             <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10'>
-              <Database className='h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400' />
+              <Table2 className='h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400' />
             </div>
             <TooltipProvider delayDuration={200}>
               <Tooltip>
@@ -181,7 +183,17 @@ interface PipelineDataFlowProps {
 }
 
 export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
+  return (
+    <ReactFlowProvider>
+      <FlowContent pipeline={pipeline} />
+    </ReactFlowProvider>
+  )
+}
+
+function FlowContent({ pipeline }: PipelineDataFlowProps) {
   const { theme } = useTheme()
+  const { fitView } = useReactFlow()
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Fetch stats to calculate edge labels
   const { data: stats } = useQuery({
@@ -203,7 +215,7 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
     const nodes: Node[] = []
     const edges: Edge[] = []
 
-    if (!pipeline || !stats) return { nodes, edges }
+    if (!pipeline) return { nodes, edges }
 
     // Constants
     const X_ROOT = 50
@@ -212,12 +224,36 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
     const X_TARGET = 1200
     const ROW_HEIGHT = 150
 
-    // Group stats by Source Table
-    const flowMap = new Map<string, typeof stats>()
-    stats.forEach((s) => {
-      const list = flowMap.get(s.table_name) || []
-      list.push(s)
-      flowMap.set(s.table_name, list)
+    // Build a comprehensive map: LEFT JOIN enabled tables with stats
+    // Key: table_name, Value: Array of { destination, table_sync, stat? }
+    const flowMap = new Map<string, Array<{
+      destination: any
+      tableSync: any
+      stat?: any
+    }>>()
+
+    // First, get ALL enabled tables from pipeline configuration
+    pipeline.destinations?.forEach((dest) => {
+      dest.table_syncs?.forEach((sync) => {
+        const tableName = sync.table_name
+        const list = flowMap.get(tableName) || []
+        
+        // Find matching stat for this destination + table sync
+        const matchingStat = stats?.find(
+          (s) => 
+            s.table_name === tableName && 
+            s.pipeline_destination_id === dest.id &&
+            s.pipeline_destination_table_sync_id === sync.id
+        )
+        
+        list.push({
+          destination: dest,
+          tableSync: sync,
+          stat: matchingStat, // May be undefined if no data streamed yet
+        })
+        
+        flowMap.set(tableName, list)
+      })
     })
 
     let currentY = 50
@@ -242,20 +278,20 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
     // But let's just flow downwards.
 
     // Iterate through each Source Table Group
-    flowMap.forEach((targets, sourceTableName) => {
-      // Group targets by Destination ID
-      const destGroups = new Map<number, typeof targets>()
-      targets.forEach((t) => {
-        if (!t.pipeline_destination_id) return
-        const list = destGroups.get(t.pipeline_destination_id) || []
-        list.push(t)
-        destGroups.set(t.pipeline_destination_id, list)
+    flowMap.forEach((items, sourceTableName) => {
+      // Group items by Destination ID
+      const destGroups = new Map<number, typeof items>()
+      items.forEach((item) => {
+        const destId = item.destination.id
+        const list = destGroups.get(destId) || []
+        list.push(item)
+        destGroups.set(destId, list)
       })
 
       // Calculate total height for this Source Group based on all destinations
       let groupTotalRows = 0
-      destGroups.forEach((groupTargets) => {
-        groupTotalRows += Math.max(1, groupTargets.length)
+      destGroups.forEach((groupItems) => {
+        groupTotalRows += Math.max(1, groupItems.length)
       })
       const sourceGroupHeight = groupTotalRows * ROW_HEIGHT
 
@@ -288,13 +324,13 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
 
       // Iterate through Destination Groups to place Dest Nodes & Target Nodes
       let currentDestY = currentY
-      destGroups.forEach((groupTargets, destId) => {
-        const destRowCount = Math.max(1, groupTargets.length)
+      destGroups.forEach((groupItems, destId) => {
+        const destRowCount = Math.max(1, groupItems.length)
         const destGroupHeight = destRowCount * ROW_HEIGHT
 
         // Destination Node Position (Centered for its targets)
         const destY = currentDestY + destGroupHeight / 2 - ROW_HEIGHT / 2
-        const destName = groupTargets[0].destination_name || `Dest ${destId}`
+        const destName = groupItems[0].destination.destination.name || `Dest ${destId}`
         const destNodeId = `dst-group-${sourceTableName}-${destId}`
 
         nodes.push({
@@ -326,17 +362,17 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
         })
 
         // Place Target Nodes for this Destination
-        groupTargets.forEach((stat, idx) => {
-          const targetTableName = stat.target_table_name || stat.table_name
-          // Unique ID for target node
-          const uniqueIdSuffix = stat.pipeline_destination_table_sync_id
-            ? `sync-${stat.pipeline_destination_table_sync_id}`
-            : `${stat.pipeline_destination_id}-${targetTableName}`
+        groupItems.forEach((item, idx) => {
+          const targetTableName = item.tableSync.table_name_target || item.tableSync.table_name
+          const syncId = item.tableSync.id
 
-          const targetNodeId = `dst-tbl-${uniqueIdSuffix}`
+          const targetNodeId = `dst-tbl-sync-${syncId}`
 
           // Target Y position
           const targetY = currentDestY + idx * ROW_HEIGHT
+
+          // Calculate total count from stat if exists, otherwise 0
+          const totalCount = item.stat ? calcTotal(item.stat.daily_stats) : 0
 
           nodes.push({
             id: targetNodeId,
@@ -346,8 +382,8 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
               label: targetTableName,
               subLabel: destName,
               isSource: false,
-              totalCount: calcTotal(stat.daily_stats),
-              destId: stat.pipeline_destination_id,
+              totalCount: totalCount,
+              destId: item.destination.id,
             },
             targetPosition: Position.Left,
           })
@@ -360,7 +396,7 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
             type: 'smoothstep',
             animated: true,
             style: { stroke: '#64748b', strokeWidth: 1.5 },
-            label: `${calcTotal(stat.daily_stats).toLocaleString()}`,
+            label: `${totalCount.toLocaleString()}`,
             labelStyle: {
               fill: 'var(--foreground)',
               fontWeight: 600,
@@ -387,8 +423,30 @@ export function PipelineDataFlow({ pipeline }: PipelineDataFlowProps) {
     return { nodes, edges }
   }, [pipeline, stats])
 
+  // Fit view when tab becomes visible
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setTimeout(() => {
+              fitView({ duration: 400 })
+            }, 100)
+          }
+        })
+      },
+      { threshold: 0.1 }
+    )
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [fitView])
+
   return (
-    <div className='relative h-175 rounded-lg border bg-background [&_.react-flow__controls]:border-border [&_.react-flow__controls]:bg-background [&_.react-flow__controls]:shadow-md [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button:hover]:bg-muted'>
+    <div ref={containerRef} className='relative h-[600px] rounded-lg border bg-background [&_.react-flow__controls]:border-border [&_.react-flow__controls]:bg-background [&_.react-flow__controls]:shadow-md [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button:hover]:bg-muted'>
       <ReactFlow
         nodes={nodes}
         edges={edges}

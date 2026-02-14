@@ -26,6 +26,9 @@ const notificationsFormSchema = z.object({
     .number()
     .min(1, 'Iteration must be at least 1')
     .max(100, 'Iteration cannot exceed 100'),
+  enable_telegram: z.boolean(),
+  telegram_bot_token: z.string(),
+  telegram_chat_id: z.string(),
 })
 
 type NotificationsFormValues = z.infer<typeof notificationsFormSchema>
@@ -44,6 +47,9 @@ export function NotificationsForm() {
       enable_webhook: false,
       webhook_url: '',
       notification_iteration: 3,
+      enable_telegram: false,
+      telegram_bot_token: '',
+      telegram_chat_id: '',
     },
   })
 
@@ -54,6 +60,9 @@ export function NotificationsForm() {
         enable_webhook: config.enable_webhook,
         webhook_url: config.webhook_url,
         notification_iteration: config.notification_iteration,
+        enable_telegram: config.enable_telegram,
+        telegram_bot_token: config.telegram_bot_token,
+        telegram_chat_id: config.telegram_chat_id,
       })
     }
   }, [config, form])
@@ -120,7 +129,24 @@ export function NotificationsForm() {
     toggleWebhookMutation.mutate(payload)
   }
 
+  const handleToggleTelegram = (checked: boolean) => {
+    if (!config) return
+
+    // Update form value
+    form.setValue('enable_telegram', checked)
+
+    // Immediately update backend
+    const payload = {
+      ...config,
+      enable_telegram: checked,
+      telegram_bot_token: form.getValues('telegram_bot_token') || config.telegram_bot_token,
+      telegram_chat_id: form.getValues('telegram_chat_id') || config.telegram_chat_id,
+    }
+    toggleWebhookMutation.mutate(payload)
+  }
+
   const isWebhookEnabled = form.watch('enable_webhook')
+  const isTelegramEnabled = form.watch('enable_telegram')
 
   if (isLoading) {
     return (
@@ -225,6 +251,102 @@ export function NotificationsForm() {
                 </FormItem>
               )}
             />
+
+            {/* Telegram Notifications Section */}
+            <div className='border-t pt-6 mt-6'>
+              <h3 className='text-lg font-medium mb-4'>Telegram Notifications</h3>
+              
+              <FormField
+                control={form.control}
+                name='enable_telegram'
+                render={({ field }) => (
+                  <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
+                    <div className='space-y-0.5'>
+                      <FormLabel className='text-base'>
+                        Enable Telegram Notifications
+                      </FormLabel>
+                      <FormDescription>
+                        Enable or disable sending notifications to Telegram
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={handleToggleTelegram}
+                        disabled={toggleWebhookMutation.isPending}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='telegram_bot_token'
+                render={({ field }) => (
+                  <FormItem className='mt-6'>
+                    <FormLabel>Telegram Bot Token</FormLabel>
+                    <FormControl className='mt-2'>
+                      <Input
+                        type='text'
+                        placeholder='123456789:ABCdefGHIjklMNOpqrsTUVwxyz'
+                        disabled={!isTelegramEnabled}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Your Telegram bot token from @BotFather. Will only be used if Telegram is enabled.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='telegram_chat_id'
+                render={({ field }) => (
+                  <FormItem className='mt-6'>
+                    <FormLabel>Telegram Chat/Group ID</FormLabel>
+                    <div className='flex gap-2'>
+                      <FormControl>
+                        <Input
+                          type='text'
+                          placeholder='-1001234567890'
+                          disabled={!isTelegramEnabled}
+                          {...field}
+                        />
+                      </FormControl>
+                      <Button
+                        type='button'
+                        variant='secondary'
+                        disabled={!isTelegramEnabled}
+                        onClick={async () => {
+                          const botToken = form.getValues('telegram_bot_token')
+                          const chatId = form.getValues('telegram_chat_id')
+                          if (!botToken || !chatId) {
+                            toast.error('Please enter bot token and chat ID first')
+                            return
+                          }
+                          try {
+                            await configurationRepo.testNotification(undefined, botToken, chatId)
+                            toast.success('Test notification sent to Telegram successfully')
+                          } catch (e: any) {
+                            toast.error(e.response?.data?.detail || 'Failed to send Telegram test notification')
+                          }
+                        }}
+                      >
+                        Test
+                      </Button>
+                    </div>
+                    <FormDescription>
+                      Telegram chat or group ID where notifications will be sent. Use negative number for groups.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className='pt-4'>
               <Button type='submit' disabled={updateMutation.isPending}>

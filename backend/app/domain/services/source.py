@@ -6,6 +6,7 @@ Implements business rules and orchestrates repository operations for sources.
 
 from typing import List
 from datetime import datetime, timezone, timedelta
+import asyncio
 
 from sqlalchemy.orm import Session
 import psycopg2
@@ -22,6 +23,7 @@ from app.domain.repositories.history_schema_evolution_repo import (
     HistorySchemaEvolutionRepository,
 )
 from app.domain.repositories.pipeline import PipelineRepository
+from app.domain.services.wal_monitor import WALMonitorService
 from app.domain.schemas.source import (
     SourceConnectionTest,
     SourceCreate,
@@ -56,7 +58,7 @@ class SourceService:
         self.db = db
         self.repository = SourceRepository(db)
 
-    def create_source(self, source_data: SourceCreate) -> Source:
+    async def create_source(self, source_data: SourceCreate) -> Source:
         """
         Create a new source.
 
@@ -82,6 +84,25 @@ class SourceService:
             self.db.refresh(source)
         except Exception as e:
             logger.error(f"Failed to fetch table list: {e}")
+
+        # Initialize WAL monitor status immediately
+        try:
+            logger.info(
+                "Initializing WAL monitor status for new source",
+                extra={"source_id": source.id, "name": source.name}
+            )
+            wal_monitor_service = WALMonitorService()
+            await wal_monitor_service.monitor_source(source, self.db)
+            logger.info(
+                "WAL monitor status initialized successfully",
+                extra={"source_id": source.id}
+            )
+        except Exception as e:
+            # Don't fail source creation if WAL monitoring fails
+            logger.warning(
+                "Failed to initialize WAL monitor status",
+                extra={"source_id": source.id, "error": str(e)}
+            )
 
         logger.info(
             "Source created successfully",
@@ -263,7 +284,7 @@ class SourceService:
 
         return self.test_connection_config(config)
 
-    def get_source_details(self, source_id: int) -> SourceDetailResponse:
+    def get_source_details(self, source_id: int, force_refresh: bool = False) -> SourceDetailResponse:
         """
         Get detailed information for a source.
 
@@ -271,19 +292,42 @@ class SourceService:
 
         Args:
             source_id: Source identifier
+            force_refresh: If True, bypass cache and refresh from source database
 
         Returns:
             Source details
         """
+        # Check cache first (unless force_refresh)
+        if not force_refresh:
+            try:
+                from app.infrastructure.redis_client import RedisClient
+                import json
+                
+                cache_key = f"source_details:{source_id}"
+                redis_client = RedisClient.get_instance()
+                cached = redis_client.get(cache_key)
+                
+                if cached:
+                    logger.info(f"Cache HIT for source details {source_id}")
+                    cached_data = json.loads(cached)
+                    return SourceDetailResponse(**cached_data)
+            except Exception as e:
+                logger.warning(f"Cache read error for source {source_id}: {e}")
+        
         # 1. Get Source
         source = self.get_source(source_id)
 
-        # Realtime Fetch
-        self._update_source_table_list(source)
-        registered_tables = self._sync_publication_tables(source)
-        self.db.add(source)
-        self.db.commit()
-        self.db.refresh(source)
+        # Conditional Realtime Fetch (only if force_refresh=True)
+        # This avoids slow network calls to source database on every page load
+        if force_refresh:
+            self._update_source_table_list(source)
+            registered_tables = self._sync_publication_tables(source)
+            self.db.add(source)
+            self.db.commit()
+            self.db.refresh(source)
+        else:
+            # Fast path: just get registered tables from publication query
+            registered_tables = self._get_publication_tables(source)
 
         # 2. Get WAL Monitor
         wal_monitor_repo = WALMonitorRepository(self.db)
@@ -299,9 +343,10 @@ class SourceService:
             if table.table_name not in registered_tables:
                 continue
 
-            # logic: if count table is 0, then version 1, if count table 1 then version 2 etc.
-            # So generic formula: version = count + 1
-            version = count + 1
+            # count is now MAX(version_schema) from HistorySchemaEvolution.
+            # INITIAL_LOAD has version_schema=1, subsequent changes increment it.
+            # If no history records exist yet, default to version 1.
+            version = count if count > 0 else 1
 
             source_tables.append(
                 SourceTableInfo(
@@ -334,7 +379,7 @@ class SourceService:
             )
         )
 
-        return SourceDetailResponse(
+        result = SourceDetailResponse(
             source=SourceResponse.from_orm(source),
             wal_monitor=(
                 WALMonitorResponse.from_orm(wal_monitor) if wal_monitor else None
@@ -342,6 +387,22 @@ class SourceService:
             tables=source_tables,
             destinations=destination_names,
         )
+        
+        # Cache the result for 30 seconds
+        try:
+            from app.infrastructure.redis_client import RedisClient
+            import json
+            
+            cache_key = f"source_details:{source_id}"
+            redis_client = RedisClient.get_instance()
+            # Convert to dict for caching
+            result_dict = result.dict()
+            redis_client.setex(cache_key, 30, json.dumps(result_dict))
+            logger.info(f"Cached source details for {source_id} with 30s TTL")
+        except Exception as e:
+            logger.warning(f"Failed to cache source details for {source_id}: {e}")
+        
+        return result
 
     def get_table_schema_by_version(
         self, table_id: int, version: int
@@ -493,6 +554,52 @@ class SourceService:
         except Exception as e:
             logger.error(f"Error fetching metadata for source {source.name}: {e}")
             pass
+    
+    def _pause_running_pipelines_for_source(self, source_id: int) -> None:
+        """
+        Pause all running pipelines for a given source.
+        This is called when publication or replication slot is dropped.
+        """
+        try:
+            # Local import to avoid circular dependency
+            from app.domain.services.pipeline import PipelineService
+            
+            pipeline_repo = PipelineRepository(self.db)
+            pipelines = pipeline_repo.get_by_source_id(source_id)
+            
+            # Filter for running pipelines only
+            running_pipelines = [
+                p for p in pipelines 
+                if p.status in ['START', 'REFRESH']
+            ]
+            
+            if not running_pipelines:
+                logger.info(f"No running pipelines found for source {source_id}")
+                return
+            
+            logger.info(
+                f"Pausing {len(running_pipelines)} running pipeline(s) for source {source_id}"
+            )
+            
+            pipeline_service = PipelineService(self.db)
+            for pipeline in running_pipelines:
+                try:
+                    pipeline_service.pause_pipeline(pipeline.id)
+                    logger.info(
+                        f"Successfully paused pipeline {pipeline.id} ({pipeline.name})"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to pause pipeline {pipeline.id} ({pipeline.name}): {e}"
+                    )
+                    # Continue pausing other pipelines even if one fails
+                    continue
+            
+        except Exception as e:
+            logger.error(
+                f"Error pausing pipelines for source {source_id}: {e}"
+            )
+            # Don't raise - this is a best-effort operation
 
     def _sync_publication_tables(self, source: Source) -> None:
         """
@@ -669,13 +776,55 @@ class SourceService:
             )
             return set()
 
+    def _get_publication_tables(self, source: Source) -> set:
+        """
+        Fast fetch of registered tables from pg_publication_tables.
+        Lightweight alternative to _sync_publication_tables for read-only operations.
+        
+        Args:
+            source: Source entity
+            
+        Returns:
+            Set of table names in the publication
+        """
+        try:
+            conn = self._get_connection(source)
+            with conn.cursor() as cur:
+                query = "SELECT tablename FROM pg_publication_tables WHERE pubname = %s"
+                cur.execute(query, (source.publication_name,))
+                registered_tables = {row[0] for row in cur.fetchall()}
+            conn.close()
+            return registered_tables
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch publication tables for source {source.name}: {e}"
+            )
+            # Fallback: return tables from local metadata
+            table_repo = TableMetadataRepository(self.db)
+            existing_tables = table_repo.get_by_source_id(source.id)
+            return {t.table_name for t in existing_tables}
+
     def refresh_source_metadata(self, source_id: int) -> None:
         """Manually refresh source metadata."""
         source = self.get_source(source_id)
+        
+        # Store previous state to detect external drops
+        previous_publication_enabled = source.is_publication_enabled
+        previous_replication_enabled = source.is_replication_enabled
+        
         self._update_source_table_list(source)
         self._sync_publication_tables(source)
         self.db.commit()
         self.db.refresh(source)
+        
+        # Check if publication or replication was dropped externally
+        if (previous_publication_enabled and not source.is_publication_enabled) or \
+           (previous_replication_enabled and not source.is_replication_enabled):
+            logger.warning(
+                f"Publication or replication slot dropped externally for source {source_id}. "
+                "Auto-pausing running pipelines."
+            )
+            self._pause_running_pipelines_for_source(source_id)
 
         # Invalidate Available Tables Cache
         try:
@@ -706,6 +855,10 @@ class SourceService:
     def drop_publication(self, source_id: int) -> None:
         source = self.get_source(source_id)
         try:
+            # Pause running pipelines first
+            logger.info(f"Auto-pausing running pipelines for source {source_id} before dropping publication")
+            self._pause_running_pipelines_for_source(source_id)
+            
             conn = self._get_connection(source)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:
@@ -714,13 +867,76 @@ class SourceService:
                 cur.execute(query)
             conn.close()
 
-            # Cleanup Metadata
+            # Cleanup pipeline table sync configurations for this source
+            # This will CASCADE delete associated tags via ondelete="CASCADE"
+            from app.domain.models.pipeline import Pipeline, PipelineDestination, PipelineDestinationTableSync
+            from app.domain.models.tag import PipelineDestinationTableSyncTag, TagList
+            
+            logger.info(f"Cleaning up pipeline table sync configurations for source {source_id}")
+            pipelines = self.db.query(Pipeline).filter(Pipeline.source_id == source_id).all()
+            
+            # Collect all tag IDs before deletion for cleanup
+            all_tag_ids = set()
+            for pipeline in pipelines:
+                # Get all destinations for this pipeline
+                pipeline_dest_ids = [pd.id for pd in pipeline.destinations]
+                
+                if pipeline_dest_ids:
+                    # Get all tag IDs associated with these table syncs
+                    tag_ids = (
+                        self.db.query(PipelineDestinationTableSyncTag.tag_id)
+                        .join(
+                            PipelineDestinationTableSync,
+                            PipelineDestinationTableSync.id == PipelineDestinationTableSyncTag.pipelines_destination_table_sync_id
+                        )
+                        .filter(PipelineDestinationTableSync.pipeline_destination_id.in_(pipeline_dest_ids))
+                        .distinct()
+                        .all()
+                    )
+                    all_tag_ids.update([tag_id[0] for tag_id in tag_ids])
+                    
+                    # Delete all table sync configurations for these destinations
+                    # CASCADE will automatically delete associated tag associations
+                    deleted_count = (
+                        self.db.query(PipelineDestinationTableSync)
+                        .filter(PipelineDestinationTableSync.pipeline_destination_id.in_(pipeline_dest_ids))
+                        .delete(synchronize_session=False)
+                    )
+                    logger.info(f"Deleted {deleted_count} table sync configurations for pipeline {pipeline.id}")
+            
+            self.db.commit()
+
+            # Cleanup unused tags after deletion
+            if all_tag_ids:
+                logger.info(f"Checking {len(all_tag_ids)} tags for cleanup")
+                for tag_id in all_tag_ids:
+                    # Check if tag is still used
+                    count = (
+                        self.db.query(PipelineDestinationTableSyncTag)
+                        .filter(PipelineDestinationTableSyncTag.tag_id == tag_id)
+                        .count()
+                    )
+                    
+                    if count == 0:
+                        # Tag is unused, delete it
+                        tag = self.db.query(TagList).filter(TagList.id == tag_id).first()
+                        if tag:
+                            logger.info(
+                                f"Auto-deleting unused tag: {tag.tag}",
+                                extra={"tag_id": tag_id, "tag_name": tag.tag},
+                            )
+                            self.db.delete(tag)
+                
+                self.db.commit()
+
+            # Cleanup Metadata (this CASCADE deletes history_schema_evolution)
             table_repo = TableMetadataRepository(self.db)
             table_repo.delete_by_source_id(source_id)
 
             self.refresh_source_metadata(source_id)
         except Exception as e:
             logger.error(f"Failed to drop publication: {e}")
+            self.db.rollback()
             raise ValueError(f"Failed to drop publication: {str(e)}")
 
     def create_replication_slot(self, source_id: int) -> None:
@@ -744,6 +960,10 @@ class SourceService:
     def drop_replication_slot(self, source_id: int) -> None:
         source = self.get_source(source_id)
         try:
+            # Pause running pipelines first
+            logger.info(f"Auto-pausing running pipelines for source {source_id} before dropping replication slot")
+            self._pause_running_pipelines_for_source(source_id)
+            
             conn = self._get_connection(source)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             with conn.cursor() as cur:
@@ -1044,7 +1264,7 @@ class SourceService:
             logger.error(f"Failed to fetch source schema: {e}")
             raise ValueError(f"Failed to fetch source schema: {str(e)}")
 
-    def duplicate_source(self, source_id: int) -> Source:
+    async def duplicate_source(self, source_id: int) -> Source:
         """
         Duplicate an existing source.
 
@@ -1104,7 +1324,7 @@ class SourceService:
                     replication_name=attempt_rep_name,
                 )
 
-                created_source = self.create_source(source_data)
+                created_source = await self.create_source(source_data)
 
             except DuplicateEntityError as e:
                 # Name or replication_name already exists, try with next counter

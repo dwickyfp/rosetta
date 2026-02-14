@@ -3,6 +3,7 @@ Job Metric repository.
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -25,17 +26,18 @@ class JobMetricRepository(BaseRepository[JobMetric]):
         If key exists, update last_run_at.
         If not, insert new record.
         """
+        now = datetime.now(ZoneInfo('Asia/Jakarta'))
         stmt = insert(JobMetric).values(
             key_job_scheduler=key,
             last_run_at=last_run,
-            updated_at=datetime.utcnow()
+            updated_at=now
         )
         
         stmt = stmt.on_conflict_do_update(
             index_elements=[JobMetric.key_job_scheduler],
             set_={
                 "last_run_at": stmt.excluded.last_run_at,
-                "updated_at": datetime.utcnow()
+                "updated_at": now
             }
         )
         

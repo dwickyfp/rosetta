@@ -15,12 +15,14 @@ import { SnowflakeTableConfig } from '@/features/pipelines/components/snowflake-
 import { TableCustomSqlCard } from '@/features/pipelines/components/table-custom-sql-card'
 import { TableFilterCard } from '@/features/pipelines/components/table-filter-card'
 import { TableTargetNameCard } from '@/features/pipelines/components/table-target-name-card'
+import { TagDrawer } from '@/features/pipelines/components/tag-drawer'
 
 interface SourceTableDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   pipeline: Pipeline
   initialDestinationId?: number | null
+  initialHighlightTable?: string
 }
 
 export function SourceTableDrawer({
@@ -28,6 +30,7 @@ export function SourceTableDrawer({
   onOpenChange,
   pipeline,
   initialDestinationId,
+  initialHighlightTable,
 }: SourceTableDrawerProps) {
   const [selectedDestinationId, setSelectedDestinationId] = useState<
     number | null
@@ -36,13 +39,20 @@ export function SourceTableDrawer({
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Initialize search query from prop
+  useEffect(() => {
+    if (initialHighlightTable) {
+      setSearchQuery(initialHighlightTable)
+    }
+  }, [initialHighlightTable])
+
   // Floating Card State
   const [activeTable, setActiveTable] = useState<TableWithSyncInfo | null>(null)
   const [activeSyncConfigId, setActiveSyncConfigId] = useState<number | null>(
     null
   )
   const [activeMode, setActiveMode] = useState<
-    'filter' | 'custom' | 'target' | null
+    'filter' | 'custom' | 'target' | 'tags' | null
   >(null)
 
   // Get destinations
@@ -54,6 +64,7 @@ export function SourceTableDrawer({
       setActiveTable(null)
       setActiveMode(null)
       setActiveSyncConfigId(null)
+      setSearchQuery('')
     }
   }, [open])
 
@@ -277,6 +288,11 @@ export function SourceTableDrawer({
                       setActiveSyncConfigId(id)
                       setActiveMode('target')
                     }}
+                    onEditTags={(table, id) => {
+                      setActiveTable(table)
+                      setActiveSyncConfigId(id)
+                      setActiveMode('tags')
+                    }}
                   />
                 )}
               </div>
@@ -339,6 +355,15 @@ export function SourceTableDrawer({
           onClose={() => setActiveMode(null)}
           onSave={handleSaveTargetName}
           onValidate={handleValidateTargetName}
+        />
+      )}
+
+      {open && activeMode === 'tags' && activeSyncConfigId && activeTable && (
+        <TagDrawer
+          tableSyncId={activeSyncConfigId}
+          tableName={activeTable.table_name}
+          open={true}
+          onClose={() => setActiveMode(null)}
         />
       )}
     </>

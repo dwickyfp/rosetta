@@ -252,6 +252,11 @@ INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('NOTI
 INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('PIPELINE_MAX_BATCH_SIZE', '4096') ON CONFLICT(config_key) DO NOTHING;
 INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('PIPELINE_MAX_QUEUE_SIZE', '16384') ON CONFLICT(config_key) DO NOTHING;
 
+-- NOTIFICATION VIA TELEGRAM BOT
+INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('ENABLE_ALERT_NOTIFICATION_TELEGRAM', 'FALSE') ON CONFLICT(config_key) DO NOTHING;
+INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('ALERT_NOTIFICATION_TELEGRAM_KEY', '') ON CONFLICT(config_key) DO NOTHING;
+INSERT INTO rosetta_setting_configuration(config_key, config_value) VALUES('ALERT_NOTIFICATION_TELEGRAM_GROUP_ID', 'FALSE') ON CONFLICT(config_key) DO NOTHING;
+
 -- NEW INDEX
 CREATE INDEX IF NOT EXISTS idx_table_metadata_list_source_table ON table_metadata_list(source_id, table_name);
 CREATE INDEX IF NOT EXISTS idx_data_flow_record_monitoring_created_at ON data_flow_record_monitoring(created_at);
@@ -316,6 +321,8 @@ ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS error_message TEXT NULL
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS total_record BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS resume_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS is_error BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS last_pk_value TEXT NULL;
+ALTER TABLE queue_backfill_data ADD COLUMN IF NOT EXISTS pk_column TEXT NULL;
 
 -- Drop Index if exists
 DROP INDEX IF EXISTS idx_queue_backfill_data_pipeline_id;
@@ -375,6 +382,72 @@ CREATE INDEX IF NOT EXISTS idx_presets_source_id ON presets(source_id);
 
 -- Job metrics: unique constraint already provides index, add updated_at
 CREATE INDEX IF NOT EXISTS idx_job_metrics_monitoring_updated_at ON job_metrics_monitoring(updated_at DESC);
+
+-- Create Table Tagging for smart tag feature
+CREATE TABLE IF NOT EXISTS tbltag_list (
+    id SERIAL PRIMARY KEY,
+    tag VARCHAR(150) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create Unique for tag
+ALTER TABLE tbltag_list DROP CONSTRAINT IF EXISTS uq_tbltag_list_tag;
+ALTER TABLE tbltag_list ADD CONSTRAINT uq_tbltag_list_tag UNIQUE (tag);
+
+-- Create Table for save tagging and pipelines_destination_table_sync
+CREATE TABLE IF NOT EXISTS pipelines_destination_table_sync_tag (
+    id SERIAL PRIMARY KEY,
+    pipelines_destination_table_sync_id INTEGER NOT NULL REFERENCES pipelines_destination_table_sync(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tbltag_list(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for pipelines_destination_table_sync_tag
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_sync_id ON pipelines_destination_table_sync_tag(pipelines_destination_table_sync_id);
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_tag_id ON pipelines_destination_table_sync_tag(tag_id);
+
+-- Add unique constraint to prevent duplicate tags on same table sync (also improves query performance)
+ALTER TABLE pipelines_destination_table_sync_tag DROP CONSTRAINT IF EXISTS uq_pipelines_destination_table_sync_tag;
+ALTER TABLE pipelines_destination_table_sync_tag ADD CONSTRAINT uq_pipelines_destination_table_sync_tag UNIQUE (pipelines_destination_table_sync_id, tag_id);
+
+-- Composite index for tag usage queries (joining tag → sync → pipeline hierarchy)
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_composite ON pipelines_destination_table_sync_tag(tag_id, pipelines_destination_table_sync_id);
+
+-- Index on created_at for temporal queries and sorting
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_table_sync_tag_created_at ON pipelines_destination_table_sync_tag(created_at DESC);
+
+-- Performance Optimization for Source Details Page
+-- This migration adds composite indexes to optimize the JOIN queries
+
+-- Composite index for history_schema_evolution table
+-- Optimizes get_tables_with_version_count query that does:
+-- LEFT JOIN history_schema_evolution ON table_metadata_list.id = history_schema_evolution.table_metadata_list_id
+-- GROUP BY table_metadata_list.id
+-- SELECT MAX(version_schema)
+CREATE INDEX IF NOT EXISTS idx_history_schema_evolution_table_version_composite 
+ON history_schema_evolution(table_metadata_list_id, version_schema DESC);
+
+-- Additional optimization: covering index for the query
+-- This allows index-only scans without touching the table
+CREATE INDEX IF NOT EXISTS idx_table_metadata_list_source_id_covering 
+ON table_metadata_list(source_id, id) INCLUDE (table_name, schema_table);
+
+-- Optimize pipelines_destination queries for source details
+-- This composite index helps with the join: pipeline → pipeline_destination → destination
+CREATE INDEX IF NOT EXISTS idx_pipelines_destination_composite 
+ON pipelines_destination(pipeline_id, destination_id, is_error);
+
+-- Add comment explaining the optimization
+COMMENT ON INDEX idx_history_schema_evolution_table_version_composite IS 
+'Optimizes source details page query that fetches table version counts with LEFT JOIN and MAX(version_schema)';
+
+COMMENT ON INDEX idx_table_metadata_list_source_id_covering IS 
+'Covering index for source details table metadata fetch - enables index-only scans';
+
+COMMENT ON INDEX idx_pipelines_destination_composite IS 
+'Composite index for pipeline-destination joins in source details page';
 
 
 

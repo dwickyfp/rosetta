@@ -21,7 +21,10 @@ export interface Pipeline {
     details?: string
   }
   source?: {
+    id: number
     name: string
+    is_publication_enabled?: boolean
+    is_replication_enabled?: boolean
   }
   destinations?: {
     id: number
