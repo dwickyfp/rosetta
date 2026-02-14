@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Plus, Save, X, Calendar as CalendarIcon, Trash2, CornerDownRight } from 'lucide-react'
+import { Loader2, Plus, Save, X, Calendar as CalendarIcon, Trash2, CornerDownRight, Check, ChevronsUpDown } from 'lucide-react'
 import { TableWithSyncInfo } from '@/repo/pipelines'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Calendar } from '@/components/ui/calendar'
 import { format } from 'date-fns'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -609,6 +610,7 @@ function ConditionRow({
     onUpdate: (field: keyof FilterCondition, val: string) => void
     onRemove: () => void
 }) {
+    const [columnOpen, setColumnOpen] = useState(false)
     const colType = getColumnType(condition.column)
     const isIn = condition.operator === 'IN'
     const isBetween = condition.operator === 'BETWEEN'
@@ -632,21 +634,45 @@ function ConditionRow({
                 {/* Column */}
                 <div>
                     <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Column</label>
-                    <Select value={condition.column} onValueChange={(val) => onUpdate('column', val)}>
-                        <SelectTrigger className="h-9 text-xs">
-                            <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
-                        <SelectContent style={{ zIndex: 1000 }}>
-                            {columns.length > 0
-                                ? columns.map(col => (
-                                    <SelectItem key={col.column_name} value={col.column_name}>
-                                        <span className="text-xs">{col.column_name}</span>
-                                    </SelectItem>
-                                ))
-                                : <SelectItem value="_none" disabled>No columns</SelectItem>
-                            }
-                        </SelectContent>
-                    </Select>
+                    <Popover open={columnOpen} onOpenChange={setColumnOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={columnOpen}
+                                className="h-9 w-full justify-between text-xs font-normal"
+                            >
+                                <span className="truncate">
+                                    {condition.column || 'Select...'}
+                                </span>
+                                <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[220px] p-0" style={{ zIndex: 1000 }}>
+                            <Command>
+                                <CommandInput placeholder="Search columns..." className="text-xs" />
+                                <CommandList>
+                                    <CommandEmpty>No columns found</CommandEmpty>
+                                    <CommandGroup>
+                                        {columns.map(col => (
+                                            <CommandItem
+                                                key={col.column_name}
+                                                value={col.column_name}
+                                                onSelect={(val) => {
+                                                    onUpdate('column', val)
+                                                    setColumnOpen(false)
+                                                }}
+                                                className="text-xs"
+                                            >
+                                                <Check className={cn("mr-2 h-3.5 w-3.5", condition.column === col.column_name ? "opacity-100" : "opacity-0")} />
+                                                {col.column_name}
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
                 </div>
 
                 {/* Operator */}

@@ -144,6 +144,72 @@ const STATUS_CONFIG = {
   },
 }
 
+// Separate component to isolate state and prevent re-render issues
+function ColumnSelectWithSearch({
+  value,
+  onValueChange,
+  columns,
+  disabled,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  columns: { column_name: string }[]
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className='space-y-1.5'>
+      <Label className='text-xs text-muted-foreground'>Column</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant='outline'
+            role='combobox'
+            aria-expanded={open}
+            disabled={disabled}
+            className='h-8 w-full justify-between text-xs font-normal'
+          >
+            <span className='truncate'>
+              {value || 'Select column'}
+            </span>
+            <ChevronsUpDown className='ml-1 h-3.5 w-3.5 shrink-0 opacity-50' />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className='w-[220px] p-0'>
+          <Command>
+            <CommandInput placeholder='Search columns...' className='text-xs' />
+            <CommandList>
+              <CommandEmpty>No columns found</CommandEmpty>
+              <CommandGroup>
+                {columns.map((col) => (
+                  <CommandItem
+                    key={col.column_name}
+                    value={col.column_name}
+                    onSelect={(val) => {
+                      onValueChange(val)
+                      setOpen(false)
+                    }}
+                    className='text-xs'
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-3.5 w-3.5',
+                        value === col.column_name ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {col.column_name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
+
 function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
   const [open, setOpen] = useState(false)
   const [openCombobox, setOpenCombobox] = useState(false)
@@ -443,32 +509,12 @@ function CreateBackfillDialog({ pipelineId, sourceId }: BackfillDataTabProps) {
                     key={index}
                     className='grid grid-cols-[minmax(120px,1fr)_minmax(180px,auto)_minmax(150px,1.5fr)_auto] items-end gap-4 rounded-lg border bg-muted/40 p-3'
                   >
-                    <div className='space-y-1.5'>
-                      <Label className='text-xs text-muted-foreground'>
-                        Column
-                      </Label>
-                      <Select
-                        value={filter.column}
-                        onValueChange={(value) =>
-                          updateFilter(index, 'column', value)
-                        }
-                        disabled={!tableName}
-                      >
-                        <SelectTrigger className='h-8'>
-                          <SelectValue placeholder='Select column' />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedTableColumns?.map((col) => (
-                            <SelectItem
-                              key={col.column_name}
-                              value={col.column_name}
-                            >
-                              {col.column_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <ColumnSelectWithSearch
+                      value={filter.column}
+                      onValueChange={(value) => updateFilter(index, 'column', value)}
+                      columns={selectedTableColumns || []}
+                      disabled={!tableName}
+                    />
 
                     <div className='space-y-1.5'>
                       <Label className='text-xs text-muted-foreground'>
